@@ -1,0 +1,173 @@
+.container {
+  position: fixed;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  min-width: 300px;
+  max-width: 400px;
+  overflow: hidden;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateX(16px) scale(0.95);
+  animation: none;
+}
+
+.toastVisible {
+  animation: toastBounceIn 350ms var(--ease-out) forwards;
+}
+
+.toastExiting {
+  opacity: 0;
+  transform: translateX(16px) scale(0.97);
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+}
+
+// Per-type glow
+.toastSuccess {
+  box-shadow:
+    var(--shadow-lg),
+    0 0 28px -8px color-mix(in srgb, var(--green) 50%, transparent);
+}
+
+.toastError {
+  box-shadow:
+    var(--shadow-lg),
+    0 0 28px -8px color-mix(in srgb, var(--red) 50%, transparent);
+}
+
+.toastInfo {
+  box-shadow:
+    var(--shadow-lg),
+    0 0 28px -8px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+// Square icon badge
+.iconBadge {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconBadgeSuccess {
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+  color: var(--green);
+}
+
+.iconBadgeError {
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--red);
+}
+
+.iconBadgeInfo {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.message {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.closeBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+}
+
+// Progress drain bar at bottom
+.progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  transform-origin: left;
+  animation: progressDrain var(--toast-duration, 4000ms) linear forwards;
+}
+
+.progressSuccess { background: var(--green); }
+.progressError   { background: var(--red); }
+.progressInfo    { background: var(--accent); }
+
+.toast:hover .progress {
+  animation-play-state: paused;
+}
+
+@keyframes toastBounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateX(16px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.02) translateX(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+@keyframes progressDrain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@media (max-width: 640px) {
+  .container {
+    bottom: var(--space-4);
+    left: var(--space-4);
+    right: var(--space-4);
+    transform: none;
+    align-items: stretch;
+  }
+
+  .toast {
+    min-width: auto;
+    max-width: none;
+    width: 100%;
+  }
+}

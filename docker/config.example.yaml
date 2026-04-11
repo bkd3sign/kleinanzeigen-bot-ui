@@ -1,0 +1,143 @@
+# ################################################################################
+# Example configuration for kleinanzeigen-bot GUI
+# Copy this file to config.yaml and adjust values to your needs.
+# Alternatively, use the Setup Wizard at http://<your-host>:3737/setup
+# ################################################################################
+
+# ################################################################################
+# AI configuration for KI-powered ad generation (optional)
+# Get a free API key at https://openrouter.ai/keys
+ai:
+  api_key: ''
+  # base_url: https://openrouter.ai/api/v1
+  model: 'openai/gpt-4.1-nano'
+  model_vision: 'openai/gpt-4.1-mini'
+  # referer: 'https://your-project-url'        # shown in your OpenRouter dashboard
+  # app_name: 'kleinanzeigen-bot-ui'            # app name in OpenRouter stats
+
+  # System prompt for text-only ad generation (without images)
+  # Customize this to change the style and structure of generated ads
+  prompt: |-
+    Du bist ein Kleinanzeigen-Texter. Erstelle eine Anzeige mit Titel, Beschreibung, Highlights und technischen Daten. Antworte NUR mit einem JSON-Objekt: { "title", "description", "category", "price", "price_type", "type", "shipping_type", "shipping_size", "shipping_costs", "shipping_options", "special_attributes", "price_hint": { "uvp", "market_low", "market_high", "suggestion", "condition_note" } }
+
+  # System prompt for image-based ad generation (with photos)
+  prompt_vision: |-
+    Du bist ein Kleinanzeigen-Texter. Analysiere die Fotos und erstelle eine Anzeige. Beschreibe Artikel, Zustand, Highlights und technische Daten. Antworte NUR mit einem JSON-Objekt: { "title", "description", "category", "price", "price_type", "type", "shipping_type", "shipping_size", "shipping_costs", "shipping_options", "special_attributes", "price_hint": { "uvp", "market_low", "market_high", "suggestion", "condition_note" } }
+
+# ################################################################################
+# Glob patterns to find ad config files (relative to this file)
+ad_files:
+  - ./**/ad_*.{json,yml,yaml}
+
+# ################################################################################
+# Default values for all ads (can be overridden per ad)
+ad_defaults:
+  active: true
+  type: OFFER
+  description_prefix: ''
+  description_suffix: ''
+  price_type: NEGOTIABLE
+  shipping_type: SHIPPING
+  sell_directly: false
+  republication_interval: 7
+  images: []
+
+  auto_price_reduction:
+    enabled: false
+    strategy:      # PERCENTAGE or FIXED
+    amount:        # e.g. 10.0 (= 10% or 10 EUR)
+    min_price:     # price floor
+    delay_reposts: 0
+    delay_days: 0
+
+  contact:
+    name: ''
+    street: ''
+    zipcode: ''
+    location: ''
+    phone: ''
+
+# ################################################################################
+# Category name mappings (optional)
+# See: https://github.com/Second-Hand-Friends/kleinanzeigen-bot/blob/main/src/kleinanzeigen_bot/resources/categories.yaml
+categories: {}
+
+# ################################################################################
+# Download settings
+download:
+  include_all_matching_shipping_options: true
+  excluded_shipping_options: []
+  folder_name_max_length: 100
+  folder_name_template: 'ad_{id}'
+  rename_existing_folders: true
+
+# ################################################################################
+# Publishing behavior
+publishing:
+  delete_old_ads: AFTER_PUBLISH       # BEFORE_PUBLISH | AFTER_PUBLISH | NEVER
+  delete_old_ads_by_title: true       # only with BEFORE_PUBLISH
+
+# ################################################################################
+# Browser configuration (auto-detected in most cases)
+browser:
+  arguments: []                       # Docker: ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+  binary_location: ''                 # leave empty for auto-detection
+  extensions: []
+  use_private_window: true
+  user_data_dir: ''
+  profile_name: ''
+
+# ################################################################################
+# Login credentials (set via Setup Wizard or manually)
+login:
+  username: ''
+  password: ''
+
+# ################################################################################
+# Captcha handling
+captcha:
+  auto_restart: false
+  restart_delay: 6h
+
+# ################################################################################
+# Update check
+update_check:
+  enabled: true
+  channel: latest                     # latest or preview
+  interval: 7d
+
+# ################################################################################
+# Timeout configuration (seconds, multiplied by multiplier)
+timeouts:
+  multiplier: 1.0                     # increase for slow systems (e.g. 2.0)
+  default: 5.0
+  page_load: 15.0
+  captcha_detection: 3.0
+  sms_verification: 5.0
+  email_verification: 5.0
+  gdpr_prompt: 12.0
+  login_detection: 12.0
+  publishing_result: 300.0
+  publishing_confirmation: 30.0
+  image_upload: 30.0
+  pagination_initial: 12.0
+  pagination_follow_up: 5.0
+  quick_dom: 3.0
+  update_check: 10.0
+  chrome_remote_probe: 2.0
+  chrome_remote_debugging: 5.0
+  chrome_binary_detection: 10.0
+  retry_enabled: true
+  retry_max_attempts: 3
+  retry_backoff_factor: 1.5
+
+# ################################################################################
+# Diagnostics (for troubleshooting)
+diagnostics:
+  capture_on:
+    login_detection: false
+    publish: true
+  capture_log_copy: true
+  pause_on_login_detection_failure: false
+  output_dir:
+  timing_collection: true

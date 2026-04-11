@@ -1,0 +1,182 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin: var(--space-1) 0 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Invite link result */
+.inviteResult {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  animation: cardSlideUp 300ms var(--ease-out) both;
+}
+
+.inviteLabel {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.inviteLinkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.inviteLinkInput {
+  flex: 1;
+  height: 36px;
+  padding: 4px 12px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+
+  &:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+}
+
+/* Active invites area */
+.inviteArea {
+  margin-top: var(--space-2);
+}
+
+.empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+/* Table - same style as UserList */
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 500px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.th {
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+
+.thActions {
+  text-align: center;
+  width: 60px;
+}
+
+.row {
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color var(--transition-fast);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background-color: var(--bg-hover);
+  }
+}
+
+.td {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tdActions {
+  text-align: center;
+}
+
+/* Action menu trigger button */
+.actionWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.actionBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  line-height: 1;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+}
+
+@media (max-width: 767px) {
+  .header {
+    flex-direction: column;
+  }
+
+  .inviteLinkRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tableWrapper { overflow: hidden; }
+  .table { table-layout: fixed; min-width: 0; }
+  .table colgroup { display: none; }
+  .table th:nth-child(1), .table td:nth-child(1) { width: 40%; }
+  .table th:nth-child(2), .table td:nth-child(2) { width: auto; }
+  .thActions, .tdActions { width: 48px; }
+  .td, .th { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); }
+  .inviteResult { padding: var(--space-3); overflow: hidden; }
+  .inviteLinkInput { max-width: 100%; box-sizing: border-box; font-size: var(--font-size-xs); height: 32px; padding: 2px 8px; }
+}

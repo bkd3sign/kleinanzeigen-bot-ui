@@ -1,0 +1,102 @@
+// 7-day republication calendar matching legacy .dashboardSchedule
+
+.section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.schedule {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+.day {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: clamp(var(--space-2), 1.5vw, var(--space-3));
+  min-height: clamp(70px, 10vw, 100px);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dayToday {
+  border: 1px solid var(--accent);
+}
+
+.dayLabel {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.dayDate {
+  font-size: clamp(0.5rem, 1.5vw, 0.6875rem);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.chip {
+  display: block;
+  padding: 2px var(--space-2);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: clamp(0.5rem, 1.5vw, 0.6875rem);
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--transition-fast);
+  text-decoration: none;
+
+  &:hover {
+    background: var(--accent-muted);
+    color: var(--text-accent);
+  }
+}
+
+.chipRepub {
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+  color: var(--green);
+  border: 1px solid color-mix(in srgb, var(--green) 25%, transparent);
+
+  &:hover {
+    background: color-mix(in srgb, var(--green) 25%, transparent);
+    color: var(--green);
+  }
+}
+
+.chipExpiry {
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
+
+  &:hover {
+    background: color-mix(in srgb, var(--red) 25%, transparent);
+    color: var(--red);
+  }
+}
+
+@media (max-width: 767px) {
+  .section {
+    padding: var(--space-3);
+  }
+
+  .schedule {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 90px), 1fr));
+  }
+}

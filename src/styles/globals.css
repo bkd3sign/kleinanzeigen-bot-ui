@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@import './tokens.css';
+@import './base.css';
+@import './animations.css';
+
+/* ============================================================
+   Table utilities — shared across all sortable tables
+   Use: className="thSortable" on <th>, className="sortIcon"
+   or "sortIconActive" for sort indicators, "animRow" on <tr>
+   ============================================================ */
+
+.thSortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.thSortable:hover {
+  color: var(--text-primary);
+}
+
+.sortIcon {
+  display: inline-block;
+  margin-left: 4px;
+  opacity: 0.3;
+  font-size: 10px;
+}
+
+.sortIconActive {
+  display: inline-block;
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* Stagger entrance animation for table rows.
+   Set --anim-delay via inline style on the <tr>. */
+.animRow {
+  animation: slideUp 200ms var(--ease-out) both;
+  animation-delay: var(--anim-delay, 0ms);
+}
+
+/* Global form label class — used by components that don't go through Input/Select CSS modules */
+.formLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: var(--space-1-5);
+}
+
+/* AI page: lock viewport height so chat scrolls and input stays sticky at bottom */
+[data-ai-page="true"] {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+[data-ai-page="true"] main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Mobile: all tables become horizontally scrollable with compact cells */
+@media (max-width: 767px) {
+  .thSortable {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}

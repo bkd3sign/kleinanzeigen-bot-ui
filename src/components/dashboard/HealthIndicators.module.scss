@@ -1,0 +1,70 @@
+// Health indicators table matching legacy .dashboardHealthTable
+
+.section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: clamp(var(--space-3), 3vw, var(--space-5));
+}
+
+.sectionTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.allOk {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--green);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tableHeader {
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tableRow {
+  border-bottom: 1px solid var(--border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.tableCell {
+  padding: var(--space-3) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.healthLink {
+  color: var(--text-primary);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--accent);
+  }
+}
+
+@media (max-width: 767px) {
+  .tableHeader, .tableCell {
+    padding: var(--space-2);
+    font-size: var(--font-size-xs);
+  }
+}
+

@@ -1,0 +1,291 @@
+// Bot Commands Modal — matches legacy botCmd* styles
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+// Collapsible panel per group
+.panel {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.panelOpen {
+  border-color: var(--accent);
+
+  .panelHeader:hover {
+    background: transparent;
+  }
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+  color: var(--text-primary);
+
+  &:hover {
+    background: var(--accent-muted);
+  }
+}
+
+.panelIcon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+.panelOpen .panelIcon {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.panelText {
+  flex: 1;
+  min-width: 0;
+}
+
+.panelTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.panelDesc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+// Panel body (commands)
+.panelBody {
+  border-top: 1px solid var(--border-color);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+// Command list — same style as CreateAdModal options
+.cmdList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cmdItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+  width: 100%;
+  color: var(--text-primary);
+
+  &:hover {
+    border-color: var(--accent);
+    background: var(--accent-muted);
+  }
+}
+
+.cmdItemActive {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.cmdItemIcon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+
+  svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.cmdItem:hover .cmdItemIcon,
+.cmdItemActive .cmdItemIcon {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.cmdItemText {
+  flex: 1;
+  min-width: 0;
+}
+
+.cmdItemTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.cmdItemDesc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-relaxed);
+}
+
+// Command detail area (options + execute button)
+.cmdDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-color);
+}
+
+.cmdOpts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cmdOptsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+
+  &:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  &:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+}
+
+.selectWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.select {
+  width: 100%;
+  height: 36px;
+  padding: var(--space-1) var(--space-3);
+  padding-right: var(--space-8);
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  appearance: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--border-color-hover);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-accent);
+    outline: none;
+  }
+}
+
+.customInput {
+  width: 100%;
+  height: 36px;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+
+  &:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  &::placeholder {
+    color: var(--text-muted);
+  }
+}

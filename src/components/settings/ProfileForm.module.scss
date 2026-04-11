@@ -1,0 +1,54 @@
+/* Profile Form - matches legacy settingsPage section style */
+
+.wrapper {
+  width: 100%;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: var(--space-5);
+  margin-bottom: 0;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-5) 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+}
+
+.sectionDesc {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  font-weight: normal;
+  margin-top: var(--space-1);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 600px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}

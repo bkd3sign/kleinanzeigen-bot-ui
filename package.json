@@ -1,0 +1,53 @@
+{
+  "name": "kleinanzeigen-bot-ui",
+  "version": "2.43.0",
+  "description": "Web UI for kleinanzeigen-bot — manage ads, run bot commands, AI messaging, and scheduling via a modern Next.js dashboard",
+  "author": "BKD3sign",
+  "license": "AGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bkd3sign/kleinanzeigen-bot-ui"
+  },
+  "homepage": "https://github.com/bkd3sign/kleinanzeigen-bot-ui",
+  "keywords": ["kleinanzeigen", "classifieds-automation", "ad-management", "ai-generation", "self-hosted", "web-dashboard"],
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.1",
+    "@tanstack/react-query": "^5.96.2",
+    "bcryptjs": "^2.4.3",
+    "glob": "^13.0.6",
+    "js-yaml": "^4.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "next": "^15.1.0",
+    "node-cron": "^4.2.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.72.1",
+    "ws": "^8.20.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.15.0",
+    "eslint-config-next": "^15.1.0",
+    "jsdom": "^25.0.1",
+    "sass": "^1.99.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.3"
+  }
+}

@@ -1,0 +1,18 @@
+# Browser Extensions (CDP Script Injection)
+#
+# Temporary fixes injected into Chrome via DevTools Protocol.
+# These work around bugs in the kleinanzeigen-bot's browser automation
+# until the upstream bot is fixed.
+#
+# To disable a fix: set enabled: false
+# To remove completely: delete the entry and the .js file
+
+extensions:
+  - name: Shipping Dialog Fix
+    file: shipping-dialog-fix.js
+    enabled: true
+    description: >
+      Fixes broken element selectors in the shipping dialog after
+      Kleinanzeigen's 2026 site redesign. Patches radio button IDs
+      (radio-button-SMALL/MEDIUM/LARGE) and carrier checkbox data-testid
+      attributes. Remove when upstream bot issue is resolved.

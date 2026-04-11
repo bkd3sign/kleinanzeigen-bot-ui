@@ -1,0 +1,67 @@
+// Distribution charts (type & shipping) matching legacy .dashboardDist* styles
+
+.wrapper {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: var(--space-4);
+}
+
+.miniDist {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: clamp(var(--space-3), 3vw, var(--space-4));
+}
+
+.miniDistTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+
+.distBar {
+  display: flex;
+  height: 8px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-3);
+}
+
+.distBarSeg {
+  transition: width 600ms var(--ease-out);
+
+  &:first-child {
+    border-radius: var(--radius-full) 0 0 var(--radius-full);
+  }
+
+  &:last-child {
+    border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  }
+
+  &:only-child {
+    border-radius: var(--radius-full);
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+

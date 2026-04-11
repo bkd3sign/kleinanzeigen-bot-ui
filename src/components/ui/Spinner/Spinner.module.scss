@@ -1,0 +1,32 @@
+// Spinner component styles
+// Based on token system
+
+.spinner {
+  display: inline-block;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-full);
+  animation: spin 600ms linear infinite;
+}
+
+.spinnerSm {
+  width: 16px;
+  height: 16px;
+}
+
+.spinnerDefault {
+  width: 24px;
+  height: 24px;
+}
+
+.spinnerLg {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

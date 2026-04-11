@@ -1,0 +1,385 @@
+/* Ad card for grid view - matches legacy .adListCard design */
+
+.card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  padding: 0;
+  transition: all var(--transition-base);
+  cursor: pointer;
+  animation: cardSlideUp 400ms var(--ease-out) both;
+  animation-delay: var(--anim-delay, 0ms);
+}
+
+.card:hover {
+  border-color: var(--border-color-hover);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.cardSelected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cardDraft {
+  opacity: 0.7;
+}
+
+.cardExpiring {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 1px var(--orange);
+}
+
+.cardExpired {
+  border-color: var(--red);
+}
+
+.cardInactive {
+  border-color: var(--red);
+  opacity: 0.5;
+}
+
+/* Image area: fixed 180px height with object-fit cover */
+.cardImage {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  background-color: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.cardImageImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+.card:hover .cardImageImg {
+  transform: scale(1.03);
+}
+
+.cardExpired .cardImageImg,
+.cardOrphaned .cardImageImg {
+  filter: grayscale(1) brightness(0.85);
+}
+
+/* Status badge overlaid on image (top-left) */
+.cardStatusWrap {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  right: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  z-index: 1;
+}
+
+.cardStatus {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-semibold);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  backdrop-filter: blur(8px);
+}
+
+.cardStatusPriceReduction {
+  background-color: rgba(245, 158, 11, 0.85);
+  color: #fff;
+}
+
+.cardStatusActive {
+  background-color: rgba(34, 197, 94, 0.85);
+  color: #fff;
+  --pulse-color: rgba(34, 197, 94, 0.3);
+  animation: statusPulse 2.5s ease-in-out infinite;
+}
+
+.cardStatusInactive {
+  background-color: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+.cardStatusDraft {
+  background-color: rgba(120, 120, 120, 0.85);
+  color: #fff;
+}
+
+.cardStatusChanged {
+  background-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.cardStatusExpiring {
+  background-color: rgba(245, 158, 11, 0.85);
+  color: #fff;
+  --pulse-color: rgba(245, 158, 11, 0.3);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.cardStatusExpired {
+  background-color: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+.cardStatusOrphaned {
+  background-color: rgba(245, 158, 11, 0.85);
+  color: #fff;
+}
+
+/* "..." menu button on image (top-right) */
+.cardMenu {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+
+.card:hover .cardMenu {
+  opacity: 1;
+}
+
+.cardMenu:hover {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Card body */
+.cardBody {
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title title"
+    "price price"
+    "expiry expiry"
+    "meta date";
+  align-items: baseline;
+}
+
+.cardDate {
+  grid-area: date;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.cardTitle {
+  grid-area: title;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardPrice {
+  grid-area: price;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.priceReduced {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.priceOriginal {
+  text-decoration: line-through;
+  color: var(--text-muted);
+  font-weight: var(--font-normal);
+  font-size: var(--font-size-xs);
+}
+
+.cardExpiry {
+  grid-area: expiry;
+  font-size: var(--font-size-xs);
+  color: var(--red);
+  font-weight: var(--font-medium);
+}
+
+.cardMeta {
+  grid-area: meta;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Image placeholder when no image available */
+.cardImagePlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xl);
+}
+
+/* Newly downloaded ad sparkle effect */
+.cardNew {
+  animation: sparkleGlow 2s ease-in-out 3;
+  border-radius: var(--radius-lg);
+}
+
+.cardNewBadge {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  padding: 2px var(--space-2);
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #a855f7, #c084fc);
+  background-size: 400% 100%;
+  border-radius: var(--radius-full);
+  z-index: 2;
+  animation: sparkleBadge 500ms var(--ease-out) both, sparkleShine 2s ease-in-out 0.5s 3;
+}
+
+/* Keyframes */
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--pulse-color); }
+  50% { box-shadow: 0 0 0 4px var(--pulse-color); }
+}
+
+@keyframes sparkleGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.0), inset 0 0 0 1px rgba(168, 85, 247, 0.0);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px rgba(168, 85, 247, 0.3), inset 0 0 0 1px rgba(168, 85, 247, 0.2);
+  }
+}
+
+@keyframes sparkleBadge {
+  0% { opacity: 0; transform: scale(0.5); }
+  50% { transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes sparkleShine {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@media (max-width: 767px) {
+  .card {
+    display: flex;
+    flex-direction: row;
+    position: relative;
+  }
+
+  .cardImage {
+    width: 35%;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    flex-shrink: 0;
+    border-radius: 0;
+    position: static;
+  }
+
+  .cardImagePlaceholder svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .cardStatusWrap {
+    top: var(--space-1);
+    left: var(--space-1);
+    right: 28px;
+  }
+
+  .cardStatus {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+
+  .cardMenu {
+    opacity: 1;
+    top: var(--space-1);
+    right: var(--space-1);
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    background: none;
+    backdrop-filter: none;
+    color: var(--text-muted);
+
+    &:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+  }
+
+  .cardBody {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    padding-right: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .cardDate {
+    font-size: 11px;
+    margin-bottom: var(--space-1);
+    text-align: left;
+  }
+
+  .cardTitle {
+    font-size: var(--font-size-xs);
+    margin-bottom: var(--space-1);
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .cardPrice {
+    font-size: var(--font-size-xs);
+    color: var(--green);
+  }
+
+  .cardExpiry {
+    font-size: 10px;
+  }
+
+  .cardMeta {
+    font-size: 10px;
+    order: 0;
+    margin-top: auto;
+  }
+
+  .cardNewBadge {
+    font-size: 8px;
+    padding: 1px var(--space-1);
+  }
+}

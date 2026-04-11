@@ -1,0 +1,93 @@
+// Performance metrics matching legacy .dashboardPerf* and .dashboardSales* styles
+
+.section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.sectionTitleSub {
+  composes: sectionTitle;
+  margin-top: var(--space-4);
+}
+
+.perfList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.perfRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+
+.perfLabel {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perfLabelLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.perfBar {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.perfBarInner {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.8s var(--ease-out);
+  background: var(--accent);
+}
+
+.perfBarDuration {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.8s var(--ease-out);
+  background: var(--orange);
+}
+
+.perfStats {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.perfStatsPriceReduction {
+  color: var(--yellow);
+}
+
+
+@media (max-width: 767px) {
+  .section {
+    padding: var(--space-3);
+  }
+  .perfRow {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+  .perfLabel {
+    white-space: normal;
+  }
+}

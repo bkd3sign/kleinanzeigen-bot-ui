@@ -1,0 +1,51 @@
+// Badge component styles
+// Extracted from components.css .badge* classes
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-full);
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.badgeSuccess {
+  background-color: var(--green-muted);
+  color: var(--text-success);
+}
+
+.badgeDanger {
+  background-color: var(--red-muted);
+  color: var(--text-danger);
+}
+
+.badgeWarning {
+  background-color: var(--yellow-muted);
+  color: var(--text-warning);
+}
+
+.badgeMuted {
+  background-color: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.badgeInfo {
+  background-color: var(--accent-muted);
+  color: var(--text-accent);
+}
+
+.badgeRunning {
+  background-color: var(--accent-muted);
+  color: var(--text-accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

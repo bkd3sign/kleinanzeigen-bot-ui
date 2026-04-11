@@ -1,0 +1,43 @@
+/* Bot page layout - matches legacy .botActions */
+.botActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.botSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.botSection + .botSection {
+  margin-top: clamp(var(--space-6), 5vw, var(--space-10));
+}
+
+.sectionTitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.sectionSubtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin: var(--space-1) 0 0;
+}
+
+@media (max-width: 767px) {
+  .sectionTitle {
+    font-size: var(--font-size-base);
+  }
+
+  .sectionSubtitle {
+    font-size: var(--font-size-xs);
+  }
+
+  .botSection + .botSection {
+    margin-top: var(--space-4);
+  }
+}

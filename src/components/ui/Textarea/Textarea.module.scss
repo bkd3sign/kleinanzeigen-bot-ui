@@ -1,0 +1,67 @@
+// Textarea component styles
+// Extracted from components.css .formTextarea
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin-bottom: var(--space-3);
+}
+
+.formLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.formLabelRequired {
+  &::after {
+    content: " *";
+    color: var(--red);
+  }
+}
+
+.formTextarea {
+  width: 100%;
+  padding: 8px 12px;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  line-height: 20px;
+  resize: vertical;
+  min-height: 60px;
+  box-shadow: none;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--border-color-hover);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-accent);
+    outline: none;
+  }
+
+  &::placeholder {
+    color: var(--text-muted);
+  }
+}
+
+.formTextareaError {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px var(--red-muted);
+}
+
+.formError {
+  font-size: var(--font-size-xs);
+  color: var(--text-danger);
+}
+
+.formHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}

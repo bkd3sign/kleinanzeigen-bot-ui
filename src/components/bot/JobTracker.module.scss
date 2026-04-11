@@ -1,0 +1,201 @@
+/* Job Tracker - matches legacy jobList styles */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.filterBtn {
+  padding: var(--space-1-5) var(--space-3);
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+}
+
+.filterBtn:hover {
+  border-color: var(--border-color-hover);
+  color: var(--text-primary);
+}
+
+.filterBtnActive {
+  background-color: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filterSep {
+  width: 1px;
+  height: 20px;
+  background-color: var(--border-color);
+  margin: 0 var(--space-1);
+  flex-shrink: 0;
+}
+
+.filterBtnView {
+  padding: var(--space-1-5) var(--space-3);
+  background-color: transparent;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+
+  &:hover {
+    border-color: var(--border-color-hover);
+    color: var(--text-secondary);
+  }
+}
+
+.filterBtnViewActive {
+  background-color: var(--bg-elevated);
+  border-color: var(--text-muted);
+  border-style: dashed;
+  color: var(--text-primary);
+}
+
+/* Table wrapper */
+.tableWrapper {
+  overflow-x: auto;
+  border: none;
+  border-radius: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.th {
+  padding: var(--space-2) clamp(var(--space-2), 2vw, var(--space-4));
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.row {
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background-color: var(--bg-hover);
+}
+
+.td {
+  padding: var(--space-2) clamp(var(--space-2), 2vw, var(--space-4));
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.tdMono {
+  padding: var(--space-2) clamp(var(--space-2), 2vw, var(--space-4));
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.tdMuted {
+  padding: var(--space-2) clamp(var(--space-2), 2vw, var(--space-4));
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+/* Empty state */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  animation: fadeIn 300ms var(--ease-out);
+}
+
+.emptyIcon {
+  color: var(--text-muted);
+  margin-bottom: var(--space-3);
+  opacity: 0.4;
+  animation: bounceIn 600ms var(--ease-out) both;
+}
+
+.emptyTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+  animation: slideUp 300ms var(--ease-out) 100ms both;
+}
+
+.emptyDesc {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  animation: slideUp 300ms var(--ease-out) 160ms both;
+}
+
+.thActions {
+  text-align: center;
+  width: 60px;
+}
+
+.tdActions {
+  text-align: center;
+}
+
+.menuBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  line-height: 1;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+}
+
+/* Hidden on mobile — applied to th/td that should not show on small screens */
+.hideMobile {}
+
+@media (max-width: 767px) {
+  .tableWrapper { -webkit-overflow-scrolling: touch; }
+  .table { min-width: 600px; }
+  .td, .th { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); white-space: nowrap; }
+  .tdMono, .tdMuted { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); white-space: nowrap; }
+  .thActions { width: 40px; }
+  .filters { gap: var(--space-1); }
+  .filterBtn, .filterBtnView { padding: var(--space-1) var(--space-2); font-size: 11px; }
+}
+

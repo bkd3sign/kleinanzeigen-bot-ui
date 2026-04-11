@@ -1,0 +1,213 @@
+// Job Tracker Pill — matches legacy .jobTracker* styles exactly
+
+.tracker {
+  position: fixed;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  z-index: calc(var(--z-modal) - 50);
+}
+
+// Floating pill button
+.pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--border-color-hover);
+    color: var(--text-primary);
+  }
+}
+
+// Subtle glow pulse on entire pill when a job is running
+.pillRunning {
+  animation: pillGlow 2s ease-in-out infinite;
+}
+
+@keyframes pillGlow {
+  0%, 100% { box-shadow: var(--shadow-lg), 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+  50% { box-shadow: var(--shadow-lg), 0 0 10px 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
+// Pulsing dot
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.dotDone {
+  background: var(--green);
+  animation: none;
+}
+
+.dotFailed {
+  background: var(--red);
+  animation: none;
+}
+
+.dotWarning {
+  background: var(--yellow);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+// Expandable panel
+.panel {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  right: 0;
+  width: 360px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  animation: slideUp 200ms var(--ease-out);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panelTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.panelClose {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  padding: var(--space-1);
+  line-height: 1;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.panelList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+// Individual job row
+.item {
+  display: grid;
+  grid-template-columns: 76px 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  border-bottom: 1px solid var(--border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+
+}
+
+.itemBadge {
+  display: flex;
+}
+
+.itemInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemCmd {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.itemTime {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+// Footer
+.panelFooter {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-color);
+}
+
+.footerLink {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cancelBtn {
+  background: none;
+  border: none;
+  color: var(--red);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  padding: var(--space-1);
+  line-height: 1;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: var(--red-muted);
+  }
+}
+
+@media (max-width: 767px) {
+  .tracker {
+    bottom: var(--space-3);
+    right: var(--space-3);
+  }
+
+  .pill {
+    font-size: var(--font-size-xs);
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .panel {
+    width: calc(100vw - var(--space-6));
+    right: 0;
+  }
+}

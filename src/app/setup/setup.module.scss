@@ -1,0 +1,192 @@
+/* Setup wizard styles — matches legacy design exactly */
+
+.setupWizard {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 70vh;
+  padding: var(--space-6);
+}
+
+.setupWizardCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  max-width: 520px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Step indicator */
+
+.setupWizardSteps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.setupWizardStep {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-semibold);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 2px solid var(--border-color);
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+}
+
+.setupWizardStepActive {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.setupWizardStepDone {
+  background: var(--green);
+  color: white;
+  border-color: var(--green);
+}
+
+.setupWizardStepLine {
+  width: 40px;
+  height: 2px;
+  background: var(--border-color);
+  transition: background var(--transition-base);
+}
+
+.setupWizardStepLineDone {
+  background: var(--green);
+}
+
+/* Body & content */
+
+.setupWizardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Remove default margin-bottom from formGroup inside wizard body */
+.setupWizardBody > div {
+  margin-bottom: 0;
+}
+
+.setupWizardFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.setupWizardTitle {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+  margin: 0;
+  text-align: center;
+}
+
+.setupWizardDesc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.setupWizardBrand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+}
+
+.setupWizardBrandIcon {
+  width: 64px;
+  height: 64px;
+  background: var(--accent);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-bold);
+  color: var(--accent-text);
+}
+
+.setupWizardSuccess {
+  display: flex;
+  justify-content: center;
+}
+
+.setupWizardError {
+  padding: var(--space-3);
+  background: var(--red-muted);
+  border-radius: var(--radius-md);
+  color: var(--red);
+  font-size: var(--font-size-sm);
+}
+
+/* Action cards for the done step */
+
+.setupWizardActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.setupWizardActionCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  width: 100%;
+
+  &:hover {
+    border-color: var(--border-color-hover);
+    background: var(--bg-hover);
+  }
+}
+
+.setupWizardActionCardIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--accent-muted);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.setupWizardActionCardTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.setupWizardActionCardDesc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .setupWizardCard {
+    padding: var(--space-5);
+  }
+}

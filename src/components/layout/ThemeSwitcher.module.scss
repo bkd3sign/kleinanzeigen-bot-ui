@@ -1,0 +1,30 @@
+.label {
+  display: none;
+
+  @media (max-width: 767px) {
+    display: inline;
+  }
+}
+
+.icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.animating .icon {
+  animation: spinIn 500ms var(--ease-out);
+}
+
+@keyframes spinIn {
+  0% {
+    transform: rotate(-90deg) scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}

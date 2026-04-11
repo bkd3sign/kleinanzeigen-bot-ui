@@ -1,0 +1,33 @@
+// Skeleton component styles
+// Extracted from components.css .skeleton* classes
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+.skeletonText {
+  height: 14px;
+  margin-bottom: var(--space-2);
+}
+
+.skeletonTitle {
+  height: 20px;
+  width: 60%;
+  margin-bottom: var(--space-3);
+}
+
+.skeletonCard {
+  height: 120px;
+}
+
+.skeletonCircle {
+  border-radius: var(--radius-full);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

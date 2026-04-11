@@ -1,0 +1,60 @@
+// Shared SCSS mixins
+
+// Admin table base — used in UserList and InviteManager
+@mixin admin-table {
+  .tableWrapper {
+    overflow-x: auto;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .th {
+    padding: var(--space-2) var(--space-4);
+    text-align: left;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-medium);
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+
+  .thActions {
+    padding: var(--space-2) var(--space-4);
+    text-align: center;
+    width: 60px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-medium);
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .row {
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color var(--transition-fast);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background-color: var(--bg-hover);
+    }
+  }
+
+  .td {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    vertical-align: middle;
+  }
+
+  .tdActions {
+    padding: var(--space-3) var(--space-4);
+    text-align: center;
+    vertical-align: middle;
+  }
+}

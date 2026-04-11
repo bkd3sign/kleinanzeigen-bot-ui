@@ -1,0 +1,132 @@
+/* Category Picker - matches legacy categoryPicker styles */
+
+.wrapper {
+  position: relative;
+}
+
+.inputWrap {
+  position: relative;
+}
+
+.chevron {
+  position: absolute;
+  right: var(--space-3);
+  bottom: 10px;
+  pointer-events: none;
+  color: var(--text-muted);
+  display: block;
+}
+
+
+.dropdown {
+  position: absolute;
+  top: calc(100% - var(--space-6));
+  left: 0;
+  right: 0;
+  margin-top: var(--space-1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: var(--z-dropdown);
+}
+
+.group {
+  position: relative;
+}
+
+.groupLabel {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+}
+
+.itemHighlighted {
+  composes: item;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.itemSelected {
+  composes: item;
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+}
+
+.itemSelectedHighlighted {
+  composes: item;
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+}
+
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemId {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-left: var(--space-2);
+  flex-shrink: 0;
+}
+
+.empty {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 767px) {
+  .dropdown {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 60vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    margin-top: 0;
+  }
+
+  .item {
+    min-height: 44px;
+    padding: var(--space-3);
+  }
+}

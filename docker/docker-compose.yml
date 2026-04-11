@@ -1,0 +1,35 @@
+services:
+  kleinanzeigen-bot:
+    build: .
+    container_name: kleinanzeigen-bot
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3737}:3000"
+    volumes:
+      - .:/workspace
+    environment:
+      - BOT_CMD=/workspace/bot/kleinanzeigen-bot
+      - BOT_DIR=/workspace
+      - TZ=${TZ:-Europe/Berlin}
+    shm_size: "512m"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    cap_add:
+      - SYS_ADMIN
+    tmpfs:
+      - /tmp:size=1G,exec
+    security_opt:
+      - seccomp:unconfined
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/system/ping"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

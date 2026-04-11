@@ -1,0 +1,145 @@
+/* User List - matches legacy admin table with action menus */
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 500px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.th {
+  padding: var(--space-2) clamp(var(--space-2), 2vw, var(--space-4));
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+
+.thActions {
+  composes: th;
+  text-align: center;
+  width: 60px;
+}
+
+.row {
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color var(--transition-fast);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background-color: var(--bg-hover);
+}
+
+.td {
+  padding: var(--space-2) clamp(var(--space-2), 2vw, var(--space-4));
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.tdName {
+  composes: td;
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.tdActions {
+  composes: td;
+  text-align: center;
+  position: relative;
+}
+
+/* Action menu (3-dot) */
+.actionWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.actionBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  line-height: 1;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+}
+
+.loading {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-4);
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+/* Reset password banner */
+.resetBanner {
+  margin-top: var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.resetLabel {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.resetRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.resetInput {
+  flex: 1;
+  height: 36px;
+  padding: 4px 12px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+
+  &:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .table { table-layout: fixed; min-width: 0; }
+  .table colgroup { display: none; }
+  .table th:nth-child(1), .table td:nth-child(1) { width: 40%; }
+  .table th:nth-child(2), .table td:nth-child(2) { display: none; }
+  .table th:nth-child(3), .table td:nth-child(3) { width: auto; }
+  .thActions, .tdActions { width: 48px; }
+  .td, .th { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); }
+}

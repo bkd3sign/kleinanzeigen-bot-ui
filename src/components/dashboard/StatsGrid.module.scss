@@ -1,0 +1,66 @@
+// Stats grid matching legacy .dashboardStats layout
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-2);
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: clamp(var(--space-2), 2vw, var(--space-3)) clamp(var(--space-2), 3vw, var(--space-4));
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-base);
+  text-decoration: none;
+  color: inherit;
+  animation: cardSlideUp 350ms var(--ease-out) both;
+  // Scale stagger delay for more visible cascading effect
+  animation-delay: calc(var(--anim-delay, 0ms) * 1.4);
+
+  &:hover {
+    border-color: var(--border-color-hover);
+  }
+}
+
+.cardClickable {
+  composes: card;
+  cursor: pointer;
+}
+
+.cardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardValue {
+  font-size: clamp(var(--font-size-base), 3vw, var(--font-size-lg));
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+  line-height: 1;
+  margin-bottom: 2px;
+  letter-spacing: -0.02em;
+}
+
+.cardLabel {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+@media (max-width: 767px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cardValue {
+    font-size: var(--font-size-sm);
+  }
+
+  .cardLabel {
+    font-size: 10px;
+  }
+}
+

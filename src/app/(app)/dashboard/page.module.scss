@@ -1,0 +1,13 @@
+// Dashboard page layout matching legacy .dashboardAnalytics
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+@media (max-width: 640px) {
+  .dashboard {
+    gap: var(--space-4);
+  }
+}

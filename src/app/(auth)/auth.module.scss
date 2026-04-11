@@ -1,0 +1,89 @@
+/* Auth pages: login & register — centered card layout */
+
+.authPage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  padding: var(--space-4);
+}
+
+.authCard {
+  width: 100%;
+  max-width: 380px;
+  padding: var(--space-6);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  animation: cardSlideUp 400ms var(--ease-out) both;
+}
+
+.authLogo {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--accent-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-bold);
+  animation: bounceIn 500ms var(--ease-out) 80ms both, logoFloat 3s ease-in-out 600ms infinite;
+}
+
+.authTitle {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.authForm {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  animation: fadeIn 300ms var(--ease-out) 200ms both;
+}
+
+/* Remove default margin-bottom from formGroup inside auth forms */
+.authForm > div {
+  margin-bottom: 0;
+}
+
+.authSubmitBtn {
+  width: 100%;
+  margin-top: var(--space-4);
+}
+
+.authError {
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--red-muted);
+  border-radius: var(--radius-md);
+  color: var(--red);
+  font-size: var(--font-size-sm);
+  animation: shake 400ms var(--ease-out), errorSlideIn 250ms var(--ease-out);
+}
+
+.authMessage {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.authLink {
+  color: var(--accent);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
