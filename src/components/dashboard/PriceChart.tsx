@@ -3,6 +3,7 @@
 import { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AdListItem } from '@/types/ad';
+import { projectReposts, getCurrentPrice } from '@/lib/ads/pricing';
 import styles from './PriceChart.module.scss';
 
 interface PriceChartProps {
@@ -28,44 +29,34 @@ interface PricePoint {
   date: string | null;
 }
 
-/** Calculate projected price sequence for an ad with auto price reduction. */
-function projectPrices(ad: AdListItem): PricePoint[] {
-  const apr = ad.auto_price_reduction;
-  if (!apr || !apr.enabled) return [];
-  const startPrice = ad.price || 0;
-  const minPrice = apr.min_price || 0;
-  const startRepost = ad.repost_count || 0;
-  const interval = ad.republication_interval || 7;
-  const baseDate = ad.created_on ? new Date(ad.created_on) : null;
-  const validBase = baseDate && !isNaN(baseDate.getTime()) ? baseDate : null;
+const formatDate = (d: Date) =>
+  d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-  const formatDate = (d: Date) =>
-    d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+/** Build chart points from shared projectReposts(), starting at current effective price. */
+function buildChartPoints(ad: AdListItem): PricePoint[] {
+  const projections = projectReposts(ad);
+  if (projections.length === 0) return [];
 
-  const getDate = (repostIdx: number): string | null => {
-    if (!validBase) return null;
-    return formatDate(new Date(validBase.getTime() + repostIdx * interval * 86400000));
-  };
+  const currentPrice = getCurrentPrice(ad) ?? ad.price ?? 0;
+  const startRepost = ad.repost_count ?? 0;
 
-  const points: PricePoint[] = [{ repost: startRepost, price: startPrice, date: getDate(startRepost) }];
-  let price = startPrice;
-  let repost = startRepost;
+  // Start point = current state
+  const points: PricePoint[] = [{
+    repost: startRepost,
+    price: currentPrice,
+    date: null,
+  }];
 
-  for (let i = 0; i < 50; i++) {
-    repost++;
-    if (apr.strategy === 'PERCENTAGE') {
-      price = price * (1 - (apr.amount || 0) / 100);
-    } else {
-      price = price - (apr.amount || 0);
-    }
-    price = Math.round(price);
-    if (price <= minPrice) {
-      price = minPrice;
-      points.push({ repost, price, date: getDate(repost) });
-      break;
-    }
-    points.push({ repost, price, date: getDate(repost) });
+  // Add future projections only
+  for (const step of projections) {
+    if (step.isPast) continue;
+    points.push({
+      repost: step.repostNumber,
+      price: step.price,
+      date: formatDate(step.date),
+    });
   }
+
   return points;
 }
 
@@ -95,7 +86,7 @@ export const PriceChart = memo(function PriceChart({ ads }: PriceChartProps) {
 
     return aprAds.map((ad) => ({
       ad,
-      points: projectPrices(ad),
+      points: buildChartPoints(ad),
     }));
   }, [ads]);
 

@@ -383,7 +383,7 @@ export function AutomationPage() {
                   <span className={styles.detailValue}>{formatDate(schedule.last_run)}</span>
                   {schedule.last_status && (
                     <Badge variant={statusBadgeVariant(schedule.last_status)}>
-                      {schedule.last_status === 'completed' ? 'OK' : schedule.last_status === 'completed_with_errors' ? 'Mit Fehlern' : schedule.last_status === 'mfa_required' ? 'MFA' : schedule.last_status === 'failed' ? 'Fehler' : '–'}
+                      {schedule.last_status === 'completed' ? 'OK' : schedule.last_status === 'completed_with_errors' ? 'with errors' : schedule.last_status === 'mfa_required' ? 'MFA' : schedule.last_status === 'failed' ? 'failed' : '–'}
                     </Badge>
                   )}
                 </div>

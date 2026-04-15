@@ -27,16 +27,18 @@ describe('getNextRepubDate', () => {
     expect(getNextRepubDate(makeAd({ updated_on: 'not-a-date', republication_interval: 7 }))).toBeNull();
   });
 
-  it('calculates from updated_on + interval', () => {
+  it('calculates from updated_on + interval + 1 (bot uses strict greater-than)', () => {
     const ad = makeAd({ updated_on: '2026-01-01T00:00:00Z', republication_interval: 7 });
     const result = getNextRepubDate(ad);
-    expect(result).toEqual(new Date('2026-01-08T00:00:00Z'));
+    // Bot: ad_age.days > 7 → earliest at day 8 → Jan 1 + 8 = Jan 9
+    expect(result).toEqual(new Date('2026-01-09T00:00:00Z'));
   });
 
   it('falls back to created_on when no updated_on', () => {
     const ad = makeAd({ created_on: '2026-03-10T12:00:00Z', republication_interval: 14 });
     const result = getNextRepubDate(ad);
-    expect(result).toEqual(new Date('2026-03-24T12:00:00Z'));
+    // Mar 10 + 15d = Mar 25
+    expect(result).toEqual(new Date('2026-03-25T12:00:00Z'));
   });
 
   it('prefers updated_on over created_on', () => {
@@ -46,7 +48,8 @@ describe('getNextRepubDate', () => {
       republication_interval: 7,
     });
     const result = getNextRepubDate(ad);
-    expect(result).toEqual(new Date('2026-02-08T00:00:00Z'));
+    // Feb 1 + 8d = Feb 9
+    expect(result).toEqual(new Date('2026-02-09T00:00:00Z'));
   });
 });
 

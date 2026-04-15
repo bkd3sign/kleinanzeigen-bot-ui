@@ -10,7 +10,7 @@
 extensions:
   - name: Shipping Dialog Fix
     file: shipping-dialog-fix.js
-    enabled: true
+    enabled: false
     description: >
       Fixes broken element selectors in the shipping dialog after
       Kleinanzeigen's 2026 site redesign. Patches radio button IDs

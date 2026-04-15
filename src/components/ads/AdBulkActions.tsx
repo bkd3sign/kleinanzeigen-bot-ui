@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { useDeleteAdByFile } from '@/hooks/useAds';
 import { Button, showConfirm, useToast } from '@/components/ui';
@@ -110,7 +111,9 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
 
   const count = selectedFiles.size;
 
-  return (
+  // Portal to document.body so position:fixed works correctly.
+  // The AppShell <main> has animPageEnter with transform which breaks fixed positioning.
+  return createPortal(
     <div className={styles.bar}>
       <div className={styles.barInner}>
         <span className={styles.count}>
@@ -134,6 +137,7 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

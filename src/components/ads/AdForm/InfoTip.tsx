@@ -1,42 +1,74 @@
 'use client';
 
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './AdForm.module.scss';
 
 /**
- * Small (i) info icon with tooltip on hover/click.
- * Matches the legacy data-tooltip pattern.
+ * Small (i) info icon with portal-based tooltip on hover/click.
+ * Uses position: fixed via portal to avoid overflow clipping and z-index issues.
+ * Clamps to viewport edges so text is never cut off on mobile.
  */
 export function InfoTip({ text }: { text: string }) {
   const [show, setShow] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const iconRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
 
-  // Close on outside click
+  const updatePos = useCallback(() => {
+    if (!iconRef.current) return;
+    const rect = iconRef.current.getBoundingClientRect();
+    setPos({
+      top: rect.top - 6,
+      left: rect.left + rect.width / 2,
+    });
+  }, []);
+
+  // Clamp tooltip to viewport after render
   useEffect(() => {
-    if (!show) return;
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setShow(false);
-      }
-    };
-    document.addEventListener('click', close, true);
-    return () => document.removeEventListener('click', close, true);
-  }, [show]);
+    if (!show || !tipRef.current || !pos) return;
+    const tip = tipRef.current;
+    const tipRect = tip.getBoundingClientRect();
+    const pad = 8;
+
+    let adjustedLeft = pos.left;
+    if (tipRect.left < pad) {
+      adjustedLeft = pos.left + (pad - tipRect.left);
+    } else if (tipRect.right > window.innerWidth - pad) {
+      adjustedLeft = pos.left - (tipRect.right - window.innerWidth + pad);
+    }
+
+    if (adjustedLeft !== pos.left) {
+      setPos(prev => prev ? { ...prev, left: adjustedLeft } : prev);
+    }
+  }, [show, pos]);
+
+  const open = () => { updatePos(); setShow(true); };
+  const close = () => setShow(false);
 
   return (
     <span
-      ref={ref}
+      ref={iconRef}
       className={styles.infoTip}
-      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShow(!show); }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); show ? close() : open(); }}
+      onMouseEnter={open}
+      onMouseLeave={close}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
         <line x1="12" y1="16" x2="12" y2="12" />
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
-      {show && <span className={styles.infoTipText}>{text}</span>}
+      {show && pos && createPortal(
+        <span
+          ref={tipRef}
+          className={styles.infoTipText}
+          style={{ top: pos.top, left: pos.left }}
+        >
+          {text}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }

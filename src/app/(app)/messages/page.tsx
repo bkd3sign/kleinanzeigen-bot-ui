@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useMessagingStatus, useConversations, useResponderStatus } from '@/hooks/useMessages';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMessagingStatus, useConversations, useResponderStatus, useSubmitMessagingMfa, usePrepareMessagingMfa, useStartMessaging } from '@/hooks/useMessages';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
 import { Spinner, EmptyState, Badge } from '@/components/ui';
 import { ConversationList } from '@/components/messages/ConversationList';
 import { ChatView } from '@/components/messages/ChatView';
+import { MfaCodeInput } from '@/components/bot/MfaCodeInput';
 import styles from '@/components/messages/Messages.module.scss';
+import bannerStyles from '@/components/bot/MfaBanner.module.scss';
 
 const STATUS_MESSAGES: Record<string, string> = {
   starting: 'Browser wird gestartet...',
@@ -14,14 +17,78 @@ const STATUS_MESSAGES: Record<string, string> = {
   not_started: 'Messaging wird initialisiert...',
 };
 
-function StatusView({ status, error }: { status: string; error?: string }) {
-  const isLoading = status === 'starting' || status === 'logging_in' || status === 'not_started';
+function MfaView() {
+  const mfa = useSubmitMessagingMfa();
+  const prepare = usePrepareMessagingMfa();
 
-  if (isLoading) {
+  const handleSubmit = useCallback(async (code: string) => {
+    mfa.mutate(code);
+  }, [mfa]);
+
+  const handlePrepare = useCallback(async () => {
+    prepare.mutate();
+  }, [prepare]);
+
+  return (
+    <div className={styles.mfaContainer}>
+      <MfaCodeInput
+        title="MFA-Code erforderlich"
+        description="Kleinanzeigen verlangt einen Bestätigungscode. Bitte hier eingeben."
+        onSubmit={handleSubmit}
+        onPrepare={handlePrepare}
+        submitPending={mfa.isPending}
+        preparePending={prepare.isPending}
+      />
+    </div>
+  );
+}
+
+function BrowserlessBanner({ botCommand }: { botCommand?: string | null }) {
+  return (
+    <div className={styles.browserlessBanner}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="16" x2="12" y2="12" />
+        <line x1="12" y1="8" x2="12.01" y2="8" />
+      </svg>
+      <span>
+        {botCommand
+          ? `Bot führt „${botCommand}" aus… Nachrichten werden weiter beantwortet.`
+          : 'Bot belegt den Browser. Nachrichten werden weiter beantwortet.'}
+      </span>
+    </div>
+  );
+}
+
+function LoginView() {
+  const start = useStartMessaging();
+
+  return (
+    <div className={styles.statusCenter}>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }}>
+        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+      </svg>
+      <p className={styles.statusText}>
+        Mit Kleinanzeigen verbinden um Nachrichten zu lesen und zu beantworten.
+      </p>
+      <button
+        className={bannerStyles.btn}
+        onClick={() => start.mutate()}
+        disabled={start.isPending}
+        style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2) var(--space-6)' }}
+      >
+        {start.isPending ? 'Wird verbunden…' : 'Anmelden'}
+      </button>
+    </div>
+  );
+}
+
+function StatusView({ status, error }: { status: string; error?: string }) {
+  if (status === 'starting' || status === 'logging_in') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-10)', gap: 'var(--space-4)' }}>
+      <div className={styles.statusCenter}>
         <Spinner size="lg" />
-        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>
+        <p className={styles.statusText}>
           {STATUS_MESSAGES[status] || 'Verbindung wird hergestellt...'}
         </p>
       </div>
@@ -29,7 +96,7 @@ function StatusView({ status, error }: { status: string; error?: string }) {
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
+    <div className={styles.statusCenterRow}>
       <EmptyState
         icon={
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -89,11 +156,20 @@ function AiUpsellBanner() {
   );
 }
 
-function InboxView() {
+function InboxView({ botCommand }: { botCommand?: string | null }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(25);
   const { data: responder } = useResponderStatus();
   const listEndRef = useRef<HTMLDivElement>(null);
+
+  // When conversations fail (e.g. session expired), re-check messaging status
+  // so MessagesPage switches back to LoginView instead of stuck on error
+  useEffect(() => {
+    if (error) {
+      queryClient.invalidateQueries({ queryKey: ['messaging-status'] });
+    }
+  }, [error, queryClient]);
 
   const pendingConversationIds = useMemo(() => new Set(
     responder?.pendingReplies?.filter(p => p.status === 'pending').map(p => p.conversationId) ?? [],
@@ -156,6 +232,7 @@ function InboxView() {
         </div>
 
         <AiUpsellBanner />
+        {botCommand !== undefined && <BrowserlessBanner botCommand={botCommand} />}
 
         {conversations.length === 0 ? (
           <EmptyState
@@ -207,9 +284,31 @@ function InboxView() {
 
 export default function MessagesPage() {
   const { data: status, isLoading } = useMessagingStatus();
+  const { data: responder } = useResponderStatus();
 
   if (isLoading || !status) {
-    return <StatusView status="not_started" />;
+    return <LoginView />;
+  }
+
+  // No session or failed session — show login button
+  if (status.status === 'not_started' || status.status === 'error') {
+    return <LoginView />;
+  }
+
+  // MFA required — global MfaOverlay handles this when KI is active (auto/review),
+  // so only show inline MfaView when KI is off
+  const kiActive = responder?.mode === 'auto' || responder?.mode === 'review';
+  if (status.status === 'awaiting_mfa' && !kiActive) {
+    return <MfaView />;
+  }
+
+  // Browserless mode — bot is running, API calls work only if we had a session before
+  if (status.status === 'browserless') {
+    if (!status.userId) {
+      // Never had a session — can't load conversations without cookies
+      return <StatusView status="starting" error={status.botCommand ? `Bot führt „${status.botCommand}" aus… Messaging startet danach automatisch.` : 'Bot läuft — Messaging startet nach Abschluss.'} />;
+    }
+    return <InboxView botCommand={status.botCommand} />;
   }
 
   if (status.status !== 'ready') {

@@ -7,7 +7,13 @@ import '@/styles/globals.css';
 import type { Viewport } from 'next';
 
 export const metadata = {
-  title: 'Kleinanzeigen Bot',
+  title: 'Kleinanzeigen Bot UI',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/favicon.svg',
+  },
 };
 
 export const viewport: Viewport = {

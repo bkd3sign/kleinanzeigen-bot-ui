@@ -208,7 +208,7 @@ function WelcomeStep({ onStart }: { onStart: () => void }) {
       <div className={styles.setupWizardBrand}>
         <div className={styles.setupWizardBrandIcon}>K</div>
       </div>
-      <h1 className={styles.setupWizardTitle}>Willkommen beim Kleinanzeigen Bot</h1>
+      <h1 className={styles.setupWizardTitle}>Willkommen beim Kleinanzeigen Bot UI</h1>
       <p className={styles.setupWizardDesc}>
         In wenigen Schritten richtest du deinen Bot ein. Du brauchst deine
         Kleinanzeigen-Zugangsdaten und optional deine Kontaktdaten für Anzeigen.
@@ -300,7 +300,7 @@ function DoneStep({ router, toast, hasAiKey }: DoneStepProps) {
       </div>
       <h2 className={styles.setupWizardTitle}>Einrichtung abgeschlossen!</h2>
       <p className={styles.setupWizardDesc}>
-        Dein Kleinanzeigen Bot ist einsatzbereit. Was möchtest du als Erstes tun?
+        Dein Kleinanzeigen Bot UI ist einsatzbereit. Was möchtest du als Erstes tun?
       </p>
 
       <div className={styles.setupWizardActions}>

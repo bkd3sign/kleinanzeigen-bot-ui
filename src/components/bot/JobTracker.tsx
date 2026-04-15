@@ -23,7 +23,7 @@ const FILTERS: FilterDef[] = [
   { label: 'Laufend', value: 'running' },
   { label: 'Wartend', value: 'queued' },
   { label: 'Abgeschlossen', value: 'completed' },
-  { label: 'Mit Fehlern', value: 'completed_with_errors' },
+  { label: 'with errors', value: 'completed_with_errors' },
   { label: 'Fehlgeschlagen', value: 'failed' },
   { label: 'MFA ausstehend', value: 'mfa_required' },
   { label: 'Automatisierung', value: 'scheduled', view: true },
@@ -177,7 +177,7 @@ export function JobTracker() {
                     <td className={styles.td}>
                       {s.last_status ? (
                         <Badge variant={statusVariant(s.last_status)}>
-                          {s.last_status === 'completed' ? 'OK' : s.last_status === 'completed_with_errors' ? 'Mit Fehlern' : s.last_status === 'mfa_required' ? 'MFA' : 'Fehler'}
+                          {s.last_status === 'completed' ? 'OK' : s.last_status === 'completed_with_errors' ? 'with errors' : s.last_status === 'mfa_required' ? 'MFA' : 'Fehler'}
                         </Badge>
                       ) : '–'}
                     </td>
@@ -229,9 +229,9 @@ export function JobTracker() {
                   <td className={styles.td}>
                     <Badge variant={statusVariant(job.status)}>
                       {job.status === 'mfa_required'
-                        ? 'MFA erforderlich'
+                        ? 'mfa required'
                         : job.status === 'completed_with_errors'
-                          ? 'Mit Fehlern'
+                          ? 'with errors'
                           : job.status === 'queued' && job.queue_position
                             ? `Wartend (#${job.queue_position})`
                             : job.status}
@@ -380,7 +380,7 @@ function KiMessagingTable() {
           <tr>
             <th className={styles.th}>Benutzer</th>
             <th className={styles.th}>KI-Modus</th>
-            <th className={styles.th}>Browser</th>
+            <th className={styles.th}>Nachrichten</th>
             <th className={`${styles.th} ${styles.hideMobile}`}>Letzter Poll</th>
             <th className={styles.th}>Ausstehend</th>
             <th className={styles.th}>KI-Antworten</th>
@@ -402,8 +402,20 @@ function KiMessagingTable() {
                 )}
               </td>
               <td className={styles.td}>
-                <Badge variant={u.messaging.sessionStatus === 'ready' ? 'success' : u.messaging.sessionStatus === 'error' ? 'danger' : (u.messaging.mode === 'off' || u.messaging.sessionStatus === 'not_started') ? 'muted' : 'warning'}>
-                  {u.messaging.sessionStatus === 'ready' ? 'An' : u.messaging.sessionStatus === 'error' ? 'Fehler' : u.messaging.sessionStatus === 'starting' || u.messaging.sessionStatus === 'logging_in' ? 'Startet' : '–'}
+                <Badge variant={
+                  u.messaging.sessionStatus === 'ready' ? 'success'
+                  : u.messaging.sessionStatus === 'error' ? 'danger'
+                  : u.messaging.sessionStatus === 'awaiting_mfa' ? 'warning'
+                  : u.messaging.sessionStatus === 'browserless' ? 'info'
+                  : (u.messaging.mode === 'off' || u.messaging.sessionStatus === 'not_started') ? 'muted'
+                  : 'warning'
+                }>
+                  {u.messaging.sessionStatus === 'ready' ? (u.messaging.running ? 'Aktiv' : 'Bereit')
+                  : u.messaging.sessionStatus === 'error' ? 'Fehler'
+                  : u.messaging.sessionStatus === 'awaiting_mfa' ? 'MFA'
+                  : u.messaging.sessionStatus === 'browserless' ? 'Bot läuft'
+                  : u.messaging.sessionStatus === 'starting' || u.messaging.sessionStatus === 'logging_in' ? 'Startet'
+                  : 'Aus'}
                 </Badge>
               </td>
               <td className={`${styles.td} ${styles.hideMobile}`} style={{ whiteSpace: 'nowrap' }}>

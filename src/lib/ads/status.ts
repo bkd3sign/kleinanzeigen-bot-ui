@@ -11,14 +11,17 @@ const EXPIRY_WARNING_DAYS = 7;
 /**
  * Calculate the next republication date for an ad.
  * Uses updated_on (last publish/update) as base, falls back to created_on.
- * Returns base + republication_interval days — the date when the ad is next due.
+ *
+ * Bot logic: `if ad_age.days <= interval: SKIP` — the ad is only published
+ * when `ad_age.days > interval`, i.e. at least `interval + 1` full days.
+ * So the earliest next publish is `base + (interval + 1) days`.
  */
 export function getNextRepubDate(ad: AdListItem): Date | null {
   const baseDate = ad.updated_on || ad.created_on;
   if (!baseDate || !ad.republication_interval) return null;
   const base = new Date(baseDate);
   if (isNaN(base.getTime())) return null;
-  return new Date(base.getTime() + ad.republication_interval * DAY_MS);
+  return new Date(base.getTime() + (ad.republication_interval + 1) * DAY_MS);
 }
 
 /**

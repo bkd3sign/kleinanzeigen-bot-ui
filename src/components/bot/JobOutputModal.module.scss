@@ -30,6 +30,17 @@
   word-break: break-all;
 }
 
+.metaLink {
+  all: unset;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--accent);
+  cursor: pointer;
+
+  &:hover { text-decoration: underline; }
+  &:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
+}
+
 // Output pre block
 .output {
   max-height: 400px;

@@ -1,5 +1,6 @@
 'use client';
 
+import { toLocalISO } from '@/lib/format-date';
 import { CollapsibleSection } from './AdForm';
 import styles from './AdForm.module.scss';
 
@@ -42,7 +43,11 @@ export function BotInfoSection({ botInfo }: BotInfoSectionProps) {
             >
               <span className={styles.botInfoLabel}>{field.label}</span>
               <span className={styles.botInfoValue}>
-                {value != null ? String(value) : '–'}
+                {value != null
+                  ? (field.key === 'created_on' || field.key === 'updated_on')
+                    ? toLocalISO(String(value))
+                    : String(value)
+                  : '–'}
               </span>
             </div>
           );

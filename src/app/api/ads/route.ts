@@ -1,57 +1,13 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 import { adCreateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
 import { readMergedConfig } from '@/lib/yaml/config';
 import { readLastDownloadAll } from '@/lib/bot/hooks';
 import { getFirstImage } from '@/lib/images/resolve';
+import { computeContentHash } from '@/lib/ads/content-hash';
 import path from 'path';
-
-// Compute content hash matching the bot's algorithm
-// Excludes metadata fields, prunes empty containers, JSON-serializes with sorted keys
-const METADATA_FIELDS = new Set(['id', 'created_on', 'updated_on', 'content_hash', 'repost_count', 'price_reduction_count', 'file']);
-
-function prune(obj: unknown): unknown {
-  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-    const result: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) continue;
-      if (Array.isArray(v) && v.length === 0) continue;
-      result[k] = prune(v);
-    }
-    return result;
-  }
-  if (Array.isArray(obj)) {
-    return obj.filter((v) => !(v && typeof v === 'object' && Object.keys(v).length === 0)).map(prune);
-  }
-  return obj;
-}
-
-/** JSON.stringify with recursively sorted keys matching Python json.dumps(sort_keys=True).
- *  Python default separators are (', ', ': ') — space after comma and colon. */
-function stableStringify(obj: unknown): string {
-  if (obj === null || obj === undefined) return 'null';
-  if (typeof obj !== 'object') return JSON.stringify(obj);
-  if (Array.isArray(obj)) {
-    return '[' + obj.map(stableStringify).join(', ') + ']';
-  }
-  const sorted = Object.keys(obj as Record<string, unknown>).sort();
-  return '{' + sorted.map((k) => JSON.stringify(k) + ': ' + stableStringify((obj as Record<string, unknown>)[k])).join(', ') + '}';
-}
-
-function computeContentHash(ad: Record<string, unknown>): string {
-  const raw: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(ad)) {
-    if (METADATA_FIELDS.has(k)) continue;
-    if (v === null || v === undefined) continue;
-    raw[k] = v;
-  }
-  const pruned = prune(raw) as Record<string, unknown>;
-  const json = stableStringify(pruned);
-  return crypto.createHash('sha256').update(json).digest('hex');
-}
 
 export async function GET(request: NextRequest) {
   try {

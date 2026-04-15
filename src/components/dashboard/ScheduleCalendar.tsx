@@ -4,6 +4,7 @@ import { memo, useMemo } from 'react';
 import Link from 'next/link';
 import type { AdListItem } from '@/types/ad';
 import { getNextRepubDate, getExpiryDate } from '@/lib/ads/status';
+import { projectReposts } from '@/lib/ads/pricing';
 import styles from './ScheduleCalendar.module.scss';
 
 interface ScheduleCalendarProps {
@@ -21,9 +22,38 @@ function isSameDay(d1: Date, d2: Date): boolean {
   );
 }
 
+interface RepubItem {
+  ad: AdListItem;
+  type: 'repub';
+  priceChange?: string | null;
+}
+
+interface ExpiryItem {
+  ad: AdListItem;
+  type: 'expiry';
+}
+
+type DayItem = RepubItem | ExpiryItem;
+
 interface DayBucket {
   date: Date;
-  items: Array<{ ad: AdListItem; type: 'repub' | 'expiry' }>;
+  items: DayItem[];
+}
+
+/** Build a price-change label for a repost date if a reduction will apply. */
+function getPriceChangeForDate(ad: AdListItem, repostDate: Date): string | null {
+  const projections = projectReposts(ad, 10);
+  if (projections.length === 0) return null;
+
+  for (const step of projections) {
+    if (step.isPast) continue;
+    if (isSameDay(step.date, repostDate) && step.reducedBy != null) {
+      // Find previous price
+      const prevPrice = step.price + step.reducedBy;
+      return `${prevPrice} € → ${step.price} €`;
+    }
+  }
+  return null;
 }
 
 export const ScheduleCalendar = memo(function ScheduleCalendar({ ads }: ScheduleCalendarProps) {
@@ -51,7 +81,8 @@ export const ScheduleCalendar = memo(function ScheduleCalendar({ ads }: Schedule
       while (repub <= windowEnd) {
         for (const day of buckets) {
           if (isSameDay(repub, day.date)) {
-            day.items.push({ ad, type: 'repub' });
+            const priceChange = getPriceChangeForDate(ad, day.date);
+            day.items.push({ ad, type: 'repub', priceChange });
             break;
           }
         }
@@ -97,20 +128,27 @@ export const ScheduleCalendar = memo(function ScheduleCalendar({ ads }: Schedule
                   month: '2-digit',
                 })}
               </div>
-              {day.items.map(({ ad, type }) => (
-                <Link
-                  key={`${type}-${ad.file}`}
-                  href={`/ads/edit?file=${encodeURIComponent(ad.file)}`}
-                  className={`${styles.chip} ${type === 'expiry' ? styles.chipExpiry : styles.chipRepub}`}
-                  title={
-                    type === 'expiry'
-                      ? `Ablauf: ${ad.title || ''}`
-                      : `Republizierung: ${ad.title || ''}`
-                  }
-                >
-                  {type === 'expiry' ? `Abl: ${ad.title || 'Unbenannt'}` : `Rep: ${ad.title || 'Unbenannt'}`}
-                </Link>
-              ))}
+              {day.items.map((item) => {
+                const { ad, type } = item;
+                const priceChange = type === 'repub' ? item.priceChange : null;
+                return (
+                  <Link
+                    key={`${type}-${ad.file}`}
+                    href={`/ads/edit?file=${encodeURIComponent(ad.file)}`}
+                    className={`${styles.chip} ${type === 'expiry' ? styles.chipExpiry : styles.chipRepub}`}
+                    title={
+                      type === 'expiry'
+                        ? `Ablauf: ${ad.title || ''}`
+                        : `Republizierung: ${ad.title || ''}${priceChange ? ` (${priceChange})` : ''}`
+                    }
+                  >
+                    {type === 'expiry'
+                      ? `Abl: ${ad.title || 'Unbenannt'}`
+                      : <>Rep: {ad.title || 'Unbenannt'}{priceChange && <span className={styles.chipPrice}> ({priceChange})</span>}</>
+                    }
+                  </Link>
+                );
+              })}
             </div>
           );
         })}

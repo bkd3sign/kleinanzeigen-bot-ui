@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useConversation, useSendMessage, useResponderStatus, useResponderControl } from '@/hooks/useMessages';
 import { Spinner, Button } from '@/components/ui';
 import type { Message } from '@/types/message';
@@ -115,11 +116,19 @@ function MessageBubble({ message, isAiSent }: { message: Message; isAiSent?: boo
 }
 
 export function ChatView({ conversationId, onBack }: ChatViewProps) {
-  const { data: conv, isLoading } = useConversation(conversationId);
+  const queryClient = useQueryClient();
+  const { data: conv, isLoading, error } = useConversation(conversationId);
   const sendMessage = useSendMessage();
   const [draft, setDraft] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // When conversation fetch fails (e.g. session expired), re-check messaging status
+  useEffect(() => {
+    if (error) {
+      queryClient.invalidateQueries({ queryKey: ['messaging-status'] });
+    }
+  }, [error, queryClient]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {

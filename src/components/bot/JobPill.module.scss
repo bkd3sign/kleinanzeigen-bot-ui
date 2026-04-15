@@ -145,6 +145,9 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-medium);
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .itemTime {

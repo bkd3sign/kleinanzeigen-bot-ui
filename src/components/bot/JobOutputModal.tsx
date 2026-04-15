@@ -1,11 +1,12 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import { useJob } from '@/hooks/useJobs';
+import { useJob, useCancelJob, useRepeatJob } from '@/hooks/useJobs';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal, Badge, Spinner } from '@/components/ui';
 import { MfaBanner } from './MfaBanner';
 import { jobModalState } from '@/lib/bot/job-modal-state';
+import { toLocalISO } from '@/lib/format-date';
 import styles from './JobOutputModal.module.scss';
 
 interface JobOutputModalProps {
@@ -25,8 +26,12 @@ function statusVariant(status: string): 'success' | 'danger' | 'running' | 'warn
 export function JobOutputModal({ jobId, onClose }: JobOutputModalProps) {
   const { data: job, isLoading } = useJob(jobId);
   const { user } = useAuth();
+  const cancelJob = useCancelJob();
+  const repeatJob = useRepeatJob();
   const preRef = useRef<HTMLPreElement>(null);
   const isAdmin = user?.role === 'admin';
+  const isRunning = job?.status === 'running' || job?.status === 'queued';
+  const isFinished = job?.status === 'completed' || job?.status === 'completed_with_errors' || job?.status === 'failed';
 
   // Signal to MfaOverlay that a job modal is open
   useEffect(() => {
@@ -60,17 +65,17 @@ export function JobOutputModal({ jobId, onClose }: JobOutputModalProps) {
             <span className={styles.metaLabel}>Status</span>
             <span className={styles.metaValue}>
               <Badge variant={statusVariant(job.status)}>
-                {job.status === 'mfa_required' ? 'MFA erforderlich' : job.status === 'completed_with_errors' ? 'Mit Fehlern' : job.status}
+                {job.status === 'mfa_required' ? 'mfa required' : job.status === 'completed_with_errors' ? 'with errors' : job.status}
               </Badge>
             </span>
 
             <span className={styles.metaLabel}>Gestartet</span>
-            <span className={styles.metaValue}>{job.started_at}</span>
+            <span className={styles.metaValue}>{toLocalISO(job.started_at)}</span>
 
             {job.finished_at && (
               <>
                 <span className={styles.metaLabel}>Beendet</span>
-                <span className={styles.metaValue}>{job.finished_at}</span>
+                <span className={styles.metaValue}>{toLocalISO(job.finished_at)}</span>
               </>
             )}
 
@@ -101,6 +106,35 @@ export function JobOutputModal({ jobId, onClose }: JobOutputModalProps) {
               <>
                 <span className={styles.metaLabel}>Exit Code</span>
                 <span className={styles.metaValue}>{job.exit_code}</span>
+              </>
+            )}
+
+            {isRunning && (
+              <>
+                <span className={styles.metaLabel}>Aktion</span>
+                <span className={styles.metaValue}>
+                  <button
+                    className={styles.metaLink}
+                    disabled={cancelJob.isPending}
+                    onClick={() => cancelJob.mutate(jobId)}
+                  >
+                    {cancelJob.isPending ? 'Wird abgebrochen…' : 'Abbrechen'}
+                  </button>
+                </span>
+              </>
+            )}
+            {isFinished && (
+              <>
+                <span className={styles.metaLabel}>Aktion</span>
+                <span className={styles.metaValue}>
+                  <button
+                    className={styles.metaLink}
+                    disabled={repeatJob.isPending}
+                    onClick={() => { repeatJob.mutate(jobId); onClose(); }}
+                  >
+                    {repeatJob.isPending ? 'Wird gestartet…' : 'Wiederholen'}
+                  </button>
+                </span>
               </>
             )}
           </div>

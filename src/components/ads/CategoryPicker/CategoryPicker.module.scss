@@ -20,7 +20,7 @@
 
 .dropdown {
   position: absolute;
-  top: calc(100% - var(--space-6));
+  top: calc(100% - 7px);
   left: 0;
   right: 0;
   margin-top: var(--space-1);
@@ -115,18 +115,15 @@
 
 @media (max-width: 767px) {
   .dropdown {
-    position: fixed;
-    top: auto;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    max-height: 60vh;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    margin-top: 0;
+    max-height: 50vh;
   }
 
   .item {
     min-height: 44px;
     padding: var(--space-3);
+  }
+
+  .itemId {
+    display: none;
   }
 }

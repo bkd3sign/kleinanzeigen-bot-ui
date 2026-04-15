@@ -5,6 +5,8 @@ import { useFormContext } from 'react-hook-form';
 import { Input, Select, Toggle } from '@/components/ui';
 import { CollapsibleSection } from './AdForm';
 import { InfoTip } from './InfoTip';
+import { projectReposts, getCurrentPrice, type RepostProjection, type DelayReason } from '@/lib/ads/pricing';
+import type { AdListItem } from '@/types/ad';
 import type { AdCreateInput } from '@/validation/schemas';
 import styles from './AdForm.module.scss';
 
@@ -14,7 +16,16 @@ const STRATEGY_OPTIONS = [
   { value: 'FIXED', label: 'Fester Betrag' },
 ];
 
-export function PriceReductionSection({ reductionCount = 0, createdOn }: { reductionCount?: number; createdOn?: string | null }) {
+interface BotInfo {
+  id?: string | number | null;
+  created_on?: string | null;
+  updated_on?: string | null;
+  content_hash?: string | null;
+  repost_count?: number | null;
+  price_reduction_count?: number | null;
+}
+
+export function PriceReductionSection({ botInfo }: { botInfo?: BotInfo }) {
   const { register, watch, setValue } = useFormContext<AdCreateInput>();
 
   const aprEnabled = watch('auto_price_reduction.enabled') ?? false;
@@ -45,14 +56,14 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
       }
     >
       <Input
-        label={<>Republication-Intervall (Tage) <InfoTip text="Alle N Tage wird die Anzeige automatisch neu eingestellt" /></>}
+        label={<>Republication-Intervall (Tage) <InfoTip text="Anzeige wird neu eingestellt, wenn mehr als N volle Tage seit dem letzten Publish vergangen sind. Beispiel: Bei 7 wird frühestens nach 8 Kalendertagen repostet, weil der Bot auf ganze Tage abrundet und auf strikt-größer prüft." /></>}
         type="number"
         min="1"
         placeholder="z.B. 7"
         {...register('republication_interval', { valueAsNumber: true })}
       />
       <Toggle
-        label={<>Preisreduktion aktiviert <InfoTip text="Preis automatisch senken bei Republication" /></>}
+        label={<>Preisreduktion aktiviert <InfoTip text="Senkt den Preis automatisch bei jedem Repost. Der erste Repost ändert den Preis nie — die Reduktion beginnt erst ab dem zweiten Repost." /></>}
         checked={aprEnabled}
         onChange={(checked) => setValue('auto_price_reduction.enabled', checked, { shouldDirty: true })}
       />
@@ -61,12 +72,12 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
         <>
           <div className={styles.row}>
             <Select
-              label={<>Strategie <InfoTip text="PERCENTAGE: z.B. 5% pro Repost. FIXED: z.B. 5€ pro Repost." /></>}
+              label={<>Strategie <InfoTip text="Prozentual: Senkt den Preis um X% des aktuellen Preises pro Repost (Zinseszins-Effekt). Fester Betrag: Senkt um einen fixen Euro-Betrag pro Repost (gleichmäßige Schritte). Tipp: Prozentual für teure Artikel, fester Betrag für günstige." /></>}
               options={STRATEGY_OPTIONS}
               {...register('auto_price_reduction.strategy')}
             />
             <Input
-              label={<>Betrag <InfoTip text="Reduktionsbetrag (% oder €)" /></>}
+              label={<>Betrag <InfoTip text="Wie viel pro Repost gesenkt wird. Bei Prozentual: z.B. 5 = 5% vom aktuellen Preis. Bei Fester Betrag: z.B. 5 = 5 € weniger pro Repost. Alle Preise werden auf ganze Euro gerundet." /></>}
               type="number"
               min="0"
               step="1"
@@ -77,7 +88,7 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
 
           <div className={styles.row}>
             <Input
-              label={<>Mindestpreis (€) <InfoTip text="Preisuntergrenze, unter die nicht gesenkt wird. Pflicht wenn aktiviert." /></>}
+              label={<>Mindestpreis (€) <InfoTip text="Untergrenze: Der Preis wird nie unter diesen Wert gesenkt. Pflichtfeld wenn Preisreduktion aktiviert ist." /></>}
               type="number"
               min="1"
               max={price ? price - 1 : undefined}
@@ -87,7 +98,7 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
               {...register('auto_price_reduction.min_price', { valueAsNumber: true })}
             />
             <Input
-              label={<>Verzögerung (Reposts) <InfoTip text="Erst nach N Reposts mit der Reduktion beginnen" /></>}
+              label={<>Verzögerung (Reposts) <InfoTip text="Wartet N zusätzliche Reposts bevor die erste Preissenkung greift. Beispiel: Bei 2 bleiben die ersten 3 Reposts zum vollen Preis (1 implizit + 2 Verzögerung), ab Repost 4 wird gesenkt. Empfohlen wenn der Artikel zuerst zum Vollpreis Chancen haben soll." /></>}
               type="number"
               min="0"
               step="1"
@@ -97,7 +108,7 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
           </div>
 
           <Input
-            label={<>Verzögerung (Tage) <InfoTip text="Erst nach N Tagen mit der Reduktion beginnen" /></>}
+            label={<>Verzögerung (Tage) <InfoTip text="Senkt den Preis erst, wenn seit dem letzten Publish mindestens N Tage vergangen sind. Achtung: Der Zähler startet bei jedem Repost neu! Wenn delay_days größer als das Republication-Intervall ist, greift die Reduktion nie. Tipp: Nutze stattdessen Verzögerung (Reposts) — das ist zuverlässiger." /></>}
             type="number"
             min="0"
             step="1"
@@ -105,8 +116,26 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
             {...register('auto_price_reduction.delay_days', { valueAsNumber: true })}
           />
 
+          {/* Warning when delay_days > interval + 1 (delay is never satisfied) */}
+          {(aprDelayDays ?? 0) > (republicationInterval ?? 7) + 1 && (
+            <div className={styles.priceReductionWarning}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <div>
+                <strong>Verzögerung (Tage) wirkungslos</strong>
+                <p>
+                  Der Bot setzt updated_on nach jedem Repost neu. Zwischen zwei Reposts vergehen nur ~{(republicationInterval ?? 7) + 1} Tage,
+                  aber die Verzögerung erfordert {aprDelayDays} Tage — die Bedingung wird nie erfüllt.
+                  Nutze stattdessen Verzögerung (Reposts).
+                </p>
+              </div>
+            </div>
+          )}
+
           <Toggle
-            label={<>Auch bei Update anwenden <InfoTip text="Preis auch senken, wenn die Anzeige nur aktualisiert wird (z.B. Text- oder Bildänderungen) — nicht nur beim Neu-Einstellen. Die Tage-Verzögerung wird berücksichtigt, die Repost-Verzögerung nicht." /></>}
+            label={<>Auch bei Update anwenden <InfoTip text="Senkt den Preis auch beim update-Befehl (Text-/Bildänderungen), nicht nur beim publish (Neu-Einstellen). Nur die Tage-Verzögerung wird dabei berücksichtigt, die Repost-Verzögerung nicht." /></>}
             checked={watch('auto_price_reduction.on_update') ?? false}
             onChange={(checked) => setValue('auto_price_reduction.on_update', checked, { shouldDirty: true })}
           />
@@ -120,8 +149,7 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
             republicationInterval={republicationInterval ?? 7}
             delayReposts={aprDelayReposts ?? 0}
             delayDays={aprDelayDays ?? 0}
-            reductionCount={reductionCount}
-            createdOn={createdOn}
+            botInfo={botInfo}
           />
         </>
       )}
@@ -129,127 +157,15 @@ export function PriceReductionSection({ reductionCount = 0, createdOn }: { reduc
   );
 }
 
-// Shared step calculation
-interface PriceStep {
-  price: number;
-  isFinal: boolean;
+function delayLabel(step: RepostProjection): string {
+  if (step.delayReason === 'first_publish') return 'kein Abzug';
+  return 'pausiert';
 }
 
-function computePriceSteps(
-  price: number,
-  strategy: string,
-  amount: number,
-  minPrice: number,
-): PriceStep[] {
-  const result: PriceStep[] = [];
-  let current = Math.round(price);
-  const maxSteps = 50;
-  let stepCount = 0;
-
-  while (current > minPrice && stepCount < maxSteps) {
-    result.push({ price: current, isFinal: false });
-
-    let next: number;
-    if (strategy === 'PERCENTAGE') {
-      next = current - (current * amount / 100);
-    } else {
-      next = current - amount;
-    }
-    next = Math.round(next);
-    if (next < minPrice) next = minPrice;
-    if (next >= current) break;
-
-    current = next;
-    stepCount++;
-  }
-
-  if (stepCount > 0 || current === minPrice) {
-    result.push({ price: current, isFinal: true });
-  }
-
-  return result;
-}
-
-// Timeline step with date information
-interface TimelineStep {
-  price: number;
-  isFinal: boolean;
-  date: Date;
-  daysFromNow: number;
-  repostNumber: number;
-  isDelayed: boolean;
-}
-
-function computeTimeline(
-  price: number,
-  strategy: string,
-  amount: number,
-  minPrice: number,
-  intervalDays: number,
-  delayReposts: number,
-  delayDays: number,
-  createdOn?: string | null,
-): TimelineStep[] {
-  // Use created_on as base for past reposts, fall back to today
-  const base = createdOn ? new Date(createdOn) : new Date();
-  if (isNaN(base.getTime())) base.setTime(Date.now());
-  base.setHours(0, 0, 0, 0);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const steps: TimelineStep[] = [];
-  let currentPrice = Math.round(price);
-  const maxSteps = 50;
-  const interval = Math.max(intervalDays, 1);
-
-  for (let repost = 1; repost <= maxSteps; repost++) {
-    const daysFromBase = repost * interval;
-    const date = new Date(base.getTime() + daysFromBase * 86400000);
-    const daysFromNow = Math.round((date.getTime() - now.getTime()) / 86400000);
-
-    // Check if still in delay phase
-    const withinDelayReposts = repost <= delayReposts;
-    const withinDelayDays = daysFromNow <= delayDays;
-    const isDelayed = withinDelayReposts || withinDelayDays;
-
-    if (isDelayed) {
-      steps.push({
-        price: currentPrice,
-        isFinal: false,
-        date,
-        daysFromNow,
-        repostNumber: repost,
-        isDelayed: true,
-      });
-      continue;
-    }
-
-    // Apply reduction
-    let nextPrice: number;
-    if (strategy === 'PERCENTAGE') {
-      nextPrice = currentPrice - (currentPrice * amount / 100);
-    } else {
-      nextPrice = currentPrice - amount;
-    }
-    nextPrice = Math.round(nextPrice);
-    if (nextPrice < minPrice) nextPrice = minPrice;
-    if (nextPrice >= currentPrice && currentPrice > minPrice) break;
-
-    currentPrice = nextPrice;
-    const isFinal = currentPrice <= minPrice;
-
-    steps.push({
-      price: currentPrice,
-      isFinal,
-      date,
-      daysFromNow,
-      repostNumber: repost,
-      isDelayed: false,
-    });
-
-    if (isFinal) break;
-  }
-
-  return steps;
+function daysFromToday(date: Date, now: Date): number {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - now.getTime()) / 86400000);
 }
 
 function formatDate(date: Date): string {
@@ -259,19 +175,14 @@ function formatDate(date: Date): string {
 function formatRelative(days: number): string {
   if (days < 0) {
     const abs = Math.abs(days);
-    if (abs === 1) return 'vor 1 Tag';
+    if (abs === 1) return 'gestern';
     return `vor ${abs} Tagen`;
   }
   if (days === 0) return 'heute';
   if (days === 1) return 'morgen';
-  if (days < 7) return `in ${days} Tagen`;
-  const weeks = Math.floor(days / 7);
-  const rest = days % 7;
-  if (rest === 0) return weeks === 1 ? 'in 1 Woche' : `in ${weeks} Wochen`;
-  return weeks === 1 ? `in 1 Woche, ${rest} T.` : `in ${weeks} W., ${rest} T.`;
+  return `in ${days} Tagen`;
 }
 
-// Price preview sub-component
 interface PricePreviewProps {
   price?: number | null;
   strategy?: string | null;
@@ -280,40 +191,60 @@ interface PricePreviewProps {
   republicationInterval: number;
   delayReposts: number;
   delayDays: number;
-  reductionCount: number;
-  createdOn?: string | null;
+  botInfo?: BotInfo;
 }
 
 type PreviewMode = 'chips' | 'timeline';
 
 function PricePreview({
   price, strategy, amount, minPrice,
-  republicationInterval, delayReposts, delayDays, reductionCount, createdOn,
+  republicationInterval, delayReposts, delayDays, botInfo,
 }: PricePreviewProps) {
   const [mode, setMode] = useState<PreviewMode>('chips');
 
-  const steps = useMemo(() => {
+  const projections = useMemo(() => {
     if (!price || !strategy || !amount || !minPrice) return null;
-    return computePriceSteps(price, strategy, amount, minPrice);
-  }, [price, strategy, amount, minPrice]);
 
-  const timeline = useMemo(() => {
-    if (!price || !strategy || !amount || !minPrice) return null;
-    return computeTimeline(
-      price, strategy, amount, minPrice,
-      republicationInterval, delayReposts, delayDays, createdOn,
-    );
-  }, [price, strategy, amount, minPrice, republicationInterval, delayReposts, delayDays, createdOn]);
+    // Build an AdListItem-like object from form values + botInfo
+    const ad: AdListItem = {
+      file: '',
+      title: '',
+      active: true,
+      type: 'OFFER',
+      images: 0,
+      has_description: true,
+      is_changed: false,
+      is_orphaned: false,
+      price,
+      republication_interval: republicationInterval,
+      repost_count: botInfo?.repost_count ?? 0,
+      price_reduction_count: botInfo?.price_reduction_count ?? 0,
+      created_on: botInfo?.created_on ?? undefined,
+      updated_on: botInfo?.updated_on ?? undefined,
+      auto_price_reduction: {
+        enabled: true,
+        strategy: strategy as 'PERCENTAGE' | 'FIXED',
+        amount,
+        min_price: minPrice,
+        delay_reposts: delayReposts,
+        delay_days: delayDays,
+      },
+    };
 
-  if (!steps || steps.length === 0) return null;
+    return projectReposts(ad);
+  }, [price, strategy, amount, minPrice, republicationInterval, delayReposts, delayDays, botInfo]);
 
-  const totalDays = timeline && timeline.length > 0
-    ? timeline[timeline.length - 1].daysFromNow
-    : 0;
-  const totalReposts = timeline ? timeline.length : 0;
+  if (!projections || projections.length === 0) return null;
 
-  // Check if the first reduction step actually changes the price after rounding
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
   const roundedPrice = Math.round(price!);
+  const pastAllSteps = projections.filter(s => s.isPast);
+  const pastSteps = pastAllSteps.filter(s => !s.isMissed);
+  const futureSteps = projections.filter(s => !s.isPast);
+
+  // Check if first reduction step is ineffective due to rounding
   const rawReduction = strategy === 'PERCENTAGE'
     ? roundedPrice * (amount! / 100)
     : amount!;
@@ -323,6 +254,32 @@ function PricePreview({
       : roundedPrice - amount!,
   );
   const isFirstStepIneffective = firstStepRounded >= roundedPrice;
+
+  // Current effective price
+  const currentPrice = pastSteps.length > 0 ? pastSteps[pastSteps.length - 1].price : roundedPrice;
+
+  // Reconstruct past price steps for chips view (start → ... → current)
+  const pastPriceSteps: number[] = [];
+  if (currentPrice < roundedPrice && strategy && amount && minPrice) {
+    let p = roundedPrice;
+    while (p > currentPrice) {
+      pastPriceSteps.push(p);
+      if (strategy === 'PERCENTAGE') {
+        p = Math.round(p - (p * amount / 100));
+      } else {
+        p = Math.round(p - amount);
+      }
+      if (p < (minPrice ?? 0)) p = minPrice!;
+    }
+  }
+
+  // Summary stats (exclude missed from count)
+  const realSteps = projections.filter(s => !s.isMissed);
+  const totalReposts = realSteps.length;
+  const finalPrice = realSteps.length > 0 ? realSteps[realSteps.length - 1].price : roundedPrice;
+  const lastStep = projections[projections.length - 1];
+  const firstStep = projections[0];
+  const totalDays = Math.max(0, Math.round((lastStep.date.getTime() - firstStep.date.getTime()) / 86400000));
 
   return (
     <div className={styles.pricePreviewWrap}>
@@ -347,6 +304,7 @@ function PricePreview({
           </div>
         </div>
       )}
+
       <div className={styles.pricePreviewHeader}>
         <label className={styles.pricePreviewLabel}>Preisreduktion Vorschau</label>
         <div className={styles.pricePreviewTabs}>
@@ -376,102 +334,151 @@ function PricePreview({
 
       {mode === 'chips' ? (
         <div className={styles.pricePreview}>
-          {steps.map((step, i) => {
-            const isPast = i < reductionCount;
-            const isCurrent = i === reductionCount;
-            return (
-              <span key={i}>
-                {i > 0 && <span className={styles.pricePreviewArrow}> → </span>}
-                <span className={[
-                  styles.pricePreviewStep,
-                  step.isFinal ? styles.pricePreviewStepFinal : '',
-                  isPast ? styles.pricePreviewStepPast : '',
-                  isCurrent ? styles.pricePreviewStepCurrent : '',
-                ].filter(Boolean).join(' ')}>
-                  {step.price} €
-                </span>
+          {/* Past price steps (reconstructed from price_reduction_count) */}
+          {pastPriceSteps.map((p, i) => (
+            <span key={`past-${i}`}>
+              {i > 0 && <span className={styles.pricePreviewArrow}> → </span>}
+              <span className={`${styles.pricePreviewStep} ${styles.pricePreviewStepPast}`}>
+                {p} €
               </span>
-            );
-          })}
+            </span>
+          ))}
+          {/* Current price (green) */}
+          {pastPriceSteps.length > 0 && <span className={styles.pricePreviewArrow}> → </span>}
+          <span className={`${styles.pricePreviewStep} ${styles.pricePreviewStepCurrent}`}>
+            {currentPrice} €
+          </span>
+          {/* Future price steps */}
+          {futureSteps.map((step, i) => (
+            <span key={`future-${i}`}>
+              <span className={styles.pricePreviewArrow}> → </span>
+              <span className={[
+                styles.pricePreviewStep,
+                step.isFinal ? styles.pricePreviewStepFinal : '',
+              ].filter(Boolean).join(' ')}>
+                {step.price} €
+              </span>
+            </span>
+          ))}
         </div>
-      ) : timeline && timeline.length > 0 ? (
-        <div className={styles.priceTimeline}>
-          {/* Start row */}
-          <div className={`${styles.timelineRow} ${reductionCount > 0 ? styles.timelineRowPast : ''}`}>
-            <div className={styles.timelineTrack}>
-              <div className={`${styles.timelineDot} ${reductionCount > 0 ? styles.timelineDotPast : ''}`} />
-              <div className={styles.timelineLine} />
-            </div>
-            <div className={styles.timelineContent}>
-              <span className={`${styles.timelinePrice} ${reductionCount > 0 ? styles.timelinePricePast : ''}`}>
-                {Math.round(price!)} €
-              </span>
-              <span className={styles.timelineDate}>Startpreis</span>
-            </div>
+      ) : (
+      <div className={styles.priceTimeline}>
+        {/* Start row */}
+        <div className={`${styles.timelineRow} ${pastAllSteps.length > 0 ? styles.timelineRowPast : ''}`}>
+          <div className={styles.timelineTrack}>
+            <div className={`${styles.timelineDot} ${pastAllSteps.length > 0 ? styles.timelineDotPast : ''}`} />
+            <div className={styles.timelineLine} />
           </div>
+          <div className={styles.timelineContent}>
+            <span className={`${styles.timelinePrice} ${pastAllSteps.length > 0 ? styles.timelinePricePast : ''}`}>
+              {roundedPrice} €
+            </span>
+            <span className={styles.timelineDate}>Startpreis</span>
+          </div>
+        </div>
 
-          {timeline.map((step, i) => {
-            const isPast = i < reductionCount;
-            const isCurrent = i === reductionCount - 1;
-            return (
-              <div key={i} className={`${styles.timelineRow} ${isPast ? styles.timelineRowPast : ''}`}>
-                <div className={styles.timelineTrack}>
-                  <div className={[
-                    styles.timelineDot,
-                    step.isFinal ? styles.timelineDotFinal : '',
-                    step.isDelayed ? styles.timelineDotDelayed : '',
-                    isPast ? styles.timelineDotPast : '',
-                    isCurrent ? styles.timelineDotCurrent : '',
-                  ].filter(Boolean).join(' ')} />
-                  {i < timeline.length - 1 && <div className={styles.timelineLine} />}
-                </div>
-                <div className={styles.timelineContent}>
-                  <div className={styles.timelineMain}>
-                    <span className={[
-                      styles.timelinePrice,
-                      step.isFinal ? styles.timelinePriceFinal : '',
-                      step.isDelayed ? styles.timelinePriceDelayed : '',
-                      isPast && !isCurrent ? styles.timelinePricePast : '',
-                      isCurrent ? styles.timelinePriceCurrent : '',
-                    ].filter(Boolean).join(' ')}>
-                      {step.price} €
-                      {step.isDelayed && (
-                        <span className={styles.timelinePause}>pausiert</span>
-                      )}
-                      {isCurrent && (
-                        <span className={styles.timelineCurrentLabel}>aktuell</span>
-                      )}
-                    </span>
-                    <span className={styles.timelineRelative}>
-                      {isPast
-                        ? (step.daysFromNow < 0 ? `vor ${Math.abs(step.daysFromNow)} Tagen` : 'heute')
-                        : formatRelative(step.daysFromNow)}
-                    </span>
-                  </div>
-                  <span className={styles.timelineDate}>
-                    {formatDate(step.date)} · Repost #{step.repostNumber}
+        {/* Past intervals — all shown as "verpasst" */}
+        {pastAllSteps.map((step, i) => {
+          const daysFromNow = daysFromToday(step.date, now);
+          return (
+            <div key={`past-${i}`} className={`${styles.timelineRow} ${styles.timelineRowPast}`}>
+              <div className={styles.timelineTrack}>
+                <div className={[
+                  styles.timelineDot,
+                  step.isDelayed ? styles.timelineDotDelayed : '',
+                  styles.timelineDotMissed,
+                ].filter(Boolean).join(' ')} />
+                <div className={styles.timelineLine} />
+              </div>
+              <div className={styles.timelineContent}>
+                <div className={styles.timelineMain}>
+                  <span className={`${styles.timelinePrice} ${styles.timelinePriceDelayed}`}>
+                    {step.price} €
+                    {step.isDelayed
+                      ? <span className={styles.timelinePause}>{delayLabel(step)}</span>
+                      : <span className={styles.timelineMissed}>verpasst</span>
+                    }
+                  </span>
+                  <span className={styles.timelineRelative}>
+                    {formatRelative(daysFromNow)}
                   </span>
                 </div>
+                <span className={styles.timelineDate}>{formatDate(step.date)} · Repost #{step.repostNumber}</span>
               </div>
-            );
-          })}
+            </div>
+          );
+        })}
 
-          {/* Summary footer */}
-          <div className={styles.timelineSummary}>
-            <span>
-              <strong>{totalReposts}</strong> Repost{totalReposts !== 1 ? 's' : ''} über{' '}
-              <strong>{totalDays}</strong> Tage
+        {/* "Aktuell" — today's state */}
+        <div className={styles.timelineRow}>
+          <div className={styles.timelineTrack}>
+            <div className={`${styles.timelineDot} ${styles.timelineDotCurrent}`} />
+            {futureSteps.length > 0 && <div className={styles.timelineLine} />}
+          </div>
+          <div className={styles.timelineContent}>
+            <span className={`${styles.timelinePrice} ${styles.timelinePriceCurrent}`}>
+              {currentPrice} € <span className={styles.timelineCurrentLabel}>aktuell</span>
             </span>
-            <span>
-              {Math.round(price!)} € → {timeline[timeline.length - 1].price} €
-              {' '}
-              <span className={styles.timelineSavings}>
-                (−{Math.round(price!) - timeline[timeline.length - 1].price} €)
-              </span>
+            <span className={styles.timelineDate}>
+              {formatDate(now)} · heute
             </span>
           </div>
         </div>
-      ) : null}
+
+        {/* Future reposts */}
+        {futureSteps.map((step, i) => {
+          const daysFromNow = daysFromToday(step.date, now);
+          return (
+            <div key={`future-${i}`} className={styles.timelineRow}>
+              <div className={styles.timelineTrack}>
+                <div className={[
+                  styles.timelineDot,
+                  step.isFinal ? styles.timelineDotFinal : '',
+                  step.isDelayed ? styles.timelineDotDelayed : '',
+                ].filter(Boolean).join(' ')} />
+                {i < futureSteps.length - 1 && <div className={styles.timelineLine} />}
+              </div>
+              <div className={styles.timelineContent}>
+                <div className={styles.timelineMain}>
+                  <span className={[
+                    styles.timelinePrice,
+                    step.isFinal ? styles.timelinePriceFinal : '',
+                    step.isDelayed ? styles.timelinePriceDelayed : '',
+                  ].filter(Boolean).join(' ')}>
+                    {step.price} €
+                    {step.isDelayed && (
+                      <span className={styles.timelinePause}>{delayLabel(step)}</span>
+                    )}
+                    {!step.isDelayed && step.reducedBy && i === 0 && pastAllSteps.every(s => !s.reducedBy) && (
+                      <span className={styles.timelineFirstReduction}>erste Reduktion</span>
+                    )}
+                  </span>
+                  <span className={styles.timelineRelative}>{formatRelative(daysFromNow)}</span>
+                </div>
+                <span className={styles.timelineDate}>
+                  {formatDate(step.date)} · Repost #{step.repostNumber}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Summary footer */}
+        <div className={styles.timelineSummary}>
+          <span>
+            <strong>{totalReposts}</strong> Repost{totalReposts !== 1 ? 's' : ''} über{' '}
+            <strong>{totalDays}</strong> Tage
+          </span>
+          <span>
+            {roundedPrice} € → {finalPrice} €
+            {' '}
+            <span className={styles.timelineSavings}>
+              (−{roundedPrice - finalPrice} €)
+            </span>
+          </span>
+        </div>
+      </div>
+      )}
     </div>
   );
 }

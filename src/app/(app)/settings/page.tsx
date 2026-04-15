@@ -252,20 +252,20 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Republication & Preisreduktion" desc="Intervall für Neueinstellungen und automatische Preissenkung." open={openSections.has('apr')} onToggle={() => toggle('apr')}>
-          <Input label={<>Republication-Intervall (Tage) <InfoTip text="Alle N Tage wird die Anzeige automatisch neu eingestellt" /></>} type="number" min="1" value={republication} onChange={(e) => setRepublication(e.target.value)} placeholder="z.B. 7" />
-          <Toggle label={<>Preisreduktion aktiviert <InfoTip text="Preis automatisch senken bei Republication" /></>} checked={aprEnabled} onChange={setAprEnabled} />
+          <Input label={<>Republication-Intervall (Tage) <InfoTip text="Anzeige wird neu eingestellt, wenn mehr als N volle Tage seit dem letzten Publish vergangen sind. Beispiel: Bei 7 wird frühestens nach 8 Kalendertagen repostet, weil der Bot auf ganze Tage abrundet und auf strikt-größer prüft." /></>} type="number" min="1" value={republication} onChange={(e) => setRepublication(e.target.value)} placeholder="z.B. 7" />
+          <Toggle label={<>Preisreduktion aktiviert <InfoTip text="Senkt den Preis automatisch bei jedem Repost. Der erste Repost ändert den Preis nie — die Reduktion beginnt erst ab dem zweiten Repost." /></>} checked={aprEnabled} onChange={setAprEnabled} />
           {aprEnabled && (
             <>
               <div className={styles.row}>
-                <Select label={<>Strategie <InfoTip text="PERCENTAGE: z.B. 5% pro Repost. FIXED: z.B. 5€ pro Repost." /></>} options={STRATEGY_OPTIONS} value={aprStrategy} onChange={(e) => setAprStrategy(e.target.value)} />
-                <Input label={<>Betrag <InfoTip text="Reduktionsbetrag (% oder €)" /></>} type="number" min="0" step="0.1" value={aprAmount} onChange={(e) => setAprAmount(e.target.value)} />
+                <Select label={<>Strategie <InfoTip text="Prozentual: Senkt den Preis um X% des aktuellen Preises pro Repost (Zinseszins-Effekt). Fester Betrag: Senkt um einen fixen Euro-Betrag pro Repost (gleichmäßige Schritte). Tipp: Prozentual für teure Artikel, fester Betrag für günstige." /></>} options={STRATEGY_OPTIONS} value={aprStrategy} onChange={(e) => setAprStrategy(e.target.value)} />
+                <Input label={<>Betrag <InfoTip text="Wie viel pro Repost gesenkt wird. Bei Prozentual: z.B. 5 = 5% vom aktuellen Preis. Bei Fester Betrag: z.B. 5 = 5 € weniger pro Repost. Alle Preise werden auf ganze Euro gerundet." /></>} type="number" min="0" step="0.1" value={aprAmount} onChange={(e) => setAprAmount(e.target.value)} />
               </div>
               <div className={styles.row}>
-                <Input label={<>Mindestpreis (€) <InfoTip text="Preisuntergrenze" /></>} type="number" min="0" value={aprMinPrice} onChange={(e) => setAprMinPrice(e.target.value)} />
-                <Input label={<>Verzögerung (Reposts) <InfoTip text="Erst nach N Reposts beginnen" /></>} type="number" min="0" value={aprDelayReposts} onChange={(e) => setAprDelayReposts(e.target.value)} />
+                <Input label={<>Mindestpreis (€) <InfoTip text="Untergrenze: Der Preis wird nie unter diesen Wert gesenkt. Pflichtfeld wenn Preisreduktion aktiviert ist." /></>} type="number" min="0" value={aprMinPrice} onChange={(e) => setAprMinPrice(e.target.value)} />
+                <Input label={<>Verzögerung (Reposts) <InfoTip text="Wartet N zusätzliche Reposts bevor die erste Preissenkung greift. Beispiel: Bei 2 bleiben die ersten 3 Reposts zum vollen Preis (1 implizit + 2 Verzögerung), ab Repost 4 wird gesenkt. Empfohlen wenn der Artikel zuerst zum Vollpreis Chancen haben soll." /></>} type="number" min="0" value={aprDelayReposts} onChange={(e) => setAprDelayReposts(e.target.value)} />
               </div>
-              <Input label={<>Verzögerung (Tage) <InfoTip text="Erst nach N Tagen beginnen" /></>} type="number" min="0" value={aprDelayDays} onChange={(e) => setAprDelayDays(e.target.value)} />
-              <Toggle label={<>Auch bei Update anwenden <InfoTip text="Preis auch senken, wenn die Anzeige nur aktualisiert wird (z.B. Text- oder Bildänderungen) — nicht nur beim Neu-Einstellen. Die Tage-Verzögerung wird berücksichtigt, die Repost-Verzögerung nicht." /></>} checked={aprOnUpdate} onChange={setAprOnUpdate} />
+              <Input label={<>Verzögerung (Tage) <InfoTip text="Senkt den Preis erst, wenn seit dem letzten Publish mindestens N Tage vergangen sind. Achtung: Der Zähler startet bei jedem Repost neu! Wenn delay_days größer als das Republication-Intervall ist, greift die Reduktion nie. Tipp: Nutze stattdessen Verzögerung (Reposts) — das ist zuverlässiger." /></>} type="number" min="0" value={aprDelayDays} onChange={(e) => setAprDelayDays(e.target.value)} />
+              <Toggle label={<>Auch bei Update anwenden <InfoTip text="Senkt den Preis auch beim update-Befehl (Text-/Bildänderungen), nicht nur beim publish (Neu-Einstellen). Nur die Tage-Verzögerung wird dabei berücksichtigt, die Repost-Verzögerung nicht." /></>} checked={aprOnUpdate} onChange={setAprOnUpdate} />
             </>
           )}
         </Section>

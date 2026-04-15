@@ -284,7 +284,7 @@ export function ProfileMenu() {
       )}
     </div>
 
-    <Modal open={aboutOpen} onClose={() => setAboutOpen(false)} title="Über Kleinanzeigen Bot">
+    <Modal open={aboutOpen} onClose={() => setAboutOpen(false)} title="Über Kleinanzeigen Bot UI">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
           <div style={{
@@ -295,7 +295,7 @@ export function ProfileMenu() {
           }}>K</div>
           <div>
             <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)' }}>
-              Kleinanzeigen Bot Manager
+              Kleinanzeigen Bot UI
             </div>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>
               Web-Interface für kleinanzeigen-bot
@@ -546,8 +546,8 @@ export function ProfileMenu() {
         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', textAlign: 'center' }}>
           Powered by{' '}
           <a href="https://github.com/Second-Hand-Friends/kleinanzeigen-bot" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>kleinanzeigen-bot</a>
-          {' × '}
-          <a href="https://github.com/bkd3sign/kleinanzeigen-bot-ui" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>UI by BKDesign</a>
+          {' · '}
+          <a href="https://github.com/bkd3sign/kleinanzeigen-bot-ui" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>UI by BKD3sign</a>
         </div>
       </div>
     </Modal>

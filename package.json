@@ -1,6 +1,6 @@
 {
   "name": "kleinanzeigen-bot-ui",
-  "version": "2.43.0",
+  "version": "2.50.1",
   "description": "Web UI for kleinanzeigen-bot — manage ads, run bot commands, AI messaging, and scheduling via a modern Next.js dashboard",
   "author": "BKD3sign",
   "license": "AGPL-3.0",
@@ -9,7 +9,14 @@
     "url": "https://github.com/bkd3sign/kleinanzeigen-bot-ui"
   },
   "homepage": "https://github.com/bkd3sign/kleinanzeigen-bot-ui",
-  "keywords": ["kleinanzeigen", "classifieds-automation", "ad-management", "ai-generation", "self-hosted", "web-dashboard"],
+  "keywords": [
+    "kleinanzeigen",
+    "classifieds-automation",
+    "ad-management",
+    "ai-generation",
+    "self-hosted",
+    "web-dashboard"
+  ],
   "private": true,
   "scripts": {
     "dev": "next dev",

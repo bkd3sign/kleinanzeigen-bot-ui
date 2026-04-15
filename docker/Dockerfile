@@ -45,8 +45,12 @@ RUN mkdir -p /opt/bot-default \
     && chmod +x /opt/bot-default/kleinanzeigen-bot \
     && /opt/bot-default/kleinanzeigen-bot version
 
-# Create non-root user (Chromium refuses to run as root)
-RUN groupadd -r botuser && useradd -r -g botuser -m -s /bin/bash botuser
+# Create non-root user with fixed UID/GID (Chromium refuses to run as root).
+# Deterministic IDs prevent permission issues when rebuilding the image
+# while volume data from a previous build persists.
+ARG PUID=1000
+ARG PGID=1000
+RUN groupadd -g ${PGID} botuser && useradd -u ${PUID} -g botuser -m -s /bin/bash botuser
 
 WORKDIR /app
 

@@ -2,7 +2,7 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { jobs, startJob } from '@/lib/bot/jobs';
-import { submitMfaCode } from '@/lib/bot/mfa-resolver';
+import { submitMfaCode, submitMfaToRunningBot } from '@/lib/bot/mfa-resolver';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -22,6 +22,16 @@ export async function POST(request: NextRequest) {
     const job = jobs.get(job_id);
     if (!job) return NextResponse.json({ detail: 'Job nicht gefunden' }, { status: 404 });
 
+    // Primary: inject code directly into bot's running Chrome via CDP
+    if (job.cdp_port && job.status === 'running') {
+      const directResult = await submitMfaToRunningBot(job_id, code);
+      if (directResult.success) {
+        return NextResponse.json({ message: 'MFA erfolgreich — Bot fährt fort' });
+      }
+      // Direct inject failed — fall through to legacy flow
+    }
+
+    // Fallback: use separately prepared MFA session (requires prior prepareMfaSession call)
     const result = await submitMfaCode(job_id, code);
     if (!result.success) return NextResponse.json({ detail: result.error }, { status: 422 });
 

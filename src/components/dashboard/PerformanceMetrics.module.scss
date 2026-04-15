@@ -27,7 +27,7 @@
 
 .perfRow {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+  grid-template-columns: 300px minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: center;
   font-size: var(--font-size-sm);

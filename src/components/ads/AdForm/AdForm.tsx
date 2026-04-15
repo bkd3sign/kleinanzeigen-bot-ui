@@ -373,7 +373,7 @@ export function AdForm({
           <AdvancedSection lockedFields={lockedFields} />
 
           {/* Section 5: Automatische Preisreduktion (collapsed if not enabled) */}
-          <PriceReductionSection reductionCount={botInfo?.price_reduction_count ?? 0} createdOn={botInfo?.created_on} />
+          <PriceReductionSection botInfo={botInfo} />
 
           {/* Section 6: Bot-Informationen (edit only, collapsed) */}
           {isEdit && botInfo && <BotInfoSection botInfo={botInfo} />}

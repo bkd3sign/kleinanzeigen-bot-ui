@@ -3,6 +3,9 @@ import path from 'path';
 import WebSocket from 'ws';
 import { readMergedConfig } from '@/lib/yaml/config';
 import { prepareCleanBrowserState, detectBrowserBin } from '@/lib/bot/browser-cleanup';
+import { isQueueBusy } from '@/lib/bot/queue';
+import { jobs } from '@/lib/bot/jobs';
+import { jobStdins } from '@/lib/bot/runner';
 
 const LOGIN_URL = 'https://www.kleinanzeigen.de/m-einloggen.html';
 const CDP_PORT = 9222;
@@ -53,6 +56,11 @@ export async function prepareMfaSession(
   workspace: string,
   jobId: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // Don't start MFA while bot is using the shared browser profile
+  if (isQueueBusy()) {
+    return { success: false, error: 'Bot läuft gerade — MFA nach Abschluss erneut versuchen.' };
+  }
+
   cleanupSession(jobId);
 
   // Cleanup stale sessions
@@ -177,7 +185,7 @@ export async function submitMfaCode(
 ): Promise<{ success: boolean; error?: string }> {
   const session = mfaSessions.get(jobId);
   if (!session) {
-    return { success: false, error: 'Keine aktive MFA-Session. Bitte erst „Login starten" klicken.' };
+    return { success: false, error: 'Keine aktive MFA-Session. Bitte „Neuen Code anfordern" klicken.' };
   }
 
   const { cdp } = session;
@@ -216,6 +224,94 @@ export async function submitMfaCode(
     return { success: false, error: 'Login nach Code-Eingabe nicht erfolgreich — falscher Code?' };
   } catch (err) {
     cleanupSession(jobId);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Submit MFA code directly to the bot's running Chrome via CDP.
+ * The bot is waiting on ainput() with stdin piped — we enter the code
+ * on the Kleinanzeigen MFA page via CDP, then send \n to stdin.
+ */
+export async function submitMfaToRunningBot(
+  jobId: string,
+  smsCode: string,
+): Promise<{ success: boolean; error?: string }> {
+  const job = jobs.get(jobId);
+  if (!job?.cdp_port) {
+    return { success: false, error: 'Kein CDP-Port verfügbar' };
+  }
+
+  const stdin = jobStdins.get(jobId);
+  if (!stdin || stdin.destroyed) {
+    return { success: false, error: 'Bot-Prozess nicht mehr erreichbar' };
+  }
+
+  let ws: WebSocket | null = null;
+
+  try {
+    // Connect to the bot's Chrome
+    const targets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(job.cdp_port, '/json');
+    const page = targets.find(t => t.type === 'page');
+    if (!page) throw new Error('Kein Browser-Tab gefunden');
+
+    ws = new WebSocket(page.webSocketDebuggerUrl || `ws://127.0.0.1:${job.cdp_port}/devtools/page/${page.id}`);
+    await new Promise<void>((resolve, reject) => {
+      ws!.on('open', resolve);
+      ws!.on('error', reject);
+      setTimeout(() => reject(new Error('WebSocket-Timeout')), 10000);
+    });
+
+    const cdp = createCdpClient(ws);
+
+    // Find and fill the MFA code input on the Kleinanzeigen page
+    const codeFilled = await cdp.evaluate(`
+      (() => {
+        const selectors = ['input[name="code"]', 'input[inputmode="numeric"]', 'input[autocomplete="one-time-code"]', 'input[type="tel"]'];
+        for (const sel of selectors) {
+          const input = document.querySelector(sel);
+          if (input && input.offsetParent !== null) {
+            input.focus(); input.value = '';
+            return 'found';
+          }
+        }
+        return 'not_found';
+      })()
+    `) as string;
+
+    if (codeFilled !== 'found') {
+      ws.close();
+      return { success: false, error: 'Code-Eingabefeld nicht gefunden — Bot evtl. nicht auf MFA-Seite' };
+    }
+
+    // Enter code and submit
+    await cdp.send('Input.insertText', { text: smsCode });
+    await sleep(500);
+    await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
+
+    // Wait for navigation away from the login page
+    const success = await waitForCondition(async () => {
+      const url = await cdp.evaluate('window.location.href') as string;
+      return url.includes('kleinanzeigen.de') && !url.includes('login.kleinanzeigen.de');
+    }, 30000);
+
+    ws.close();
+
+    if (!success) {
+      return { success: false, error: 'Login nach Code-Eingabe nicht erfolgreich — falscher Code?' };
+    }
+
+    // MFA succeeded — send Enter to stdin so bot continues past ainput()
+    try {
+      stdin.write('\n');
+    } catch {
+      // stdin might have closed — bot may have continued anyway
+    }
+
+    if (job) job.mfa_required = false;
+    return { success: true };
+  } catch (err) {
+    if (ws) try { ws.close(); } catch { /* fine */ }
     return { success: false, error: (err as Error).message };
   }
 }

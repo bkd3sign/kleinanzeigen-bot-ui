@@ -8,9 +8,11 @@ export interface Job {
   finished_at?: string;
   exit_code?: number;
   output: string;
+  last_output_at?: string;
   user_id: string;
   workspace: string;
   mfa_required?: boolean;
+  cdp_port?: number;
   queue_position?: number;
   scheduled_by?: string;
 }

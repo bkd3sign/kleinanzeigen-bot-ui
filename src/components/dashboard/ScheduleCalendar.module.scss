@@ -80,6 +80,11 @@
   }
 }
 
+.chipPrice {
+  font-weight: var(--font-semibold);
+  opacity: 0.8;
+}
+
 .chipExpiry {
   background: color-mix(in srgb, var(--red) 15%, transparent);
   color: var(--red);

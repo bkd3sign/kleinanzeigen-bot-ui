@@ -51,8 +51,8 @@ const STALE_CACHE_DIRS = [
  * Remove stale files that block browser startup after crashes,
  * but preserve cookies/session to avoid triggering MFA on every run.
  */
-export function cleanBrowserProfile(workspace: string): void {
-  const profileDir = path.join(workspace, '.temp', 'browser-profile');
+export function cleanBrowserProfile(workspace: string, profileName: string = 'browser-profile'): void {
+  const profileDir = path.join(workspace, '.temp', profileName);
   for (const f of STALE_FILES) {
     try { fs.unlinkSync(path.join(profileDir, f)); } catch { /* fine */ }
   }

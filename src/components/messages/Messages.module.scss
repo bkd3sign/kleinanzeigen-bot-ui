@@ -450,10 +450,12 @@
 }
 
 // Mobile: fixed positioning to prevent page scroll
+// Note: <main> has animPageEnter with transform which creates a new containing block
+// for position:fixed children — so top/left/right/bottom are relative to <main>, not viewport
 @media (max-width: 768px) {
   .container {
     position: fixed;
-    top: var(--header-height);
+    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
@@ -507,4 +509,53 @@
   padding: 0;
   margin: 0 calc(-1 * var(--space-1)) 0 0;
   flex-shrink: 0;
+}
+
+// Status views (loading + error)
+.statusCenter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  gap: var(--space-4);
+}
+
+.statusText {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.statusCenterRow {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-10);
+}
+
+// MFA code input view
+.mfaContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  min-height: 400px;
+}
+
+
+// Browserless info banner (bot running, API still works)
+.browserlessBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+
+  svg {
+    flex-shrink: 0;
+    color: var(--accent);
+  }
 }

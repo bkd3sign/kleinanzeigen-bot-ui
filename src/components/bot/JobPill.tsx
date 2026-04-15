@@ -105,7 +105,7 @@ export function JobPill() {
   const pillText = running > 0
     ? `${running} Job${running > 1 ? 's' : ''} laufen`
     : mfaRequired > 0
-      ? 'MFA erforderlich'
+      ? 'mfa required'
       : failed > 0
         ? `${failed} fehlgeschlagen`
         : withErrors > 0
@@ -150,7 +150,7 @@ export function JobPill() {
                         : 'warning'
                       }
                     >
-                      {job.status === 'mfa_required' ? 'MFA' : job.status === 'completed_with_errors' ? 'Mit Fehlern' : job.status}
+                      {job.status === 'mfa_required' ? 'MFA' : job.status === 'completed_with_errors' ? 'with errors' : job.status}
                     </Badge>
                   </div>
                   <div className={styles.itemInfo}>
