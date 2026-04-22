@@ -55,13 +55,13 @@ export function MfaCodeInput({ title, description, onSubmit, onPrepare, submitPe
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            disabled={submitPending}
+            disabled={submitPending || preparePending}
             autoFocus
           />
           <button
             className={styles.btn}
             onClick={handleSubmit}
-            disabled={submitPending || code.length < 4}
+            disabled={submitPending || preparePending || code.length < 4}
           >
             {submitPending ? 'Wird geprüft…' : 'Code bestätigen'}
           </button>

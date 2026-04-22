@@ -33,6 +33,8 @@ function filterByParams(ads: AdListItem[], status: string | null, category: stri
     result = result.filter((a) => a.is_changed);
   } else if (status === 'orphaned') {
     result = result.filter((a) => a.is_orphaned);
+  } else if (status === 'inactive') {
+    result = result.filter((a) => a.active === false);
   }
 
   if (category) {

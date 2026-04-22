@@ -139,11 +139,12 @@ export async function runBotCommand(
     proc.stderr?.on('data', processData);
 
     proc.on('close', (code) => {
-      // Clean up zombie Chrome processes from the detached process group
       const pid = jobPids.get(jobId);
       jobPids.delete(jobId);
       jobStdins.delete(jobId);
-      if (pid) {
+      // Keep Chrome alive when MFA is pending — we need it to inject the code via CDP.
+      // killOrphanedChromium() is called after successful MFA submit before restarting the job.
+      if (pid && !job?.mfa_required) {
         try { process.kill(-pid, 'SIGTERM'); } catch { /* group already gone */ }
       }
 

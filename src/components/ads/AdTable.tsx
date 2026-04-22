@@ -12,7 +12,7 @@ import { useSort } from '@/hooks/useSort';
 import type { SortDir } from '@/hooks/useSort';
 import type { AdListItem } from '@/types/ad';
 import type { Job } from '@/types/bot';
-import { isExpired, isExpiringSoon } from '@/lib/ads/status';
+import { isExpired, isExpiringSoon, isReserved } from '@/lib/ads/status';
 import { getCurrentPrice } from '@/lib/ads/pricing';
 import { useState } from 'react';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
@@ -97,7 +97,7 @@ export function compareAds(a: AdListItem, b: AdListItem, key: AdSortKey): number
 export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sortKey: controlledKey, sortDir: controlledDir, onSortChange }: AdTableProps) {
   const router = useRouter();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number; maxHeight?: number } | null>(null);
   const [templateAd, setTemplateAd] = useState<{ file: string; title: string } | null>(null);
   const catName = useCategoryName();
   const queryClient = useQueryClient();
@@ -314,6 +314,7 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                       : 'Aktiv';
                     return <>
                       <span className={styles.statusBadge}><Badge variant={variant}>{label}</Badge></span>
+                      {isReserved(ad) && <span className={styles.statusBadge}><Badge variant="info">Reserviert</Badge></span>}
                       <span className={`${styles.statusDot} ${styles[`dot_${variant}`]}`} title={label} />
                     </>;
                   })()}
@@ -328,7 +329,13 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                         setOpenMenu(null);
                       } else {
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                        const spaceBelow = window.innerHeight - rect.bottom - 8;
+                        const spaceAbove = rect.top - 8;
+                        const flipUp = spaceBelow < 260 && spaceAbove > spaceBelow;
+                        setMenuPos(flipUp
+                          ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right, maxHeight: spaceAbove }
+                          : { top: rect.bottom + 4, right: window.innerWidth - rect.right, maxHeight: spaceBelow },
+                        );
                         setOpenMenu(ad.file);
                       }
                     }}

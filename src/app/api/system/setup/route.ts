@@ -66,22 +66,29 @@ export async function POST(request: NextRequest) {
     };
     saveUsers(usersData);
 
-    // Create workspace and user config (login, ad_defaults)
-    const ws = createUserWorkspace(userId);
-    const userConfig = buildConfig(data);
-    writeConfig(ws, userConfig);
-
-    // Only create server config if none exists — never overwrite an existing root config.
-    // If config exists, only update the AI api_key if provided during setup.
+    // Ensure root server config exists with browser/ai/publishing settings before
+    // writing user config — in single-user mode ws === BOT_DIR, so we must write
+    // the full server config first to avoid the user config overwriting browser settings.
     const existingRoot = readConfig(BOT_DIR);
     if (!Object.keys(existingRoot).length) {
-      const serverConfig = buildServerConfig(data);
-      writeConfig(BOT_DIR, serverConfig);
+      writeConfig(BOT_DIR, buildServerConfig(data));
     } else if (data.openrouter_api_key) {
       const ai = (existingRoot.ai as Record<string, unknown>) ?? {};
       ai.api_key = data.openrouter_api_key;
       existingRoot.ai = ai;
       writeConfig(BOT_DIR, existingRoot);
+    }
+
+    // Create workspace and user config (login, ad_defaults).
+    // In single-user mode ws === BOT_DIR — merge into the root config instead of
+    // replacing it, so browser/ai/publishing settings written above are preserved.
+    const ws = createUserWorkspace(userId);
+    const userConfig = buildConfig(data);
+    if (ws === BOT_DIR) {
+      const rootConfig = readConfig(BOT_DIR);
+      writeConfig(ws, { ...rootConfig, ...userConfig });
+    } else {
+      writeConfig(ws, userConfig);
     }
 
     // Create extensions directory and config template if missing

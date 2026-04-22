@@ -627,6 +627,8 @@
   background-color: var(--bg-tertiary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .pricePreviewStep {
@@ -680,6 +682,36 @@
     flex-shrink: 0;
     margin-top: 2px;
     color: var(--yellow);
+  }
+
+  strong {
+    display: block;
+    margin-bottom: var(--space-1);
+  }
+
+  p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+}
+
+.priceReductionInfo {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--blue-muted);
+  border: 1px solid var(--blue);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--blue);
   }
 
   strong {

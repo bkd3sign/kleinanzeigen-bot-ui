@@ -23,7 +23,7 @@ const FILTERS: FilterDef[] = [
   { label: 'Laufend', value: 'running' },
   { label: 'Wartend', value: 'queued' },
   { label: 'Abgeschlossen', value: 'completed' },
-  { label: 'with errors', value: 'completed_with_errors' },
+  { label: 'Mit Fehlern', value: 'completed_with_errors' },
   { label: 'Fehlgeschlagen', value: 'failed' },
   { label: 'MFA ausstehend', value: 'mfa_required' },
   { label: 'Automatisierung', value: 'scheduled', view: true },

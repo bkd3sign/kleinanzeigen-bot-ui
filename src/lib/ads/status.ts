@@ -53,6 +53,11 @@ export function isExpiringSoon(ad: AdListItem): boolean {
   return remaining > 0 && remaining <= EXPIRY_WARNING_DAYS * DAY_MS;
 }
 
+/** True when the ad title contains "reserviert" (case-insensitive). */
+export function isReserved(ad: AdListItem): boolean {
+  return (ad.title ?? '').toLowerCase().includes('reserviert');
+}
+
 /** Days remaining until the 60-day platform expiry (negative = overdue). */
 export function getExpiryDaysLeft(ad: AdListItem): number {
   const expiry = getExpiryDate(ad);

@@ -74,7 +74,7 @@ const GUI_AD_FIELDS = new Set([
 
 // Config sections the GUI knows about
 const GUI_CONFIG_SECTIONS = new Set([
-  'login', 'ad_defaults', 'browser', 'publishing', 'timeouts',
+  'login', 'ad_defaults', 'browser', 'publishing', 'deleting', 'timeouts',
   'download', 'update_check', 'ad_files', 'categories', 'captcha', 'diagnostics',
 ]);
 
@@ -115,9 +115,10 @@ const GUI_KNOWN_SUB_FIELDS: Record<string, Set<string>> = {
     'capture_log_copy', 'pause_on_login_detection_failure',
   ]),
   'UpdateCheckConfig': new Set(['enabled', 'channel', 'interval']),
+  'DeletingConfig': new Set(['after_delete']),
   'TimeoutConfig': new Set([
     'multiplier', 'default', 'page_load', 'image_upload', 'publishing_result',
-    'publishing_confirmation', 'login_detection', 'gdpr_prompt', 'quick_dom',
+    'publishing_confirmation', 'login_detection', 'quick_dom',
     'captcha_detection', 'sms_verification', 'email_verification',
     'update_check', 'chrome_binary_detection', 'chrome_remote_debugging',
     'chrome_remote_probe', 'pagination_initial', 'pagination_follow_up',

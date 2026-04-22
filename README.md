@@ -32,7 +32,10 @@ Manage ads, run bot commands, generate listings with AI, and track everything fr
   - [Architecture](#architecture)
   - [Codebase](#codebase)
 - [Deployment](#deployment)
-  - [Getting Started](#getting-started)
+  - [Option A — Docker, pre-built image (easiest)](#option-a--docker-pre-built-image-easiest)
+  - [Option B — Docker, build from source](#option-b--docker-build-from-source)
+  - [Option C — Linux / LXC without Docker](#option-c--linux--lxc-without-docker)
+  - [Setup (all options)](#setup-all-options)
   - [Updates](#updates)
 - [Security](#security)
 - [Upstream](#upstream)
@@ -364,28 +367,99 @@ kleinanzeigen-bot-ui/
 
 ## Deployment
 
-> Deployed via Docker — build your own image or pull the pre-built one from [GitHub Container Registry](https://github.com/bkd3sign/kleinanzeigen-bot-ui/pkgs/container/kleinanzeigen-bot-ui).
+### Option A — Docker, pre-built image (easiest)
 
-Multi-stage build: **Node.js Alpine** (builder) → **Debian Trixie** (runner with Chromium + bot binary).
+No clone required. Download only the `docker-compose.yml` and start:
+
+```bash
+mkdir kleinanzeigen-bot-ui && cd kleinanzeigen-bot-ui
+curl -fsSL https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/docker/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+Docker pulls the pre-built image from [GitHub Container Registry](https://github.com/bkd3sign/kleinanzeigen-bot-ui/pkgs/container/kleinanzeigen-bot-ui) automatically. No build step needed.
+
+---
+
+### Option B — Docker, build from source
+
+Clone the repo, build the image locally, and deploy to your server:
+
+```bash
+# On your local machine
+./docker/build.sh
+rsync -av docker/export/ user@server:/path/to/kleinanzeigen-bot-ui/
+
+# On the server
+docker compose up -d --build
+```
+
+Use this if you want to customize the Dockerfile or pin a specific bot version:
+
+```bash
+docker compose up -d --build --build-arg BOT_RELEASE=2025-05-15
+```
+
+**Container resources:**
 
 | Resource | Value |
 |----------|-------|
 | Memory limit | 2 GB |
 | Shared memory | 512 MB (required for Chromium) |
 | tmpfs | 1 GB (`/tmp` scratch space) |
-| Port mapping | 3737 (host) → 3000 (container) |
-| Health check | `GET /api/system/ping` every 60s |
-| Volume | `/workspace` — all bot data, per-user workspaces |
+| Port mapping | `3737` (host) → `3000` (container) |
+| Volume | `.:/workspace` — config, ads, bot binary, user data |
 
-### Getting Started
+---
+
+### Option C — Linux / LXC without Docker
+
+A one-line installer — no clone required. It downloads the app, installs Node.js, Chromium, and the bot binary, then sets up a systemd service. No Docker required.
+
+**Supported systems:**
+
+| OS | Version | Notes |
+|----|---------|-------|
+| Debian | 13 (Trixie) or newer | ⚠️ Debian 12 (Bookworm) **not** supported — glibc too old |
+| Ubuntu | 24.04 LTS or newer | ⚠️ Ubuntu 22.04 **not** supported |
+| Arch Linux | rolling | always supported |
+
+**Architectures:** `x86_64` (amd64), `aarch64` (arm64 — Raspberry Pi 3B+, 4, 5)
+
+> **Raspberry Pi:** Must run a 64-bit OS. 32-bit Raspberry Pi OS is not supported.
+
+> **Proxmox LXC:** If using an unprivileged container, add `lxc.apparmor.profile: unconfined` to `/etc/pve/lxc/<ID>.conf` on the host and restart the container before running the installer.
 
 ```bash
-./docker/build.sh                                                # Build
-rsync -av docker/export/ user@server:/path/to/kleinanzeigen-bot-ui/  # Deploy
-docker compose up -d --build                                     # Start
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/install.sh)
 ```
 
-Navigate to `http://<your-ip>:3737/setup` and complete the setup:
+Or download first to review the script before running:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/install.sh -o install.sh
+sudo bash install.sh
+```
+
+The installer guides you through all settings interactively. For non-interactive use:
+
+```bash
+sudo PORT=8080 WORKSPACE_DIR=/data/bot bash install.sh --yes
+```
+
+**Service management:**
+
+```bash
+systemctl status kleinanzeigen-bot-ui    # status
+journalctl -u kleinanzeigen-bot-ui -f    # live logs
+systemctl restart kleinanzeigen-bot-ui   # restart
+```
+
+---
+
+### Setup (all options)
+
+After starting via any option, open `http://<your-ip>:3737/setup` and complete:
 
 1. **Credentials** — Kleinanzeigen.de email + password
 2. **Contact** — Name, ZIP code, city
@@ -393,7 +467,12 @@ Navigate to `http://<your-ip>:3737/setup` and complete the setup:
 
 ### Updates
 
-Update the bot via the UI (Admin → Bot-Update) or rebuild the image. Pin a specific bot version with `--build-arg BOT_RELEASE=2025-05-15`.
+| Method | How to update |
+|--------|---------------|
+| Docker (pre-built) | `docker compose pull && docker compose up -d` |
+| Docker (from source) | Re-run `build.sh`, redeploy, `docker compose up -d --build` |
+| Linux / install.sh | Re-run `sudo bash install.sh` |
+| Bot binary only | Admin → Bot-Update in the web UI |
 
 ## Security
 

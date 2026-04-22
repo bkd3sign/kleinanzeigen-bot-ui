@@ -34,7 +34,7 @@ export interface ResolvedAttribute {
 
 // Translations for attribute base names
 const LABEL_DE: Record<string, string> = {
-  type: 'Typ', condition: 'Zustand', color: 'Farbe', brand: 'Marke',
+  art: 'Art', type: 'Typ', condition: 'Zustand', color: 'Farbe', brand: 'Marke',
   model: 'Modell', fuel: 'Kraftstoff', shift: 'Getriebe', location: 'Lage',
   swap: 'Tausch', online_tour: 'Online-Besichtigung', working_hours: 'Arbeitszeit',
   device_equipment: 'Ausstattung', wage: 'Gehalt',
@@ -46,16 +46,20 @@ const LABEL_DE: Record<string, string> = {
   verfuegbarm: 'Monat', verfuegbary: 'Jahr',
 };
 
-const HIDDEN_ATTR_SUFFIXES = ['guarantee_b'];
+const HIDDEN_ATTR_SUFFIXES = ['guarantee_b', 'seller_badges_s'];
+
+// art_s always comes first so the primary category attribute is prominent
+const ATTR_SORT_ORDER: Record<string, number> = { art_s: 0 };
 
 export function getLabel(key: string, def?: SharedAttributeDef): string {
   if (def?.text) return def.text;
-  const base = (key.split('.').pop() ?? key).replace(/_[sbid]$/, '');
+  const base = (key.split('.').pop() ?? key).replace(/__v\d+$/, '').replace(/_[sbid]$/, '');
   return LABEL_DE[base] ?? (base.charAt(0).toUpperCase() + base.slice(1));
 }
 
 export function shortKey(key: string): string {
-  return key.includes('.') ? key.split('.').pop()! : key;
+  const k = key.includes('.') ? key.split('.').pop()! : key;
+  return k.replace(/__v\d+$/, '');
 }
 
 export function resolveAttributes(
@@ -119,6 +123,8 @@ export function resolveAttributes(
       : 'select';
     result.push({ key, label: getLabel(key, attr), options: attr.options, type });
   }
+
+  result.sort((a, b) => (ATTR_SORT_ORDER[shortKey(a.key)] ?? 1) - (ATTR_SORT_ORDER[shortKey(b.key)] ?? 1));
 
   return result;
 }

@@ -22,6 +22,7 @@ interface ConfigData {
     republication_interval?: number;
     auto_price_reduction?: Record<string, unknown>;
   };
+  deleting?: { after_delete?: string };
 }
 
 const STRATEGY_OPTIONS = [
@@ -45,6 +46,12 @@ const SHIPPING_TYPE_OPTIONS = [
   { value: 'PICKUP', label: 'Nur Abholung' },
   { value: 'SHIPPING', label: 'Versand' },
   { value: 'NOT_APPLICABLE', label: 'Nicht zutreffend' },
+];
+
+const AFTER_DELETE_OPTIONS = [
+  { value: 'NONE', label: 'Nichts (YAML unverändert)' },
+  { value: 'RESET', label: 'Zurücksetzen (als neu einstellbar)' },
+  { value: 'DISABLE', label: 'Deaktivieren (active: false)' },
 ];
 
 export default function SettingsPage() {
@@ -77,6 +84,7 @@ export default function SettingsPage() {
   const [aprOnUpdate, setAprOnUpdate] = useState(false);
 
   // AI Messaging settings
+  const [afterDelete, setAfterDelete] = useState('NONE');
   const [aiMsgMode, setAiMsgMode] = useState('off');
   const [aiMsgPersonality, setAiMsgPersonality] = useState('');
   const [aiMsgRules, setAiMsgRules] = useState('');
@@ -133,6 +141,7 @@ export default function SettingsPage() {
         setAprDelayReposts(String(apr.delay_reposts ?? 0));
         setAprDelayDays(String(apr.delay_days ?? 0));
         setAprOnUpdate(!!(apr.on_update));
+        setAfterDelete((data.deleting?.after_delete as string) ?? 'NONE');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -158,6 +167,7 @@ export default function SettingsPage() {
     try {
       await api.put('/api/system/config', {
         login: { username: loginEmail, password: loginPassword },
+        deleting: { after_delete: afterDelete },
         ad_defaults: {
           active: adActive,
           type: adType,
@@ -193,7 +203,7 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  }, [loginEmail, loginPassword, adActive, adType, priceType, shippingType, sellDirectly, contactName, contactPhone, contactStreet, contactZip, contactLocation, republication, descPrefix, descSuffix, aprEnabled, aprStrategy, aprAmount, aprMinPrice, aprDelayReposts, aprDelayDays, aprOnUpdate, aiMsgMode, aiMsgPersonality, aiMsgRules, aiMsgEscalate, aiMsgAvailability, toast]);
+  }, [loginEmail, loginPassword, adActive, adType, priceType, shippingType, sellDirectly, contactName, contactPhone, contactStreet, contactZip, contactLocation, republication, descPrefix, descSuffix, aprEnabled, aprStrategy, aprAmount, aprMinPrice, aprDelayReposts, aprDelayDays, aprOnUpdate, afterDelete, aiMsgMode, aiMsgPersonality, aiMsgRules, aiMsgEscalate, aiMsgAvailability, toast]);
 
   if (loading) {
     return <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}><Spinner size="lg" /></div>;
@@ -268,6 +278,15 @@ export default function SettingsPage() {
               <Toggle label={<>Auch bei Update anwenden <InfoTip text="Senkt den Preis auch beim update-Befehl (Text-/Bildänderungen), nicht nur beim publish (Neu-Einstellen). Nur die Tage-Verzögerung wird dabei berücksichtigt, die Repost-Verzögerung nicht." /></>} checked={aprOnUpdate} onChange={setAprOnUpdate} />
             </>
           )}
+        </Section>
+
+        <Section title="Löschen" desc="Verhalten nach dem Löschen einer Anzeige per delete-Befehl." open={openSections.has('deleting')} onToggle={() => toggle('deleting')}>
+          <Select
+            label={<>Nach dem Löschen <InfoTip text="Was soll nach dem Löschen einer Anzeige passieren? Nichts: Die Anzeige bleibt unverändert gespeichert. Zurücksetzen: Sie wird beim nächsten Publish wie eine neue Anzeige behandelt. Deaktivieren: Sie wird nicht mehr automatisch eingestellt, bis du sie manuell reaktivierst." /></>}
+            options={AFTER_DELETE_OPTIONS}
+            value={afterDelete}
+            onChange={(e) => setAfterDelete(e.target.value)}
+          />
         </Section>
 
         <Section title="KI-Nachrichten" desc="Automatische Antworten auf Kleinanzeigen-Nachrichten per LLM." open={openSections.has('ai-msg')} onToggle={() => toggle('ai-msg')}>

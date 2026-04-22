@@ -229,9 +229,10 @@ export async function submitMfaCode(
 }
 
 /**
- * Submit MFA code directly to the bot's running Chrome via CDP.
- * The bot is waiting on ainput() with stdin piped — we enter the code
- * on the Kleinanzeigen MFA page via CDP, then send \n to stdin.
+ * Submit MFA code via CDP into the Chrome that the bot opened.
+ * Works for two cases:
+ *  - Bot still running (status=running): Chrome is live, bot waits at ainput() → inject code + send \n to stdin
+ *  - Bot crashed at MFA (status=mfa_required): Chrome was kept alive by runner → inject code, no stdin needed
  */
 export async function submitMfaToRunningBot(
   jobId: string,
@@ -242,10 +243,8 @@ export async function submitMfaToRunningBot(
     return { success: false, error: 'Kein CDP-Port verfügbar' };
   }
 
+  // stdin only needed to unblock ainput() when bot is still running
   const stdin = jobStdins.get(jobId);
-  if (!stdin || stdin.destroyed) {
-    return { success: false, error: 'Bot-Prozess nicht mehr erreichbar' };
-  }
 
   let ws: WebSocket | null = null;
 
@@ -301,11 +300,9 @@ export async function submitMfaToRunningBot(
       return { success: false, error: 'Login nach Code-Eingabe nicht erfolgreich — falscher Code?' };
     }
 
-    // MFA succeeded — send Enter to stdin so bot continues past ainput()
-    try {
-      stdin.write('\n');
-    } catch {
-      // stdin might have closed — bot may have continued anyway
+    // Unblock ainput() if bot is still running
+    if (stdin && !stdin.destroyed) {
+      try { stdin.write('\n'); } catch { /* fine */ }
     }
 
     if (job) job.mfa_required = false;

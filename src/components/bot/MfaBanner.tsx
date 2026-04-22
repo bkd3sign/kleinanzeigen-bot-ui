@@ -10,11 +10,6 @@ interface MfaBannerProps {
   jobId: string;
 }
 
-/**
- * Bot MFA banner — code field is immediately usable.
- * Primary flow: direct inject into bot's running Chrome via CDP.
- * Fallback: "Neuen Code anfordern" starts a separate Chrome session.
- */
 export function MfaBanner({ jobId }: MfaBannerProps) {
   const [preparePending, setPreparePending] = useState(false);
   const [submitPending, setSubmitPending] = useState(false);
@@ -37,7 +32,7 @@ export function MfaBanner({ jobId }: MfaBannerProps) {
     setSubmitPending(true);
     try {
       await api.post('/api/bot/mfa/submit', { job_id: jobId, code });
-      toast('success', 'MFA erfolgreich — Bot fährt fort');
+      toast('success', 'MFA erfolgreich');
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       queryClient.invalidateQueries({ queryKey: ['job', jobId] });
     } catch (err) {

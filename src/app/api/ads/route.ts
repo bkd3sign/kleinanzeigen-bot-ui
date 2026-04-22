@@ -4,7 +4,7 @@ import { adCreateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
 import { readMergedConfig } from '@/lib/yaml/config';
-import { readLastDownloadAll } from '@/lib/bot/hooks';
+import { readLastDownloadAll, resolveDownloadDir } from '@/lib/bot/hooks';
 import { getFirstImage } from '@/lib/images/resolve';
 import { computeContentHash } from '@/lib/ads/content-hash';
 import path from 'path';
@@ -57,7 +57,30 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ads, total: ads.length });
+    // Deduplicate by ID: during download --ads=all the bot creates files in
+    // the download dir before the hook removes the ads/ copy. Prefer ads/ version
+    // (has local fields like auto_price_reduction, republication_interval etc.).
+    const downloadDir = resolveDownloadDir(ws);
+    const downloadDirRel = path.relative(ws, downloadDir) + path.sep;
+    const seenIds = new Map<number, number>(); // id → index in deduped
+    const deduped: typeof ads = [];
+    for (const entry of ads) {
+      if (entry.id === null) {
+        deduped.push(entry);
+        continue;
+      }
+      const existing = seenIds.get(entry.id as number);
+      if (existing === undefined) {
+        seenIds.set(entry.id as number, deduped.length);
+        deduped.push(entry);
+      } else if (!entry.file.startsWith(downloadDirRel)) {
+        // ads/ version found after download-dir version — replace
+        deduped[existing] = entry;
+      }
+      // download-dir duplicate of already-seen ads/ entry → skip
+    }
+
+    return NextResponse.json({ ads: deduped, total: deduped.length });
   } catch (error) {
     return handleApiError(error);
   }

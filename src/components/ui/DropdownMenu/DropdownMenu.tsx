@@ -14,7 +14,7 @@ export interface DropdownMenuItem {
 
 interface DropdownMenuProps {
   items: DropdownMenuItem[];
-  pos: { top: number; right: number };
+  pos: { top?: number; bottom?: number; right: number; maxHeight?: number };
   onClose: () => void;
 }
 
@@ -45,7 +45,7 @@ export function DropdownMenu({ items, pos, onClose }: DropdownMenuProps) {
     <div
       ref={menuRef}
       className={styles.menu}
-      style={{ position: 'fixed', top: pos.top, right: pos.right, left: 'auto', zIndex: 'var(--z-modal)' as unknown as number }}
+      style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, right: pos.right, left: 'auto', maxHeight: pos.maxHeight, overflowY: pos.maxHeight ? 'auto' : undefined, zIndex: 'var(--z-modal)' as unknown as number }}
     >
       {items.map((item, i) => (
         <div key={i}>

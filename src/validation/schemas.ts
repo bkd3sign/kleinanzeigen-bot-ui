@@ -129,6 +129,9 @@ export const setupSchema = z.object({
 export const configUpdateSchema = z.object({
   ad_defaults: z.record(z.unknown()).optional(),
   publishing: z.record(z.unknown()).optional(),
+  deleting: z.object({
+    after_delete: z.enum(['NONE', 'RESET', 'DISABLE']),
+  }).optional(),
   timeouts: z.record(z.unknown()).optional(),
   download: z.record(z.unknown()).optional(),
   update_check: z.record(z.unknown()).optional(),

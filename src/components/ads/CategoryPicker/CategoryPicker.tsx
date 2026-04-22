@@ -47,6 +47,7 @@ export function CategoryPicker({
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadCategories().then(setCategories);
@@ -72,6 +73,7 @@ export function CategoryPicker({
       setSearch('');
       setIsOpen(false);
       setHighlightIndex(-1);
+      inputRef.current?.blur();
     },
     [onChange],
   );
@@ -179,6 +181,7 @@ export function CategoryPicker({
     <div className={styles.wrapper} ref={wrapperRef}>
       <div className={styles.inputWrap}>
         <Input
+          ref={inputRef}
           label={label}
           placeholder="Kategorie suchen…"
           value={isOpen ? search : displayValue}

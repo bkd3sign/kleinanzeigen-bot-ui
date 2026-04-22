@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import type { AdListItem } from '@/types/ad';
 import { projectReposts, getCurrentPrice } from '@/lib/ads/pricing';
@@ -69,14 +70,21 @@ interface TooltipState {
 
 export const PriceChart = memo(function PriceChart({ ads }: PriceChartProps) {
   const router = useRouter();
-  const wrapRef = useRef<HTMLDivElement>(null);
   const pathRefs = useRef<(SVGPathElement | null)[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState>({
     visible: false,
     text: '',
     x: 0,
     y: 0,
   });
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth <= 640);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   const lines = useMemo(() => {
     const aprAds = ads
@@ -104,14 +112,12 @@ export const PriceChart = memo(function PriceChart({ ads }: PriceChartProps) {
 
   const handleDotHover = useCallback(
     (e: React.MouseEvent, adTitle: string, repost: number, price: number, date: string | null) => {
-      if (!wrapRef.current) return;
-      const rect = wrapRef.current.getBoundingClientRect();
       const dateStr = date ? ` · ${date}` : '';
       setTooltip({
         visible: true,
         text: `${adTitle} – #${repost}: ${price} €${dateStr}`,
-        x: e.clientX - rect.left + 10,
-        y: e.clientY - rect.top - 30,
+        x: e.clientX + 12,
+        y: e.clientY - 36,
       });
     },
     [],
@@ -192,15 +198,16 @@ export const PriceChart = memo(function PriceChart({ ads }: PriceChartProps) {
   return (
     <div className={styles.section}>
       <div className={styles.sectionTitle}>Preisentwicklung (Projektion)</div>
-      <div ref={wrapRef} className={styles.chartWrap}>
-        {tooltip.visible && (
-          <div
-            className={styles.tooltip}
-            style={{ left: tooltip.x, top: tooltip.y }}
-          >
-            {tooltip.text}
-          </div>
-        )}
+      {tooltip.visible && createPortal(
+        <div
+          className={styles.tooltip}
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          {tooltip.text}
+        </div>,
+        document.body,
+      )}
+      <div className={styles.chartWrap}>
         <svg viewBox={`0 0 ${width} ${height}`} className={styles.chartSvg}>
           {yElements}
           {xElements}
@@ -238,7 +245,7 @@ export const PriceChart = memo(function PriceChart({ ads }: PriceChartProps) {
                     key={`${pt.repost}-${pt.price}`}
                     cx={scaleX(pt.repost).toFixed(1)}
                     cy={scaleY(pt.price).toFixed(1)}
-                    r={2}
+                    r={isMobile ? 5 : 2}
                     fill={color}
                     className={styles.priceDot}
                     style={{ '--anim-delay': `${lineDelay + 800 + pi * 40}ms` } as React.CSSProperties}

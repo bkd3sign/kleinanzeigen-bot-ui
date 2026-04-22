@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { jobs, startJob } from '@/lib/bot/jobs';
 import { submitMfaCode, submitMfaToRunningBot } from '@/lib/bot/mfa-resolver';
+import { killOrphanedChromium } from '@/lib/bot/browser-cleanup';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -22,13 +23,22 @@ export async function POST(request: NextRequest) {
     const job = jobs.get(job_id);
     if (!job) return NextResponse.json({ detail: 'Job nicht gefunden' }, { status: 404 });
 
-    // Primary: inject code directly into bot's running Chrome via CDP
-    if (job.cdp_port && job.status === 'running') {
-      const directResult = await submitMfaToRunningBot(job_id, code);
-      if (directResult.success) {
-        return NextResponse.json({ message: 'MFA erfolgreich — Bot fährt fort' });
+    const workspace = job.workspace || user.workspace;
+
+    // Primary: inject code into Chrome via CDP.
+    // Works for running bot (Chrome + ainput() alive) and crashed bot (Chrome kept alive by runner).
+    if (job.cdp_port) {
+      const cdpResult = await submitMfaToRunningBot(job_id, code);
+      if (cdpResult.success) {
+        if (job.status === 'running') {
+          return NextResponse.json({ message: 'MFA erfolgreich — Bot fährt fort' });
+        }
+        // Bot crashed — Chrome survived for code injection, now kill it and restart job
+        killOrphanedChromium(workspace);
+        const newJob = startJob(job.command, workspace, job.user_id || user.id);
+        return NextResponse.json({ message: 'MFA erfolgreich — Befehl wird wiederholt', job: newJob });
       }
-      // Direct inject failed — fall through to legacy flow
+      // CDP failed (Chrome died) — fall through to legacy prepare flow
     }
 
     // Fallback: use separately prepared MFA session (requires prior prepareMfaSession call)
@@ -36,7 +46,7 @@ export async function POST(request: NextRequest) {
     if (!result.success) return NextResponse.json({ detail: result.error }, { status: 422 });
 
     job.mfa_required = false;
-    const newJob = startJob(job.command, job.workspace || user.workspace, job.user_id || user.id);
+    const newJob = startJob(job.command, workspace, job.user_id || user.id);
 
     return NextResponse.json({ message: 'MFA erfolgreich — Befehl wird wiederholt', job: newJob });
   } catch (error) {

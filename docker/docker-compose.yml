@@ -1,7 +1,7 @@
 services:
-  kleinanzeigen-bot:
-    build: .
-    container_name: kleinanzeigen-bot
+  kleinanzeigen-bot-ui:
+    image: ghcr.io/bkd3sign/kleinanzeigen-bot-ui:latest
+    container_name: kleinanzeigen-bot-ui
     restart: unless-stopped
     ports:
       - "${PORT:-3737}:3000"

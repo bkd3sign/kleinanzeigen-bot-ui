@@ -19,7 +19,7 @@ deploy.sh
 CLAUDE.md
 .claude/
 
-# Interface Design (local tooling)
+/docs/
 .interface-design/
 
 # Playwright

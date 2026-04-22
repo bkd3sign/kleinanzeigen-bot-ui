@@ -478,6 +478,10 @@
   .chatHeader {
     padding: var(--space-2) var(--space-3) var(--space-2) var(--space-1);
     gap: var(--space-2);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex-shrink: 0;
   }
 
   .containerChatOpen {
@@ -485,9 +489,29 @@
       display: none;
     }
 
+    // Full-screen overlay independent of the container's flex chain.
+    // flex column: chatHeader (sticky top) → chatMessages (scroll) → chatInput (flex-shrink: 0)
     .chatPanel {
       display: flex;
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      overflow: hidden;
+      background: var(--bg-primary);
     }
+  }
+
+  // Messages list scrolls internally; input stays at the bottom as a flex child.
+  .chatMessages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  .chatInput {
+    flex-shrink: 0;
   }
 
   .chatBackBtn {

@@ -94,7 +94,8 @@ function getDelayReason(
   // Bot: elapsed_days = (now - updated_on).days, checks elapsed_days >= delay_days.
   // updated_on = timestamp of the PREVIOUS publish, not creation.
   if (delayDays > 0) {
-    const daysSincePrevious = Math.round((repostDate.getTime() - previousPublishDate.getTime()) / DAY_MS);
+    // Bot uses Python's timedelta.days which truncates (floor), not round
+    const daysSincePrevious = Math.floor((repostDate.getTime() - previousPublishDate.getTime()) / DAY_MS);
     if (daysSincePrevious < delayDays) return 'day_delay';
   }
   return null;
@@ -110,7 +111,7 @@ function getDelayReason(
  * This is the single source of truth used by timeline preview,
  * dashboard calendar, and price chart.
  */
-export function projectReposts(ad: AdListItem, maxFutureSteps = 30): RepostProjection[] {
+export function projectReposts(ad: AdListItem, maxFutureSteps = 500): RepostProjection[] {
   const apr = ad.auto_price_reduction;
   if (!apr?.enabled || !apr.strategy || !apr.amount || ad.price == null) return [];
 
@@ -230,6 +231,9 @@ export function projectReposts(ad: AdListItem, maxFutureSteps = 30): RepostProje
         reducedBy = price - newPrice;
         price = newPrice;
       }
+      // When newPrice >= price (rounding causes no change), bot still increments
+      // price_reduction_count (reason: "no_visible_change") and keeps republishing.
+      // UI truncates these stuck steps for display — see PricePreview.
     }
 
     // Bot sets updated_on after each publish

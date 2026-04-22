@@ -9,7 +9,7 @@ import { DropdownMenu, useToast, showConfirm } from '@/components/ui';
 import type { DropdownMenuItem } from '@/components/ui';
 import { useCategoryName } from '@/hooks/useCategories';
 import type { AdListItem } from '@/types/ad';
-import { isExpired, isExpiringSoon, getExpiryDaysLeft } from '@/lib/ads/status';
+import { isExpired, isExpiringSoon, getExpiryDaysLeft, isReserved } from '@/lib/ads/status';
 import { getCurrentPrice } from '@/lib/ads/pricing';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import styles from './AdCard.module.scss';
@@ -62,7 +62,7 @@ function formatPrice(ad: AdListItem): React.ReactNode {
 
 export function AdCard({ ad, selected = false, onSelect, selectMode = false, style }: AdCardProps) {
   const router = useRouter();
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number; maxHeight?: number } | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const catName = useCategoryName();
   const queryClient = useQueryClient();
@@ -104,8 +104,15 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
 
   const handleMenuClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    if (menuPos) { setMenuPos(null); return; }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setMenuPos(menuPos ? null : { top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    const flipUp = spaceBelow < 260 && spaceAbove > spaceBelow;
+    setMenuPos(flipUp
+      ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right, maxHeight: spaceAbove }
+      : { top: rect.bottom + 4, right: window.innerWidth - rect.right, maxHeight: spaceBelow },
+    );
   }, [menuPos]);
 
   // Build card class names
@@ -180,6 +187,11 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
           <span className={`${styles.cardStatus} ${statusClass}`}>
             {statusText}
           </span>
+          {isReserved(ad) && (
+            <span className={`${styles.cardStatus} ${styles.cardStatusReserved}`}>
+              Reserviert
+            </span>
+          )}
           {ad.auto_price_reduction?.enabled && (
             <span className={`${styles.cardStatus} ${styles.cardStatusPriceReduction}`}>
               ↓{ad.auto_price_reduction.min_price ?? '?'}€

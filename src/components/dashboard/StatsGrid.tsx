@@ -13,11 +13,11 @@ interface StatsGridProps {
 }
 
 interface StatItem {
-  num?: number;                      // raw number for count-up animation
-  num2?: number;                     // second number for "X / Y" format
-  suffix?: string;                   // text appended after the counted number
-  format?: (n: number) => string;    // custom formatter overrides suffix
-  value: string;                     // fallback for non-numeric formats
+  num?: number;
+  num2?: number;
+  suffix?: string;
+  format?: (n: number) => string;
+  value: string;
   label: string;
   href?: string;
 }
@@ -83,6 +83,7 @@ export const StatsGrid = memo(function StatsGrid({ ads }: StatsGridProps) {
     const totalReposts = ads.reduce((s, a) => s + (a.repost_count ?? 0), 0);
     const totalPriceReductions = ads.reduce((s, a) => s + (a.price_reduction_count ?? 0), 0);
 
+    const inactive = ads.filter((a) => a.active === false).length;
     const orphaned = ads.filter((a) => a.is_orphaned).length;
     const expiringSoon = ads.filter((a) => isExpiringSoon(a)).length;
 
@@ -103,6 +104,7 @@ export const StatsGrid = memo(function StatsGrid({ ads }: StatsGridProps) {
       { num: local, value: String(local), label: 'Vorbereitet', href: local ? '/ads?status=draft' : undefined },
       { num: giveAway, value: String(giveAway), label: 'Zu verschenken' },
       { num: expiringSoon, value: String(expiringSoon), label: 'Bald ablaufend', href: expiringSoon ? '/ads?status=expiring' : undefined },
+      { num: inactive, value: String(inactive), label: 'Inaktiv', href: inactive ? '/ads?status=inactive' : undefined },
       { num: orphaned, value: String(orphaned), label: 'Verwaist', href: orphaned ? '/ads?status=orphaned' : undefined },
       { num: totalReposts, value: String(totalReposts), label: 'Gesamt Reposts' },
       // Row 2: Prices & time periods

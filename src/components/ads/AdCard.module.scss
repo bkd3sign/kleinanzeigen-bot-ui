@@ -37,7 +37,10 @@
 
 .cardInactive {
   border-color: var(--red);
-  opacity: 0.5;
+}
+
+.cardOrphaned {
+  border-color: var(--orange);
 }
 
 /* Image area: fixed 180px height with object-fit cover */
@@ -61,7 +64,8 @@
 }
 
 .cardExpired .cardImageImg,
-.cardOrphaned .cardImageImg {
+.cardOrphaned .cardImageImg,
+.cardInactive .cardImageImg {
   filter: grayscale(1) brightness(0.85);
 }
 
@@ -126,6 +130,11 @@
 
 .cardStatusOrphaned {
   background-color: rgba(245, 158, 11, 0.85);
+  color: #fff;
+}
+
+.cardStatusReserved {
+  background-color: rgba(96, 165, 250, 0.85);
   color: #fff;
 }
 

@@ -46,8 +46,18 @@
 .rowSelected { background-color: var(--accent-muted); }
 .rowDraft { opacity: 0.6; }
 .rowExpiring { border-left: 2px solid var(--yellow, #eab308); }
-.rowExpired { border-left: 2px solid var(--orange); opacity: 0.7; }
-.rowInactive { border-left: 2px solid var(--red); opacity: 0.5; }
+.rowExpired {
+  border-left: 2px solid var(--orange);
+  opacity: 0.7;
+
+  .thumb img { filter: grayscale(1) brightness(0.85); }
+}
+.rowInactive {
+  border-left: 2px solid var(--red);
+  opacity: 0.5;
+
+  .thumb img { filter: grayscale(1) brightness(0.85); }
+}
 .rowOrphaned {
   border-left: 2px solid var(--orange);
   opacity: 0.7;

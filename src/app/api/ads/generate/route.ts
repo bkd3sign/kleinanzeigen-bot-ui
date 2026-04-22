@@ -7,6 +7,7 @@ import { allCarriersOf, cheapestPriceOf, type ShippingSizeId } from '@/lib/shipp
 import { trackAdGeneration } from '@/lib/messaging/responder';
 import path from 'path';
 import { readFileSync, existsSync } from 'fs';
+import { shortKey as attrShortKey } from '@/lib/ads/category-attributes';
 
 export async function POST(request: NextRequest) {
   try {
@@ -106,13 +107,11 @@ export async function POST(request: NextRequest) {
         for (const ref of entry.shared ?? []) {
           const def = catAttrsData.shared_attributes[ref];
           if (!def?.options?.length) continue;
-          const shortKey = ref.includes('.') ? ref.split('.').pop()! : ref;
-          lines.push(`${shortKey}: ${def.options.map((o) => o.value).join(' | ')}`);
+          lines.push(`${attrShortKey(ref)}: ${def.options.map((o) => o.value).join(' | ')}`);
         }
         for (const attr of entry.attributes ?? []) {
           if (!attr.options?.length) continue;
-          const shortKey = attr.attribute_key.includes('.') ? attr.attribute_key.split('.').pop()! : attr.attribute_key;
-          lines.push(`${shortKey}: ${attr.options.map((o) => o.value).join(' | ')}`);
+          lines.push(`${attrShortKey(attr.attribute_key)}: ${attr.options.map((o) => o.value).join(' | ')}`);
         }
         if (lines.length > 0) {
           attrContextMsg = `ERKANNTE KATEGORIE: ${kaId}\nPFLICHT: Du MUSST "special_attributes" mit Werten für ALLE folgenden Felder füllen. Nutze EXAKT diese Schlüsselnamen und wähle einen der erlaubten Werte (kein Freitext, nur die vorgegebenen Werte). Felder die du nicht kennst: leer lassen, aber NIEMALS Platzhalter wie "[Wert]" verwenden:\n${lines.join('\n')}`;
@@ -260,16 +259,16 @@ export async function POST(request: NextRequest) {
           for (const ref of catEntry.shared ?? []) {
             const def = catAttrsData.shared_attributes[ref];
             if (!def?.options?.length) continue;
-            const shortKey = ref.includes('.') ? ref.split('.').pop()! : ref;
-            if (!currentAttrs[shortKey]) {
-              missingLines.push(`${shortKey}: ${def.options.map((o) => o.value).join(' | ')}`);
+            const sk = attrShortKey(ref);
+            if (!currentAttrs[sk]) {
+              missingLines.push(`${sk}: ${def.options.map((o) => o.value).join(' | ')}`);
             }
           }
           for (const attr of catEntry.attributes ?? []) {
             if (!attr.options?.length) continue;
-            const shortKey = attr.attribute_key.includes('.') ? attr.attribute_key.split('.').pop()! : attr.attribute_key;
-            if (!currentAttrs[shortKey]) {
-              missingLines.push(`${shortKey}: ${attr.options.map((o) => o.value).join(' | ')}`);
+            const sk = attrShortKey(attr.attribute_key);
+            if (!currentAttrs[sk]) {
+              missingLines.push(`${sk}: ${attr.options.map((o) => o.value).join(' | ')}`);
             }
           }
 

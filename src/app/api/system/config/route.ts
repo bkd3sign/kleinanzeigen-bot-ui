@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ad_defaults: config.ad_defaults ?? {},
       publishing: config.publishing ?? {},
+      deleting: config.deleting ?? {},
       timeouts: config.timeouts ?? {},
       download: config.download ?? {},
       update_check: config.update_check ?? {},

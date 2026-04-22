@@ -11,7 +11,6 @@ import type { AdCreateInput } from '@/validation/schemas';
 import styles from './AdForm.module.scss';
 
 const STRATEGY_OPTIONS = [
-  { value: '', label: '– Keine –' },
   { value: 'PERCENTAGE', label: 'Prozentual' },
   { value: 'FIXED', label: 'Fester Betrag' },
 ];
@@ -40,7 +39,7 @@ export function PriceReductionSection({ botInfo }: { botInfo?: BotInfo }) {
   // Clamp min_price to price - 1 when price changes
   useEffect(() => {
     if (aprEnabled && price != null && aprMinPrice != null && aprMinPrice >= price) {
-      setValue('auto_price_reduction.min_price', Math.max(price - 1, 1), { shouldDirty: true });
+      setValue('auto_price_reduction.min_price', Math.max(price - 1, 0), { shouldDirty: true });
     }
   }, [price, aprEnabled, aprMinPrice, setValue]);
 
@@ -65,7 +64,12 @@ export function PriceReductionSection({ botInfo }: { botInfo?: BotInfo }) {
       <Toggle
         label={<>Preisreduktion aktiviert <InfoTip text="Senkt den Preis automatisch bei jedem Repost. Der erste Repost ändert den Preis nie — die Reduktion beginnt erst ab dem zweiten Repost." /></>}
         checked={aprEnabled}
-        onChange={(checked) => setValue('auto_price_reduction.enabled', checked, { shouldDirty: true })}
+        onChange={(checked) => {
+          setValue('auto_price_reduction.enabled', checked, { shouldDirty: true });
+          if (checked && !aprStrategy) {
+            setValue('auto_price_reduction.strategy', 'PERCENTAGE', { shouldDirty: true });
+          }
+        }}
       />
 
       {aprEnabled && (
@@ -90,7 +94,7 @@ export function PriceReductionSection({ botInfo }: { botInfo?: BotInfo }) {
             <Input
               label={<>Mindestpreis (€) <InfoTip text="Untergrenze: Der Preis wird nie unter diesen Wert gesenkt. Pflichtfeld wenn Preisreduktion aktiviert ist." /></>}
               type="number"
-              min="1"
+              min="0"
               max={price ? price - 1 : undefined}
               step="1"
               placeholder="z.B. 10"
@@ -203,7 +207,7 @@ function PricePreview({
   const [mode, setMode] = useState<PreviewMode>('chips');
 
   const projections = useMemo(() => {
-    if (!price || !strategy || !amount || !minPrice) return null;
+    if (!price || !strategy || !amount || minPrice == null) return null;
 
     // Build an AdListItem-like object from form values + botInfo
     const ad: AdListItem = {
@@ -255,6 +259,31 @@ function PricePreview({
   );
   const isFirstStepIneffective = firstStepRounded >= roundedPrice;
 
+  // Detect when price gets stuck above minPrice due to rounding (e.g. 5€ * 90% = 4.5 → rounds back to 5€).
+  // Bot behavior: keeps republishing and incrementing price_reduction_count ("no_visible_change"), doesn't stop.
+  const firstStuckIndex = futureSteps.findIndex(s => !s.isDelayed && s.reducedBy === null);
+  const stuckPrice = firstStuckIndex !== -1 ? futureSteps[firstStuckIndex].price : null;
+  const isPriceStuck = !isFirstStepIneffective && stuckPrice != null && stuckPrice > (minPrice ?? 0);
+
+  const isDayDelayIneffective = delayDays > republicationInterval + 1;
+  const MAX_TRUNCATE_VISIBLE = 3;
+
+  let visibleFutureSteps = futureSteps;
+  let hiddenPausedCount = 0;
+  let hiddenStuckCount = 0;
+
+  if (isDayDelayIneffective) {
+    visibleFutureSteps = futureSteps.slice(0, MAX_TRUNCATE_VISIBLE);
+    hiddenPausedCount = Math.max(0, futureSteps.length - MAX_TRUNCATE_VISIBLE);
+  } else if (isPriceStuck) {
+    visibleFutureSteps = futureSteps.slice(0, firstStuckIndex + 1);
+    hiddenStuckCount = Math.max(0, futureSteps.length - firstStuckIndex - 1);
+  } else if (isFirstStepIneffective) {
+    const firstNonDelayedIdx = futureSteps.findIndex(s => !s.isDelayed);
+    visibleFutureSteps = futureSteps.slice(0, firstNonDelayedIdx + 1);
+    hiddenStuckCount = Math.max(0, futureSteps.length - firstNonDelayedIdx - 1);
+  }
+
   // Current effective price
   const currentPrice = pastSteps.length > 0 ? pastSteps[pastSteps.length - 1].price : roundedPrice;
 
@@ -305,6 +334,25 @@ function PricePreview({
         </div>
       )}
 
+      {isPriceStuck && stuckPrice != null && (
+        <div className={styles.priceReductionInfo}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <div>
+            <strong>Der Preis würde bei {stuckPrice} € stecken bleiben</strong>
+            <p>
+              {stuckPrice} € × {100 - amount!}% = {(stuckPrice * (1 - amount! / 100)).toFixed(2)} € — nach Rundung auf ganze Euro wieder {stuckPrice} €.
+              Der Bot publiziert dann weiterhin zu diesem Preis.
+              {strategy === 'PERCENTAGE'
+                ? ` Tipp: Erhöhe den Prozentsatz oder setze den Mindestpreis auf ${stuckPrice} €.`
+                : ` Tipp: Erhöhe den Betrag oder setze den Mindestpreis auf ${stuckPrice} €.`
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className={styles.pricePreviewHeader}>
         <label className={styles.pricePreviewLabel}>Preisreduktion Vorschau</label>
         <div className={styles.pricePreviewTabs}>
@@ -349,7 +397,7 @@ function PricePreview({
             {currentPrice} €
           </span>
           {/* Future price steps */}
-          {futureSteps.map((step, i) => (
+          {visibleFutureSteps.map((step, i) => (
             <span key={`future-${i}`}>
               <span className={styles.pricePreviewArrow}> → </span>
               <span className={[
@@ -360,6 +408,18 @@ function PricePreview({
               </span>
             </span>
           ))}
+          {hiddenPausedCount > 0 && (
+            <span>
+              <span className={styles.pricePreviewArrow}> → </span>
+              <span className={styles.timelineDate}>… pausiert</span>
+            </span>
+          )}
+          {hiddenStuckCount > 0 && (
+            <span>
+              <span className={styles.pricePreviewArrow}> → </span>
+              <span className={styles.timelineDate}>… weiterhin {stuckPrice} €</span>
+            </span>
+          )}
         </div>
       ) : (
       <div className={styles.priceTimeline}>
@@ -426,8 +486,9 @@ function PricePreview({
         </div>
 
         {/* Future reposts */}
-        {futureSteps.map((step, i) => {
+        {visibleFutureSteps.map((step, i) => {
           const daysFromNow = daysFromToday(step.date, now);
+          const isLast = i === visibleFutureSteps.length - 1;
           return (
             <div key={`future-${i}`} className={styles.timelineRow}>
               <div className={styles.timelineTrack}>
@@ -436,7 +497,7 @@ function PricePreview({
                   step.isFinal ? styles.timelineDotFinal : '',
                   step.isDelayed ? styles.timelineDotDelayed : '',
                 ].filter(Boolean).join(' ')} />
-                {i < futureSteps.length - 1 && <div className={styles.timelineLine} />}
+                {(!isLast || hiddenPausedCount > 0) && <div className={styles.timelineLine} />}
               </div>
               <div className={styles.timelineContent}>
                 <div className={styles.timelineMain}>
@@ -449,7 +510,10 @@ function PricePreview({
                     {step.isDelayed && (
                       <span className={styles.timelinePause}>{delayLabel(step)}</span>
                     )}
-                    {!step.isDelayed && step.reducedBy && i === 0 && pastAllSteps.every(s => !s.reducedBy) && (
+                    {!step.isDelayed && step.reducedBy === null && (
+                      <span className={styles.timelinePause}>kein Abzug</span>
+                    )}
+                    {!step.isDelayed && step.reducedBy !== null && i === 0 && pastAllSteps.every(s => !s.reducedBy) && (
                       <span className={styles.timelineFirstReduction}>erste Reduktion</span>
                     )}
                   </span>
@@ -462,6 +526,31 @@ function PricePreview({
             </div>
           );
         })}
+
+        {hiddenPausedCount > 0 && (
+          <div className={styles.timelineRow}>
+            <div className={styles.timelineTrack}>
+              <div className={`${styles.timelineDot} ${styles.timelineDotDelayed}`} />
+            </div>
+            <div className={styles.timelineContent}>
+              <span className={styles.timelineDate}>
+                … weitere {hiddenPausedCount} Reposts pausiert
+              </span>
+            </div>
+          </div>
+        )}
+        {hiddenStuckCount > 0 && (
+          <div className={styles.timelineRow}>
+            <div className={styles.timelineTrack}>
+              <div className={`${styles.timelineDot} ${styles.timelineDotDelayed}`} />
+            </div>
+            <div className={styles.timelineContent}>
+              <span className={styles.timelineDate}>
+                … weiterhin bei {stuckPrice} € ({hiddenStuckCount} weitere Reposts)
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Summary footer */}
         <div className={styles.timelineSummary}>

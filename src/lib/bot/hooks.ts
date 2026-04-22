@@ -3,11 +3,18 @@ import path from 'path';
 import { jobs } from '@/lib/bot/jobs';
 import type { Job } from '@/types/bot';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
+import { readConfig } from '@/lib/yaml/config';
 
 const DOWNLOAD_ALL_JSON = '.last_download_all.json';
 
-// Fields synced from the fresh download into an existing file
-const ONLINE_FIELDS = ['id', 'created_on', 'updated_on', 'content_hash'] as const;
+export function resolveDownloadDir(workspace: string): string {
+  try {
+    const config = readConfig(workspace);
+    const dir = (config as Record<string, unknown> & { download?: { dir?: string } })?.download?.dir;
+    if (dir) return path.resolve(workspace, dir);
+  } catch { /* fall through */ }
+  return path.join(workspace, 'downloaded-ads');
+}
 
 // Local-only fields preserved from the snapshot (not stored on Kleinanzeigen)
 const LOCAL_ONLY_FIELDS = [
@@ -21,6 +28,7 @@ const LOCAL_ONLY_FIELDS = [
   'shipping_costs',
   'shipping_options',
   'sell_directly',
+  'updated_on',
 ] as const;
 
 interface DownloadAllResult {
@@ -69,9 +77,11 @@ function removeAdFile(filePath: string): void {
   try {
     fs.unlinkSync(filePath);
     const dir = path.dirname(filePath);
+    // If no other YAML files remain, clean up the entire directory (images etc.)
     const remaining = fs.readdirSync(dir);
-    if (remaining.length === 0) {
-      fs.rmdirSync(dir);
+    const hasOtherYaml = remaining.some(f => /\.(ya?ml|json)$/i.test(f));
+    if (!hasOtherYaml) {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   } catch { /* already gone */ }
 }
@@ -88,7 +98,7 @@ export function onJobStarting(jobId: string, command: string, workspace: string)
 
   if (!command.includes('download') || !command.includes('--ads=all')) return;
 
-  const downloadedDir = path.join(workspace, 'downloaded-ads');
+  const downloadedDir = resolveDownloadDir(workspace);
   const entries: SnapshotEntry[] = [];
 
   for (const filePath of findAdFiles(workspace)) {
@@ -154,6 +164,26 @@ function refreshOnlineIds(workspace: string, job: Job): void {
   }
 }
 
+function cleanOrphanedImageDirs(downloadedDir: string, job: Job): void {
+  if (!fs.existsSync(downloadedDir)) return;
+  let removed = 0;
+  for (const entry of fs.readdirSync(downloadedDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dirPath = path.join(downloadedDir, entry.name);
+    const hasYaml = fs.readdirSync(dirPath).some(f => /\.(ya?ml|json)$/i.test(f));
+    if (!hasYaml) {
+      try {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+        removed++;
+        log(job, `CLEANUP: Verwaister Bildordner entfernt → ${entry.name}`);
+      } catch { /* ignore */ }
+    }
+  }
+  if (removed > 0) {
+    log(job, `CLEANUP: ${removed} verwaiste Bildordner in ${path.basename(downloadedDir)}/ entfernt`);
+  }
+}
+
 /**
  * Post-completion hook for download commands.
  *
@@ -180,7 +210,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     const job = jobs.get(jobId);
     if (!job || (job.exit_code !== 0 && job.exit_code !== null)) return;
 
-    const downloadedDir = path.join(workspace, 'downloaded-ads');
+    const downloadedDir = resolveDownloadDir(workspace);
     if (!fs.existsSync(downloadedDir)) return;
 
     // For partial downloads (new, specific IDs): merge new IDs into existing list
@@ -317,6 +347,8 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     const tempPath = `${targetPath}.tmp`;
     fs.writeFileSync(tempPath, JSON.stringify(result, null, 2), 'utf-8');
     fs.renameSync(tempPath, targetPath);
+
+    cleanOrphanedImageDirs(downloadedDir, job);
 
     log(job, `--- Ad-Sync abgeschlossen: ${downloadedFiles.length} online, ${mergedCount} gemergt, ${newCount} neu ---`);
   } catch (err) {

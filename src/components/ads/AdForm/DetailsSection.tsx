@@ -134,8 +134,7 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
   const remaining = 4000 - description.length;
   const counterWarning = remaining < 200;
 
-  // Price visibility
-  const showPrice = priceType !== 'GIVE_AWAY';
+  const isGiveAway = priceType === 'GIVE_AWAY';
 
   // Shipping details visible only for SHIPPING type
   const showShipping = shippingType === 'SHIPPING';
@@ -254,24 +253,38 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
 
       {/* Price + Price type row */}
       <div className={styles.row}>
-        {showPrice && (
-          <Input
-            label="Preis (EUR)"
-            type="number"
-            min="0"
-            step="1"
-            placeholder="z.B. 45"
-            error={errors.price?.message}
-            required
-            {...register('price', { valueAsNumber: true })}
-          />
-        )}
+        <Input
+          label="Preis (EUR)"
+          type="number"
+          min="0"
+          step="1"
+          placeholder={isGiveAway ? '0' : 'z.B. 45'}
+          error={errors.price?.message}
+          required={!isGiveAway}
+          disabled={isGiveAway}
+          {...register('price', {
+            valueAsNumber: true,
+            onChange: (e) => {
+              if (parseFloat(e.target.value) === 0) {
+                setValue('price_type', 'GIVE_AWAY', { shouldDirty: true });
+              }
+            },
+          })}
+        />
         <Select
           label={withLocked('Preistyp', isLocked('price_type'))}
           options={PRICE_TYPE_OPTIONS}
           error={errors.price_type?.message}
           disabled={isLocked('price_type')}
-          {...register('price_type')}
+          {...register('price_type', {
+            onChange: (e) => {
+              if (e.target.value === 'GIVE_AWAY') {
+                setValue('price', 0, { shouldDirty: true });
+              } else if (priceType === 'GIVE_AWAY') {
+                setValue('price', NaN, { shouldDirty: true });
+              }
+            },
+          })}
         />
       </div>
 
