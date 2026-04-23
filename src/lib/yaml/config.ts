@@ -39,6 +39,7 @@ export const BROWSER_DEFAULTS: Record<string, unknown> = {
     '--no-sandbox',
     '--disable-dev-shm-usage',
     '--disable-gpu',
+    '--password-store=basic',
   ],
   binary_location: detectBrowserBinary(),
   use_private_window: true,

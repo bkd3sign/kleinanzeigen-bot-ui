@@ -86,6 +86,7 @@ export async function prepareMfaSession(
     '--no-sandbox',
     '--disable-gpu',
     '--disable-dev-shm-usage',
+    '--password-store=basic',
     `--remote-debugging-port=${CDP_PORT}`,
     '--remote-debugging-address=127.0.0.1',
     `--user-data-dir=${profileDir}`,

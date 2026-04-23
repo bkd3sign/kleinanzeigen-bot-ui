@@ -10,6 +10,7 @@ set -euo pipefail
 # Usage:
 #   bash install.sh              — interactive guided setup
 #   bash install.sh --yes        — non-interactive, use all defaults
+#   bash install.sh --update     — update existing install (no system deps, ~3 min)
 #
 # Env overrides (skip prompts):
 #   INSTALL_DIR, WORKSPACE_DIR, PORT, SERVICE_USER, BOT_RELEASE
@@ -27,8 +28,12 @@ step()    { echo -e "\n${CYAN}${BOLD}[$1/$TOTAL_STEPS] $2${RESET}"; }
 
 REPO_URL="https://github.com/bkd3sign/kleinanzeigen-bot-ui"
 
+UPDATE_MODE=false
 NON_INTERACTIVE=false
-[[ "${1:-}" == "--yes" ]] && NON_INTERACTIVE=true
+for arg in "$@"; do
+  [[ "$arg" == "--yes" ]] && NON_INTERACTIVE=true
+  [[ "$arg" == "--update" ]] && UPDATE_MODE=true
+done
 [[ ! -t 0 ]] && NON_INTERACTIVE=true
 
 ask() {
@@ -51,6 +56,69 @@ echo -e "${GREEN}${BOLD}╔═════════════════�
 echo -e "${GREEN}${BOLD}║   Kleinanzeigen-Bot UI — Installer               ║${RESET}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${RESET}"
 echo ""
+
+# ─── Update mode (--update): skip system deps, just pull + build + restart ───
+if [[ "$UPDATE_MODE" == "true" ]]; then
+  TOTAL_STEPS=3
+  INSTALL_DIR="${INSTALL_DIR:-/opt/kleinanzeigen-bot-ui}"
+  [[ ! -d "$INSTALL_DIR/.git" ]] && error "No installation found at $INSTALL_DIR — run without --update first"
+  NODE_BIN=$(command -v node 2>/dev/null) || error "Node.js not found — run full installer first"
+
+  TOTAL_MEM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
+  if [[ "$TOTAL_MEM_MB" -lt 2048 ]]; then
+    export NODE_OPTIONS="--max-old-space-size=$((TOTAL_MEM_MB / 2))"
+    info "NODE_OPTIONS set to --max-old-space-size=$((TOTAL_MEM_MB / 2))"
+  fi
+
+  AVAIL_DISK_MB=$(df -m / | awk 'NR==2 {print $4}')
+  if [[ "$AVAIL_DISK_MB" -lt 1024 ]]; then
+    warn "Low disk: ${AVAIL_DISK_MB}MB available — rebuild needs ~1GB free."
+  fi
+
+  step 1 "Pulling latest changes"
+  git -C "$INSTALL_DIR" pull --ff-only
+  success "Repository updated"
+
+  step 2 "Rebuilding application"
+  cd "$INSTALL_DIR"
+  info "Installing npm dependencies..."
+  npm ci --prefer-offline 2>&1 | tail -3
+  info "Building Next.js app..."
+  npm run build 2>&1 | tail -5
+  STANDALONE_DIR="$INSTALL_DIR/.next/standalone"
+  info "Copying static assets..."
+  cp -r public "$STANDALONE_DIR/public"
+  cp -r .next/static "$STANDALONE_DIR/.next/static"
+  mkdir -p "$STANDALONE_DIR/node_modules"
+  cp -r node_modules/ws "$STANDALONE_DIR/node_modules/ws"
+  success "Build complete"
+
+  step 3 "Restarting service"
+  systemctl restart kleinanzeigen-bot-ui
+  STARTED=false
+  for i in {1..10}; do
+    sleep 2
+    if systemctl is-active --quiet kleinanzeigen-bot-ui; then
+      STARTED=true; break
+    fi
+  done
+  if [[ "$STARTED" == "true" ]]; then
+    success "Service restarted"
+  else
+    warn "Service may not have started — check: journalctl -u kleinanzeigen-bot-ui -n 50"
+  fi
+
+  IP=$(hostname -I | awk '{print $1}')
+  PORT=$(systemctl show kleinanzeigen-bot-ui -p Environment --value 2>/dev/null | grep -oP 'PORT=\K\d+' || echo "3737")
+  echo ""
+  echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${RESET}"
+  echo -e "${GREEN}${BOLD}║   Update complete!                               ║${RESET}"
+  echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Web UI:${RESET}  http://${IP}:${PORT}"
+  echo ""
+  exit 0
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 step 1 "Detecting system & container environment"
@@ -164,6 +232,18 @@ if [[ "$TOTAL_MEM_MB" -lt 2048 ]]; then
   info "NODE_OPTIONS set to --max-old-space-size=$((TOTAL_MEM_MB / 2)) for build"
 fi
 
+# Disk space check — install needs ~2GB (node_modules + Next.js build output + bot binary)
+AVAIL_DISK_MB=$(df -m / | awk 'NR==2 {print $4}')
+if [[ "$AVAIL_DISK_MB" -lt 2048 ]]; then
+  warn "Low disk: ${AVAIL_DISK_MB}MB available on / — install needs ~2GB free."
+  warn "Expand the container before proceeding:"
+  warn "  Proxmox: Container → Resources → Root Disk → Resize"
+  if [[ "$NON_INTERACTIVE" == "false" ]]; then
+    read -r -p "  Continue anyway? [y/N] " DISK_CONTINUE
+    [[ "${DISK_CONTINUE,,}" != "y" ]] && exit 0
+  fi
+fi
+
 VIRT_TYPE=$(systemd-detect-virt 2>/dev/null || echo "bare metal")
 success "OS: ${OS_ID} ${OS_VERSION_ID} | Arch: ${ARCH} | RAM: ${TOTAL_MEM_MB}MB | Env: ${VIRT_TYPE}"
 
@@ -185,18 +265,50 @@ if [[ -f "$SCRIPT_DIR/package.json" ]] && grep -q "kleinanzeigen-bot-ui" "$SCRIP
 fi
 
 ask "Install directory (app source + build)" "$DEFAULT_INSTALL_DIR" INSTALL_DIR
+
+if [[ "$INSTALL_DIR" == "$SCRIPT_DIR" || "$INSTALL_DIR" == "$SCRIPT_DIR/"* ]]; then
+  echo ""
+  echo -e "${RED}✗ Cannot install into the directory where install.sh is running from.${RESET}"
+  echo -e "  The installer would delete itself during setup."
+  echo -e "  Run from /tmp instead:"
+  echo ""
+  echo -e "    ${BOLD}curl -fsSL $REPO_URL/raw/main/install.sh -o /tmp/install.sh && sudo bash /tmp/install.sh${RESET}"
+  echo ""
+  exit 1
+fi
+
 ask "Workspace directory (config, ads, bot binary)" "${WORKSPACE_DIR:-/opt/workspace}" WORKSPACE_DIR
+
+if [[ "$WORKSPACE_DIR" == "$INSTALL_DIR" || "$WORKSPACE_DIR" == "$INSTALL_DIR/"* ]]; then
+  echo ""
+  echo -e "${RED}✗ Workspace cannot be inside the install directory.${RESET}"
+  echo -e "  The install directory may be wiped during setup or updates."
+  echo -e "  Choose a path outside of ${BOLD}$INSTALL_DIR${RESET} — e.g. /opt/workspace"
+  echo ""
+  exit 1
+fi
 ask "Web interface port" "${PORT:-3737}" PORT
 [[ "$PORT" =~ ^[0-9]+$ ]] || error "Invalid port: $PORT"
 
 echo ""
 if [[ "$NON_INTERACTIVE" == "false" ]]; then
   echo -e "  Service user:"
-  echo -e "    ${BOLD}root${RESET}    — simple setup, fine for private servers/LXC"
-  echo -e "    ${BOLD}botuser${RESET} — dedicated non-root user (more secure)"
+  echo -e "    ${BOLD}botuser${RESET} — dedicated non-root user ${GREEN}(recommended)${RESET}"
+  echo -e "    ${BOLD}root${RESET}    — ${YELLOW}not recommended: Chromium/nodriver refuses to start as root${RESET}"
   echo ""
 fi
-ask "Service user (root or botuser or custom)" "${SERVICE_USER:-root}" SERVICE_USER
+ask "Service user (botuser or root or custom)" "${SERVICE_USER:-botuser}" SERVICE_USER
+
+if [[ "$SERVICE_USER" == "root" ]]; then
+  echo ""
+  warn "Running as root is known to break Chromium (nodriver refuses to start as root)."
+  warn "Use 'botuser' unless you have a specific reason to run as root."
+  echo ""
+  if [[ "$NON_INTERACTIVE" == "false" ]]; then
+    read -r -p "  Continue with root anyway? [y/N] " ROOT_CONFIRM
+    [[ "${ROOT_CONFIRM,,}" != "y" ]] && exit 0
+  fi
+fi
 
 echo ""
 if [[ "$NON_INTERACTIVE" == "false" ]]; then
@@ -228,7 +340,7 @@ step 3 "Installing system dependencies"
 if [[ "$PKG_MANAGER" == "apt" ]]; then
   apt-get update -qq
   apt-get install -y --no-install-recommends \
-    curl git ca-certificates gnupg python3 procps software-properties-common
+    curl git ca-certificates gnupg python3 python3-yaml procps
 
   NODE_MAJOR=$(node --version 2>/dev/null | grep -oP '\d+' | head -1 || echo "0")
   if [[ "$NODE_MAJOR" -lt 22 ]]; then
@@ -239,10 +351,16 @@ if [[ "$PKG_MANAGER" == "apt" ]]; then
 
   # Ubuntu ships chromium as a snap transitional package which cannot run inside
   # a headless systemd service (requires user session / cgroup context).
-  # Install the real .deb from xtradeb/apps PPA instead (supports amd64 + arm64).
+  # Add xtradeb/apps directly via GPG key + sources file — no software-properties-common needed.
+  # Debian always ships a real .deb — no PPA needed.
   if [[ "$OS_ID" == "ubuntu" ]]; then
-    info "Ubuntu detected — adding xtradeb/apps PPA for real Chromium .deb (avoids snap)..."
-    add-apt-repository ppa:xtradeb/apps -y >/dev/null 2>&1
+    info "Ubuntu: adding xtradeb/apps repo for real Chromium .deb (avoids snap)..."
+    UBUNTU_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME}")
+    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x5301FA4FD93244FBC6F6149982BB6851C64F6880" \
+      | gpg --dearmor -o /usr/share/keyrings/xtradeb-apps.gpg
+    printf 'deb [arch=%s signed-by=/usr/share/keyrings/xtradeb-apps.gpg] http://ppa.launchpad.net/xtradeb/apps/ubuntu %s main\n' \
+      "$(dpkg --print-architecture)" "$UBUNTU_CODENAME" \
+      > /etc/apt/sources.list.d/xtradeb-apps.list
     apt-get update -qq
   fi
 
@@ -251,12 +369,17 @@ if [[ "$PKG_MANAGER" == "apt" ]]; then
     fonts-liberation \
     fonts-noto-color-emoji
 
-  # Safety net: if snap chromium still ended up installed despite the PPA, replace it
-  if snap list 2>/dev/null | grep -q "^chromium"; then
+  # Safety net: snap only exists on Ubuntu — replace if it snuck in despite the PPA
+  if [[ "$OS_ID" == "ubuntu" ]] && snap list 2>/dev/null | grep -q "^chromium"; then
     warn "Snap Chromium still present — removing and reinstalling from xtradeb/apps..."
     snap remove chromium 2>/dev/null || true
     if ! grep -rq "xtradeb" /etc/apt/sources.list.d/ 2>/dev/null; then
-      add-apt-repository ppa:xtradeb/apps -y >/dev/null 2>&1
+      UBUNTU_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME}")
+      curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x5301FA4FD93244FBC6F6149982BB6851C64F6880" \
+        | gpg --dearmor -o /usr/share/keyrings/xtradeb-apps.gpg
+      printf 'deb [arch=%s signed-by=/usr/share/keyrings/xtradeb-apps.gpg] http://ppa.launchpad.net/xtradeb/apps/ubuntu %s main\n' \
+        "$(dpkg --print-architecture)" "$UBUNTU_CODENAME" \
+        > /etc/apt/sources.list.d/xtradeb-apps.list
     fi
     apt-get update -qq
     apt-get install -y --no-install-recommends chromium
@@ -264,7 +387,7 @@ if [[ "$PKG_MANAGER" == "apt" ]]; then
   fi
 
 elif [[ "$PKG_MANAGER" == "pacman" ]]; then
-  pacman -Sy --noconfirm --needed curl git nodejs npm chromium python procps-ng
+  pacman -Sy --noconfirm --needed curl git nodejs npm chromium python python-yaml procps-ng
 fi
 
 NODE_BIN=$(command -v node) || error "node binary not found after installation"
@@ -284,7 +407,7 @@ success "Chromium: $CHROMIUM_BIN"
 # Chromium headless smoke test
 info "Testing Chromium headless launch..."
 CHROMIUM_TEST=$(timeout 20 "$CHROMIUM_BIN" \
-  --headless --no-sandbox --disable-dev-shm-usage --disable-gpu \
+  --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --password-store=basic \
   --dump-dom about:blank 2>&1 || true)
 
 if echo "$CHROMIUM_TEST" | grep -q "<html"; then
@@ -337,6 +460,16 @@ elif [[ -d "$INSTALL_DIR/.git" ]]; then
   git -C "$INSTALL_DIR" pull --ff-only
 else
   if [[ -d "$INSTALL_DIR" ]]; then
+    echo ""
+    warn "$INSTALL_DIR exists but is not a valid installation (no .git, no package.json)."
+    warn "It will be deleted and re-cloned from GitHub."
+    warn "Your workspace data (config, ads) in $WORKSPACE_DIR is NOT affected."
+    warn "Make sure you have a backup of any custom files in $INSTALL_DIR before continuing!"
+    echo ""
+    if [[ "$NON_INTERACTIVE" == "false" ]]; then
+      read -r -p "  Delete $INSTALL_DIR and continue? [y/N] " DEL_CONFIRM
+      [[ "${DEL_CONFIRM,,}" != "y" ]] && exit 0
+    fi
     info "Removing incomplete installation at $INSTALL_DIR..."
     rm -rf "$INSTALL_DIR"
   fi
@@ -409,7 +542,7 @@ with open(f) as fh:
 b = d.setdefault('browser', {})
 b['binary_location'] = cb
 if not b.get('arguments'):
-    b['arguments'] = ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    b['arguments'] = ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--password-store=basic']
 b.setdefault('use_private_window', True)
 with open(f, 'w') as fh:
     yaml.dump(d, fh, allow_unicode=True, default_flow_style=False)

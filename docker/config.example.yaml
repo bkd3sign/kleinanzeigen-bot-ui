@@ -80,7 +80,7 @@ publishing:
 # ################################################################################
 # Browser configuration (auto-detected in most cases)
 browser:
-  arguments: []                       # Docker: ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+  arguments: []                       # Docker: ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--password-store=basic"]
   binary_location: ''                 # leave empty for auto-detection
   extensions: []
   use_private_window: true

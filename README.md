@@ -272,11 +272,14 @@ npm run start      # Start production server
 │                          └────────────────────┘                  │
 │                                                                  │
 │  /workspace (volume mount)                                       │
-│  ├── config.yaml          Bot login + settings                   │
 │  ├── ads/                 Ad YAML files                          │
-│  ├── users/               Per-user workspaces                    │
+│  ├── bot/                 Bot binary                             │
+│  ├── config.yaml          Bot login + settings                   │
+│  ├── extensions/          Injected browser scripts               │
+│  ├── extensions.yaml      CDP script config                      │
 │  ├── schedules.yaml       Cron automation                        │
-│  └── extensions.yaml      CDP script config                      │
+│  ├── users/               Per-user workspaces                    │
+│  └── users.yaml           App users, roles & JWT secret          │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -426,25 +429,63 @@ A one-line installer — no clone required. It downloads the app, installs Node.
 
 **Architectures:** `x86_64` (amd64), `aarch64` (arm64 — Raspberry Pi 3B+, 4, 5)
 
+**Requirements:**
+
+| Resource | Minimum | Notes |
+|----------|---------|-------|
+| Disk space | ~2 GB free | Node.js build output + bot binary |
+| RAM | ~2 GB | Next.js build requires ~1.5 GB — add swap if less |
+
 > **Raspberry Pi:** Must run a 64-bit OS. 32-bit Raspberry Pi OS is not supported.
 
 > **Proxmox LXC:** If using an unprivileged container, add `lxc.apparmor.profile: unconfined` to `/etc/pve/lxc/<ID>.conf` on the host and restart the container before running the installer.
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/install.sh)
+curl -fsSL https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/install.sh -o /tmp/install.sh
+sudo bash /tmp/install.sh
 ```
 
-Or download first to review the script before running:
+The installer guides you through all settings interactively. For non-interactive use, pass defaults via environment variables:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/install.sh -o install.sh
-sudo bash install.sh
+sudo INSTALL_DIR=/opt/kleinanzeigen-bot-ui \
+     WORKSPACE_DIR=/opt/workspace \
+     PORT=3737 \
+     SERVICE_USER=root \
+     BOT_RELEASE=latest \
+     bash /tmp/install.sh --yes
 ```
 
-The installer guides you through all settings interactively. For non-interactive use:
+**Environment variables:**
 
-```bash
-sudo PORT=8080 WORKSPACE_DIR=/data/bot bash install.sh --yes
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INSTALL_DIR` | `/opt/kleinanzeigen-bot-ui` | App source + Next.js build output |
+| `WORKSPACE_DIR` | `/opt/workspace` | Config, ads, bot binary, user data |
+| `PORT` | `3737` | Web interface port |
+| `SERVICE_USER` | `root` | User the systemd service runs as (`root` or `botuser` or custom) |
+| `BOT_RELEASE` | `latest` | Bot binary release tag (e.g. `2026+fd3bf64`) |
+
+**Workspace layout after installation:**
+
+```
+$WORKSPACE_DIR/              (default: /opt/workspace)
+├── bot/
+│   └── kleinanzeigen-bot    Bot binary (auto-downloaded)
+├── ads/                     Ad YAML files
+├── users/                   Per-user workspaces (multi-user mode)
+├── .temp/                   Temporary bot files
+└── config.yaml              Bot config — auto-created from template, fill in via /setup
+```
+
+These additional files are created automatically by the app on first use:
+
+```
+$WORKSPACE_DIR/
+├── users.yaml               App users, roles & JWT secret
+├── schedules.yaml           Cron automation config
+├── extensions.yaml          CDP script injection config
+└── extensions/              Injected browser scripts
 ```
 
 **Service management:**
@@ -471,7 +512,7 @@ After starting via any option, open `http://<your-ip>:3737/setup` and complete:
 |--------|---------------|
 | Docker (pre-built) | `docker compose pull && docker compose up -d` |
 | Docker (from source) | Re-run `build.sh`, redeploy, `docker compose up -d --build` |
-| Linux / install.sh | Re-run `sudo bash install.sh` |
+| Linux / install.sh | `sudo bash /opt/kleinanzeigen-bot-ui/install.sh --update` — skips system packages, pulls latest code, rebuilds, restarts (~3 min). Custom path: `sudo INSTALL_DIR=/your/path bash /your/path/install.sh --update` |
 | Bot binary only | Admin → Bot-Update in the web UI |
 
 ## Security
@@ -487,6 +528,8 @@ Built on [kleinanzeigen-bot](https://github.com/Second-Hand-Friends/kleinanzeige
 ## Tested On
 
 - **Synology DS720+** — Docker via Container Manager
+- **Ubuntu 24.04 LTS** (VM via UTM on macOS) — one-liner install (`install.sh`)
+- **Raspberry Pi 3B+** (Debian 13 Trixie arm64) — one-liner install (`install.sh`)
 
 ## License
 
