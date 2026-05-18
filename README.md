@@ -49,11 +49,13 @@ Manage ads, run bot commands, generate listings with AI, and track everything fr
 ### Ad Management
 
 - **Full CRUD** — Create, edit, duplicate, and delete ad listings via YAML
-- **Grid & Table views** — Toggle between card layout and sortable table with persistent sort
-- **Bulk actions** — Select multiple ads for publish, delete, or update in one operation
+- **Grid & Table views** — Toggle between card layout and sortable table; table has sticky title/action columns, scroll shadows, and columns for APR status, visitors, watchlist, and expiry date
+- **Bulk actions** — Select multiple ads for publish, delete, update, activate, or deactivate in one operation
 - **Image management** — Drag-drop upload, reorder, preview thumbnails, automatic Sharp compression
 - **Search & filter** — Full-text search across titles and categories, filter by status or category
 - **Category picker** — Hierarchical browser with 582 categories, search, and breadcrumb navigation
+- **Live stats** — Visitor count, watchlist count, and expiry date fetched live from the KA management API after each bot run
+- **Reserved detection** — Ads paused on kleinanzeigen.de (`state: paused`) are automatically marked as `active: false` locally and shown as "Reserviert"; reverting the pause on KA restores them to active
 
 #### Ad Status System
 
@@ -62,25 +64,30 @@ Each ad has exactly one status, determined by priority:
 | Priority | Status | Badge | Condition |
 |----------|--------|-------|-----------|
 | 1 | **Entwurf** | `muted` (gray) | No kleinanzeigen.de ID (never published) |
-| 2 | **Abgelaufen** | `danger` (red) | Published > 60 days ago |
-| 3 | **Läuft bald ab** | `warning` (orange) | Expires within 7 days |
-| 4 | **Verwaist** | `warning` (orange) | Has ID but no longer found online (grayscale image) |
-| 5 | **Geändert** | `info` (accent) | Content hash differs from stored hash |
-| 6 | **Aktiv** | `success` (green, pulse) | Published and active |
-| 7 | **Inaktiv** | `danger` (red) | Manually or automatically deactivated |
+| 2 | **Reserviert** | `reserved` (violet) | KA state is `paused`, or title contains "reserviert" |
+| 3 | **Inaktiv** | `danger` (red) | Manually or automatically deactivated |
+| 4 | **Abgelaufen** | `danger` (red) | Published > 60 days ago |
+| 5 | **Läuft bald ab** | `warning` (orange) | Expires within 7 days |
+| 6 | **Verwaist** | `warning` (orange) | Has ID but no longer found online (grayscale image) |
+| 7 | **Geändert** | `warning` (yellow) | Content hash differs from stored hash |
+| 8 | **Aktiv** | `success` (green, pulse) | Published and active |
 
 #### Ad Sync & Orphan Detection
 
-After a successful `download --ads=all`, the system automatically:
+After every bot run that uses Chrome (login required), the system automatically:
 
-1. **Collects online IDs** — Scans all downloaded ads to build the set of IDs that exist on kleinanzeigen.de
-2. **Detects orphans** — Any local ad with an ID not in the online set is considered orphaned
-3. **Migrates settings** — If an orphaned ad has a title+category match in the new downloads (re-published with new ID), user settings are transferred:
+1. **Fetches online state** — Queries the KA management API (`m-meine-anzeigen-verwalten.json`) for all pages in parallel
+2. **Syncs online IDs** — Writes the current set of online IDs to `.last_download_all.json`
+3. **Syncs reserved state** — Ads with `state: paused` on KA get `active: false` in the local YAML; un-paused ads get `active: true` restored
+4. **Detects orphans** — Any local ad with an ID not in the online set is shown as "Verwaist"
+
+After a successful `download --ads=all`, the system additionally:
+
+5. **Migrates settings** — If an orphaned ad has a title+category match in the new downloads (re-published with new ID), user settings are transferred:
    - `auto_price_reduction`, `republication_interval`, `description_prefix/suffix`, `shipping_options`, `sell_directly`
    - Bot-managed fields (`repost_count`, `content_hash`, timestamps) are NOT migrated
-4. **Removes duplicates** — The old orphaned file is deleted after successful migration
-5. **Deactivates remaining orphans** — Ads without a match are set to `active: false`
-6. **Persists state** — Online ID set is saved to `.last_download_all.json` (survives server restarts)
+6. **Removes duplicates** — The old orphaned file is deleted after successful migration
+7. **Deactivates remaining orphans** — Ads without a match are set to `active: false`
 
 This ensures local state always matches what's online — no manual cleanup needed.
 
@@ -100,7 +107,7 @@ This ensures local state always matches what's online — no manual cleanup need
 - **Live logs** — Real-time output streaming via Server-Sent Events
 - **Job management** — Cancel running/queued jobs, repeat completed jobs with one click
 - **Bot self-update** — Update the bot binary directly from the UI (admin only)
-- **Compatibility check** — Validates GUI compatibility with bot version before updates
+- **Version info** — About modal shows GUI version, bot version, and GitHub release details; context-sensitive button guides through update vs. compatibility check
 
 #### Job Queue
 
@@ -159,9 +166,10 @@ Automatically lower prices on each republication cycle:
 
 - **Statistics grid** — Online count, drafts, orphaned, expiring soon, total value, average price, repost counts
 - **Health indicators** — Missing images, inactive ads, price at minimum, no description
-- **Schedule calendar** — 7-day visual calendar showing upcoming republications and expirations
+- **Schedule calendar** — 7-day visual calendar showing upcoming republications and expirations (inactive ads excluded)
 - **Charts** — Price distribution histogram, category breakdown bars, status distribution donut
 - **Performance metrics** — Top repost ads, time-on-market bars, price reduction tracking
+- **Live KA stats** — Per-ad visitor counts, watchlist counts, and expiry dates in sortable table
 
 ### Messaging
 
@@ -307,14 +315,18 @@ User Action (UI)
 #### Ad Sync Pipeline
 
 ```
-download --ads=all completes successfully
+Every bot run with Chrome (login detected)
+  → fetchAdStats() → .ad-stats.json updated (views, watchlist, state, expires)
+  → syncOnlineIdsFromApi() → .last_download_all.json updated
+  → paused ads → active: false in local YAML
+  → un-paused ads → active: true restored in local YAML
+  → GET /api/ads reads JSON → computes is_orphaned + is_reserved per ad
+
+download --ads=all additionally
   → Hook scans downloaded-ads/ → collects online IDs
-  → Compares against all local ads with IDs
   → Orphans with title+category match → migrate settings, delete old file
-  → Orphans without match → set active: false
-  → Writes .last_download_all.json
-  → GET /api/ads reads JSON → computes is_orphaned per ad
-  → UI displays "Verwaist" badge + grayscale
+  → Orphans without match → set active: false, archive folder
+  → GET /api/ads → UI displays "Verwaist" badge + grayscale
 ```
 
 ---
@@ -512,7 +524,7 @@ After starting via any option, open `http://<your-ip>:3737/setup` and complete:
 |--------|---------------|
 | Docker (pre-built) | `docker compose pull && docker compose up -d` |
 | Docker (from source) | Re-run `build.sh`, redeploy, `docker compose up -d --build` |
-| Linux / install.sh | `sudo bash /opt/kleinanzeigen-bot-ui/install.sh --update` — skips system packages, pulls latest code, rebuilds, restarts (~3 min). Custom path: `sudo INSTALL_DIR=/your/path bash /your/path/install.sh --update` |
+| Linux / install.sh | `sudo bash /opt/kleinanzeigen-bot-ui/install.sh --update` — auto-detects install path from the running systemd service, skips system packages, compares versions before pulling, rebuilds, restarts (~3 min). Custom path: `sudo INSTALL_DIR=/your/path bash /your/path/install.sh --update` |
 | Bot binary only | Admin → Bot-Update in the web UI |
 
 ## Security

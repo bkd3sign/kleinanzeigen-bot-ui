@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-10);
+  padding: var(--space-4) var(--space-8);
   background-color: var(--header-bg);
   backdrop-filter: blur(12px);
   border-bottom: none;
@@ -13,7 +13,12 @@
   min-height: var(--header-height);
   flex-shrink: 0;
 
-  @media (max-width: 767px) {
+  @media (min-width: 561px) and (max-width: 767px) {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  @media (max-width: 560px) {
     padding: 0 var(--space-3);
     gap: var(--space-2);
   }
@@ -91,7 +96,7 @@
     color: var(--text-primary);
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     display: flex;
   }
 }
@@ -102,7 +107,7 @@
   align-items: center;
   gap: var(--space-2);
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     display: none;
     position: absolute;
     top: calc(var(--header-height) - 1px);
@@ -127,7 +132,7 @@
 }
 
 .headerActionsOpen {
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     display: flex;
   }
 }
@@ -154,7 +159,7 @@
     border-color: var(--border-color-hover);
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     justify-content: flex-start;
     width: 100%;
     min-height: 44px;
@@ -186,7 +191,7 @@
     color: var(--accent-text);
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     justify-content: center;
     background: var(--accent);
     color: var(--accent-text);
@@ -200,6 +205,22 @@
       color: var(--accent-text);
       border: none;
     }
+  }
+}
+
+/* Icon-only nav at intermediate widths — hide labels, compact buttons */
+@media (min-width: 561px) and (max-width: 960px) {
+  .navLabel {
+    display: none;
+  }
+
+  .headerDropdownBtn {
+    padding: var(--space-1-5);
+    gap: var(--space-1);
+  }
+
+  .headerCreateAd {
+    padding: var(--space-1-5);
   }
 }
 
@@ -221,7 +242,7 @@
     stroke-linejoin: round;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     width: 18px;
     flex-shrink: 0;
   }

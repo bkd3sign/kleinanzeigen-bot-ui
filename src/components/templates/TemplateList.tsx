@@ -68,6 +68,7 @@ export function TemplateList() {
           locked_fields?: string[];
           template_name?: string;
           source_ad_file?: string | null;
+          template_slug?: string;
         }>(`/api/ads/from-template/${tpl.slug}`);
         sessionStorage.setItem('ai_ad_data', JSON.stringify(result.ad_data));
         if (result.locked_fields?.length) {
@@ -78,6 +79,9 @@ export function TemplateList() {
         }
         if (result.source_ad_file) {
           sessionStorage.setItem('template_source_ad_file', result.source_ad_file);
+        }
+        if (result.template_slug) {
+          sessionStorage.setItem('template_slug', result.template_slug);
         }
         router.push('/ads/new');
       } catch (err) {

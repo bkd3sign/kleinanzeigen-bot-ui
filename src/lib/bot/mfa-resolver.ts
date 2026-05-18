@@ -6,21 +6,26 @@ import { prepareCleanBrowserState, detectBrowserBin } from '@/lib/bot/browser-cl
 import { isQueueBusy } from '@/lib/bot/queue';
 import { jobs } from '@/lib/bot/jobs';
 import { jobStdins } from '@/lib/bot/runner';
+import {
+  type CdpClient,
+  createCdpClient,
+  cdpHttpGet,
+  waitForCdp,
+  waitForCondition,
+  sleep,
+} from '@/lib/browser/cdp';
+import { STEALTH_ARGS, injectStealthScript } from '@/lib/browser/stealth';
+import {
+  LOGIN_URL,
+  MFA_CODE_INPUT_SELECTOR,
+  dismissConsentBanner,
+  fillLoginForm,
+  fillInput,
+  detectLoginState,
+} from '@/lib/browser/login';
 
-const LOGIN_URL = 'https://www.kleinanzeigen.de/m-einloggen.html';
 const CDP_PORT = 9222;
-const STEP_TIMEOUT = 15000;
 
-interface CdpResponse {
-  id: number;
-  result?: { result?: { value?: unknown }; targetId?: string };
-  error?: { message: string };
-}
-
-interface CdpClient {
-  send(method: string, params?: Record<string, unknown>): Promise<CdpResponse>;
-  evaluate(expression: string): Promise<unknown>;
-}
 
 interface MfaSession {
   proc: ChildProcess;
@@ -82,19 +87,18 @@ export async function prepareMfaSession(
   const browserBin = detectBrowserBin();
 
   const proc = spawn(browserBin, [
+    ...STEALTH_ARGS,
     '--headless=new',
     '--no-sandbox',
     '--disable-gpu',
-    '--disable-dev-shm-usage',
-    '--password-store=basic',
     `--remote-debugging-port=${CDP_PORT}`,
     '--remote-debugging-address=127.0.0.1',
     `--user-data-dir=${profileDir}`,
-    LOGIN_URL,
+    'about:blank',
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
   try {
-    await waitForCdp(CDP_PORT);
+    await waitForCdp(CDP_PORT, 15000);
 
     const targets = await cdpHttpGet<{ id: string; url: string; type: string; webSocketDebuggerUrl?: string }[]>(CDP_PORT, '/json');
     const page = targets.find(t => t.type === 'page');
@@ -102,74 +106,44 @@ export async function prepareMfaSession(
 
     const ws = new WebSocket(page.webSocketDebuggerUrl || `ws://127.0.0.1:${CDP_PORT}/devtools/page/${page.id}`);
     await new Promise<void>((resolve, reject) => {
-      ws.on('open', resolve);
+      ws.on('open', () => resolve());
       ws.on('error', reject);
+      setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
     });
 
     const cdp = createCdpClient(ws);
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
+    await injectStealthScript(cdp);
+    await cdp.send('Page.navigate', { url: LOGIN_URL });
     await sleep(4000);
 
-    // Step 1: Enter email
-    let url = await cdp.evaluate('window.location.href') as string;
+    // Dismiss GDPR consent banner before interacting with the form
+    await dismissConsentBanner(cdp);
 
-    if (url.includes('m-einloggen') || url.includes('/u/login/identifier') || url.includes('m-einloggen-sso')) {
-      await waitForCondition(async () => {
-        url = await cdp.evaluate('window.location.href') as string;
-        return url.includes('login.kleinanzeigen.de');
-      }, 10000);
-      await sleep(2000);
-
-      const emailFilled = await cdp.evaluate(`
-        (() => {
-          const inputs = document.querySelectorAll('input');
-          for (const input of inputs) {
-            if (input.type === 'email' || input.name === 'username' || input.name === 'email') {
-              input.focus(); input.value = '';
-              return 'found';
-            }
-          }
-          return 'not_found';
-        })()
-      `) as string;
-
-      if (emailFilled !== 'found') throw new Error('E-Mail-Feld nicht gefunden');
-
-      await cdp.send('Input.insertText', { text: login.username });
-      await sleep(500);
-      await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
-      await sleep(4000);
+    // Fill credentials (email + optional password page)
+    const loginResult = await fillLoginForm(cdp, login.username, login.password);
+    if (!loginResult.success) {
+      try { ws.close(); } catch { /* fine */ }
+      proc.kill('SIGTERM');
+      return { success: false, error: loginResult.error || 'Login fehlgeschlagen' };
     }
 
-    // Step 2: Enter password
-    url = await cdp.evaluate('window.location.href') as string;
-    if (url.includes('/u/login/password')) {
-      await cdp.evaluate(`
-        const pw = document.querySelector('input[type="password"], input[name="password"]');
-        if (pw) { pw.focus(); pw.value = ''; }
-      `);
-      await cdp.send('Input.insertText', { text: login.password });
-      await sleep(500);
-      await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
-      await sleep(6000);
-    }
+    // Determine where the login flow landed
+    const state = await detectLoginState(cdp);
 
-    // Check if we reached MFA
-    url = await cdp.evaluate('window.location.href') as string;
-
-    if (url.includes('mfa') || url.includes('challenge') || url.includes('verification')) {
+    if (state === 'mfa') {
       mfaSessions.set(jobId, { proc, ws, cdp, workspace, createdAt: Date.now() });
       return { success: true };
     }
 
-    // Already logged in
-    if (url.includes('kleinanzeigen.de') && !url.includes('login.')) {
+    if (state === 'logged_in') {
       ws.close();
       proc.kill('SIGTERM');
       return { success: true };
     }
 
+    const url = await cdp.evaluate('window.location.href') as string;
     throw new Error(`Unerwartete Seite: ${url}`);
   } catch (err) {
     proc.kill('SIGTERM');
@@ -192,25 +166,12 @@ export async function submitMfaCode(
   const { cdp } = session;
 
   try {
-    const codeFilled = await cdp.evaluate(`
-      (() => {
-        const selectors = ['input[name="code"]', 'input[inputmode="numeric"]', 'input[autocomplete="one-time-code"]', 'input[type="tel"]'];
-        for (const sel of selectors) {
-          const input = document.querySelector(sel);
-          if (input && input.offsetParent !== null) {
-            input.focus(); input.value = '';
-            return 'found';
-          }
-        }
-        return 'not_found';
-      })()
-    `) as string;
+    const codeFilled = await fillInput(cdp, smsCode, MFA_CODE_INPUT_SELECTOR);
 
-    if (codeFilled !== 'found') {
+    if (!codeFilled) {
       return { success: false, error: 'Code-Eingabefeld nicht mehr gefunden. Bitte neu starten.' };
     }
 
-    await cdp.send('Input.insertText', { text: smsCode });
     await sleep(500);
     await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
 
@@ -257,7 +218,7 @@ export async function submitMfaToRunningBot(
 
     ws = new WebSocket(page.webSocketDebuggerUrl || `ws://127.0.0.1:${job.cdp_port}/devtools/page/${page.id}`);
     await new Promise<void>((resolve, reject) => {
-      ws!.on('open', resolve);
+      ws!.on('open', () => resolve());
       ws!.on('error', reject);
       setTimeout(() => reject(new Error('WebSocket-Timeout')), 10000);
     });
@@ -265,27 +226,13 @@ export async function submitMfaToRunningBot(
     const cdp = createCdpClient(ws);
 
     // Find and fill the MFA code input on the Kleinanzeigen page
-    const codeFilled = await cdp.evaluate(`
-      (() => {
-        const selectors = ['input[name="code"]', 'input[inputmode="numeric"]', 'input[autocomplete="one-time-code"]', 'input[type="tel"]'];
-        for (const sel of selectors) {
-          const input = document.querySelector(sel);
-          if (input && input.offsetParent !== null) {
-            input.focus(); input.value = '';
-            return 'found';
-          }
-        }
-        return 'not_found';
-      })()
-    `) as string;
+    const codeFilled = await fillInput(cdp, smsCode, MFA_CODE_INPUT_SELECTOR);
 
-    if (codeFilled !== 'found') {
+    if (!codeFilled) {
       ws.close();
       return { success: false, error: 'Code-Eingabefeld nicht gefunden — Bot evtl. nicht auf MFA-Seite' };
     }
 
-    // Enter code and submit
-    await cdp.send('Input.insertText', { text: smsCode });
     await sleep(500);
     await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
 
@@ -312,74 +259,4 @@ export async function submitMfaToRunningBot(
     if (ws) try { ws.close(); } catch { /* fine */ }
     return { success: false, error: (err as Error).message };
   }
-}
-
-// --- CDP Helpers ---
-
-function createCdpClient(ws: WebSocket): CdpClient {
-  let msgId = 0;
-  const pending = new Map<number, { resolve: (v: CdpResponse) => void; reject: (e: Error) => void }>();
-
-  ws.on('message', (data) => {
-    try {
-      const msg = JSON.parse(data.toString()) as CdpResponse;
-      if (msg.id !== undefined && pending.has(msg.id)) {
-        pending.get(msg.id)!.resolve(msg);
-        pending.delete(msg.id);
-      }
-    } catch { /* ignore */ }
-  });
-
-  return {
-    send(method: string, params: Record<string, unknown> = {}): Promise<CdpResponse> {
-      return new Promise((resolve, reject) => {
-        const id = ++msgId;
-        pending.set(id, { resolve, reject });
-        ws.send(JSON.stringify({ id, method, params }));
-        setTimeout(() => {
-          if (pending.has(id)) {
-            pending.delete(id);
-            reject(new Error(`CDP timeout: ${method}`));
-          }
-        }, STEP_TIMEOUT);
-      });
-    },
-    async evaluate(expression: string): Promise<unknown> {
-      const resp = await this.send('Runtime.evaluate', { expression, returnByValue: true });
-      if (resp.error) throw new Error(resp.error.message);
-      return resp.result?.result?.value;
-    },
-  };
-}
-
-async function waitForCdp(port: number, timeout = 15000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    try {
-      await cdpHttpGet(port, '/json/version');
-      return;
-    } catch {
-      await sleep(500);
-    }
-  }
-  throw new Error('Chromium CDP nicht erreichbar');
-}
-
-async function cdpHttpGet<T>(port: number, urlPath: string): Promise<T> {
-  const res = await fetch(`http://127.0.0.1:${port}${urlPath}`);
-  if (!res.ok) throw new Error(`CDP HTTP ${res.status}`);
-  return res.json() as Promise<T>;
-}
-
-async function waitForCondition(check: () => Promise<boolean>, timeout: number): Promise<boolean> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    try { if (await check()) return true; } catch { /* continue */ }
-    await sleep(1000);
-  }
-  return false;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }

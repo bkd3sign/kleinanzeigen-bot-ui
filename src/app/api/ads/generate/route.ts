@@ -8,6 +8,7 @@ import { trackAdGeneration } from '@/lib/messaging/responder';
 import path from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { shortKey as attrShortKey } from '@/lib/ads/category-attributes';
+import { normalizeAdType, normalizePriceType, normalizeShippingType } from './normalize';
 
 export async function POST(request: NextRequest) {
   try {
@@ -358,13 +359,10 @@ ${missingLines.join('\n')}`;
       adData.price = hint.suggestion;
     }
 
-    // Fallback: ensure sane defaults if AI ignored the rules
-    if (!adData.price_type || adData.price_type === 'NOT_APPLICABLE') {
-      adData.price_type = 'NEGOTIABLE';
-    }
-    if (!adData.shipping_type || adData.shipping_type === 'NOT_APPLICABLE') {
-      adData.shipping_type = 'SHIPPING';
-    }
+    // Normalize AI enum fields — handles German values, typos, NOT_APPLICABLE
+    adData.type = normalizeAdType(adData.type);
+    adData.price_type = normalizePriceType(adData.price_type);
+    adData.shipping_type = normalizeShippingType(adData.shipping_type);
 
     // Auto-fill shipping_options + shipping_costs based on AI-suggested size
     if (adData.shipping_size) {

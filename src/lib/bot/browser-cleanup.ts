@@ -4,22 +4,97 @@ import path from 'path';
 
 /**
  * Detect the chromium/chrome binary path on the current platform.
+ * Tries Linux, macOS, Windows in order, then falls back to which/where lookup.
  */
 export function detectBrowserBin(): string {
-  if (fs.existsSync('/usr/bin/chromium')) return '/usr/bin/chromium';
-  if (fs.existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')) {
-    return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  // Linux standard paths
+  const linuxPaths = [
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/snap/bin/chromium',
+    '/usr/bin/microsoft-edge',
+  ];
+  for (const p of linuxPaths) {
+    if (fs.existsSync(p)) return p;
   }
+
+  // macOS paths
+  const macPaths = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ];
+  for (const p of macPaths) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Windows paths
+  if (process.platform === 'win32') {
+    const winPaths: string[] = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe') : '',
+      'C:\\Program Files\\Chromium\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    ].filter(Boolean);
+    for (const p of winPaths) {
+      if (p && fs.existsSync(p)) return p;
+    }
+  }
+
+  // Generic fallback: try which/where
+  const candidates = ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable'];
+  for (const bin of candidates) {
+    try {
+      const cmd = process.platform === 'win32' ? 'where' : 'which';
+      const result = execFileSync(cmd, [bin], { encoding: 'utf-8', timeout: 2000 }).trim().split('\n')[0];
+      if (result && fs.existsSync(result)) return result;
+    } catch {
+      // not found
+    }
+  }
+
   return 'chromium';
 }
 
 /**
  * Kill orphaned chromium processes belonging to a specific workspace.
  * Only targets chromium instances using this workspace's browser profile,
- * so other users' sessions remain unaffected.
+ * so other users' sessions remain unaffected. Supports Linux/macOS (pgrep)
+ * and Windows (wmic + taskkill).
  */
 export function killOrphanedChromium(workspace: string): void {
   const profileDir = path.join(workspace, '.temp', 'browser-profile');
+
+  if (process.platform === 'win32') {
+    try {
+      const escaped = profileDir.replace(/\\/g, '\\\\');
+      const result = execFileSync(
+        'wmic',
+        ['process', 'where', `commandline like '%${escaped}%'`, 'get', 'processid', '/format:csv'],
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      const pids = result
+        .split('\n')
+        .slice(1)
+        .map(line => line.trim().split(',').pop()?.trim())
+        .filter((pid): pid is string => Boolean(pid && /^\d+$/.test(pid)));
+      for (const pid of pids) {
+        try {
+          execFileSync('taskkill', ['/F', '/PID', pid], { timeout: 3000 });
+        } catch {
+          // already gone
+        }
+      }
+    } catch {
+      // wmic not available or no matches
+    }
+    return;
+  }
+
+  // Unix: pgrep + SIGKILL
   try {
     const result = execFileSync('pgrep', ['-f', `user-data-dir=${profileDir}`], {
       encoding: 'utf-8',
@@ -68,4 +143,24 @@ export function cleanBrowserProfile(workspace: string, profileName: string = 'br
 export function prepareCleanBrowserState(workspace: string): void {
   killOrphanedChromium(workspace);
   cleanBrowserProfile(workspace);
+}
+
+/**
+ * Poll until no Chromium process is using the workspace's browser profile,
+ * or the timeout expires. More robust than a fixed sleep because the OS
+ * process exit + file-handle release timing varies across systems.
+ */
+export async function waitForProfileFree(workspace: string, timeoutMs = 2000): Promise<void> {
+  const profileDir = path.join(workspace, '.temp', 'browser-profile');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      execFileSync('pgrep', ['-f', `user-data-dir=${profileDir}`], { timeout: 500 });
+      // pgrep exited 0 → processes still alive, wait a bit
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch {
+      // pgrep exits 1 when no matches → profile is free
+      return;
+    }
+  }
 }

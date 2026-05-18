@@ -42,7 +42,18 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
-      return new NextResponse(null, { status: response.status });
+      // Return transparent 1×1 PNG instead of 404 to avoid browser console errors
+      // for expired/deleted ad images (common for old conversations)
+      const placeholder = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      return new NextResponse(placeholder, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=300',
+        },
+      });
     }
 
     const contentType = response.headers.get('content-type') || 'image/jpeg';

@@ -3,6 +3,10 @@
 .env
 deploy.sh
 
+# Git worktrees (both naming conventions)
+.worktrees/
+worktrees/
+
 # User data (workspaces, credentials, invites) — root-level only
 /users/
 /users.yaml
@@ -21,6 +25,7 @@ CLAUDE.md
 
 /docs/
 .interface-design/
+.superpowers/
 
 # Playwright
 .playwright-mcp/
@@ -51,13 +56,12 @@ __pycache__/
 # OS
 .DS_Store
 
-.env
-.env.example
 .env.local
 .env.development
 .env.production
 *.bak
 *.tmp
+*.orig
 
 # TypeScript
 tsconfig.tsbuildinfo
@@ -67,6 +71,14 @@ tsconfig.tsbuildinfo
 out/
 node_modules/
 # package-lock.json — required for npm ci in CI pipelines, must be committed
+
+# npm/yarn logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test coverage
+coverage/
 
 # IDE
 /*.iml

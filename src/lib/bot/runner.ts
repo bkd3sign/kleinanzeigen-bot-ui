@@ -7,6 +7,9 @@ import { jobs, jobPids } from '@/lib/bot/jobs';
 import { readMergedConfig } from '@/lib/yaml/config';
 import { extractCDPPort, injectExtensionScripts } from '@/lib/bot/cdp-scripts';
 import { prepareCleanBrowserState } from '@/lib/bot/browser-cleanup';
+import { hookCookiesAfterLogin } from '@/lib/stats/cookie-hook';
+import { fetchAdStats } from '@/lib/stats/stats-fetcher';
+import { syncOnlineIdsFromApi } from '@/lib/bot/hooks';
 
 export const BOT_DIR = process.env.BOT_DIR || process.cwd();
 const BOT_CMD = process.env.BOT_CMD || path.join(BOT_DIR, 'bot', 'kleinanzeigen-bot');
@@ -102,7 +105,7 @@ export async function runBotCommand(
         }
       }
 
-      // Detect Chrome CDP port and inject extension scripts
+      // Detect Chrome CDP port and wire up post-login hooks
       const cdpPort = extractCDPPort(text);
       if (cdpPort && job) { job.cdp_port = cdpPort; }
       if (cdpPort) {
@@ -113,6 +116,12 @@ export async function runBotCommand(
           }
         };
         injectExtensionScripts(cdpPort, appendLine).catch(() => { /* non-blocking */ });
+
+        // Save session after login, fetch stats + sync online IDs (single API call).
+        hookCookiesAfterLogin(cdpPort, workspace)
+          .then(() => fetchAdStats(workspace))
+          .then(ads => syncOnlineIdsFromApi(workspace, ads))
+          .catch(() => { /* non-blocking */ });
       }
 
       // Detect MFA/verification challenges in bot output (SMS or email)
@@ -142,23 +151,21 @@ export async function runBotCommand(
       const pid = jobPids.get(jobId);
       jobPids.delete(jobId);
       jobStdins.delete(jobId);
-      // Keep Chrome alive when MFA is pending — we need it to inject the code via CDP.
-      // killOrphanedChromium() is called after successful MFA submit before restarting the job.
-      if (pid && !job?.mfa_required) {
-        try { process.kill(-pid, 'SIGTERM'); } catch { /* group already gone */ }
-      }
 
       if (job && job.status === 'running') {
         job.output = lines.join('');
         job.exit_code = code ?? 1;
         job.finished_at = new Date().toISOString();
-        if (job.mfa_required) {
-          job.status = 'mfa_required';
-        } else {
-          job.status = detectJobStatus(job.output, code ?? 1);
-        }
+        job.status = job.mfa_required ? 'mfa_required' : detectJobStatus(job.output, code ?? 1);
       }
+
       resolve();
+
+      // Kill Chrome process group. Scraping now runs via HTTP and doesn't need Chrome.
+      // MFA keeps Chrome alive deliberately — killOrphanedChromium() handles that path.
+      if (pid && !job?.mfa_required) {
+        try { process.kill(-pid, 'SIGTERM'); } catch { /* already gone */ }
+      }
     });
 
     proc.on('error', (err) => {

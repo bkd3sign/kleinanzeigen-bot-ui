@@ -10,9 +10,9 @@ export interface Conversation {
   userIdBuyer: number;
   userIdSeller: number;
   adId: string;
-  adTitle: string;
+  adTitle: string | null;
   adStatus: 'ACTIVE' | 'DELETED';
-  adImage: string;
+  adImage: string | null;
   adPriceType: 'NEGOTIABLE' | 'FIXED' | 'GIVE_AWAY' | 'NOT_APPLICABLE';
   adL1CategoryId: string;
   adL2CategoryId: string;

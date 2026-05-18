@@ -146,7 +146,7 @@ export function Header() {
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           </span>
-          Anzeige erstellen
+          <span className={styles.navLabel}>Anzeige erstellen</span>
         </a>
 
         {/* Ads link */}
@@ -162,7 +162,7 @@ export function Header() {
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
           </span>
-          Anzeigen
+          <span className={styles.navLabel}>Anzeigen</span>
         </Link>
 
         {/* Messages link with unread badge */}
@@ -181,7 +181,7 @@ export function Header() {
               <path d="M6 20v-6" />
             </svg>
           </span>
-          Dashboard
+          <span className={styles.navLabel}>Dashboard</span>
         </Link>
 
         {/* Theme toggle */}
@@ -215,7 +215,7 @@ function MessagesLink({ onClose }: { onClose: () => void }) {
           <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
         </svg>
       </span>
-      Nachrichten
+      <span className={styles.navLabel}>Nachrichten</span>
       {aiMode && aiMode !== 'off' && (
         <Badge variant={aiMode === 'auto' ? 'success' : 'info'}>
           {aiMode === 'auto' ? 'Auto' : 'Review'}

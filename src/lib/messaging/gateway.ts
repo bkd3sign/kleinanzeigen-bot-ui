@@ -6,10 +6,21 @@ import yaml from 'js-yaml';
 import type { ConversationsResponse, ConversationDetail } from '@/types/message';
 import { startResponder } from './responder';
 import { prepareCleanBrowserState, detectBrowserBin, killOrphanedChromium, cleanBrowserProfile } from '@/lib/bot/browser-cleanup';
+import {
+  createCdpClient,
+  cdpHttpGet,
+  sleep,
+  waitForCondition,
+  extractCookiesFromCDP,
+  waitForCdp,
+} from '@/lib/browser/cdp';
+import { STEALTH_ARGS, STEALTH_UA, injectStealthScript } from '@/lib/browser/stealth';
+import { LOGIN_URL, MFA_CODE_INPUT_SELECTOR, dismissConsentBanner, fillLoginForm, fillInput, detectLoginState } from '@/lib/browser/login';
+import { readMergedConfig } from '@/lib/yaml/config';
+import { SESSION_FILE as COOKIE_FILE } from '@/lib/ka/management-api';
 
 const GATEWAY_BASE = 'https://gateway.kleinanzeigen.de/messagebox/api';
 const CDP_BASE_PORT = 9223;
-const COOKIE_FILE = '.temp/messaging-cookies.json';
 
 interface PersistedCookies {
   cookies: string;
@@ -78,108 +89,43 @@ const g = globalThis as unknown as {
 };
 if (!g.__msgSessions) g.__msgSessions = new Map();
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
-/**
- * Poll a condition function until it returns true or timeout expires.
- */
-async function waitForCondition(check: () => Promise<boolean>, timeout: number): Promise<boolean> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    try { if (await check()) return true; } catch { /* continue */ }
-    await sleep(1000);
-  }
-  return false;
-}
-
-
-function readBotConfig(workspace: string): { username: string; password: string } | null {
-  // Read merged config (same as bot runner does)
-  for (const name of ['.bot-config.yaml', 'config.yaml']) {
-    const configPath = path.join(workspace, name);
-    if (fs.existsSync(configPath)) {
-      const config = yaml.load(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-      const login = config.login as { username?: string; password?: string } | undefined;
-      if (login?.username && login?.password) {
-        return { username: login.username, password: login.password };
-      }
-    }
-  }
-
-  // Check parent dir (single-user mode)
-  const botDir = process.env.BOT_DIR || process.cwd();
-  const rootConfig = path.join(botDir, 'config.yaml');
-  if (fs.existsSync(rootConfig)) {
-    const config = yaml.load(fs.readFileSync(rootConfig, 'utf-8')) as Record<string, unknown>;
-    const login = config.login as { username?: string; password?: string } | undefined;
-    if (login?.username && login?.password) {
-      return { username: login.username, password: login.password };
-    }
-  }
-
-  return null;
-}
-
-/**
- * Extract cookies from a running CDP browser.
- */
-async function extractCookiesFromCDP(port: number): Promise<string> {
-  const targetsRes = await fetch(`http://127.0.0.1:${port}/json`);
-  const targets = await targetsRes.json() as Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>;
-  const page = targets.find(t => t.type === 'page');
-  if (!page) throw new Error('No browser tab found');
-
-  const wsUrl = page.webSocketDebuggerUrl || `ws://127.0.0.1:${port}/devtools/page/${page.id}`;
-  const ws = new WebSocket(wsUrl);
-  await new Promise<void>((resolve, reject) => {
-    ws.on('open', resolve);
-    ws.on('error', reject);
-    setTimeout(() => reject(new Error('WS timeout')), 10000);
-  });
-
-  const cookieResponse = await new Promise<{
-    id: number;
-    result?: { cookies?: Array<{ name: string; value: string; domain: string }> };
-  }>((resolve, reject) => {
-    const id = 1;
-    const handler = (data: WebSocket.Data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.id === id) { ws.off('message', handler); resolve(msg); }
-    };
-    ws.on('message', handler);
-    ws.send(JSON.stringify({ id, method: 'Network.getAllCookies' }));
-    setTimeout(() => reject(new Error('Cookie timeout')), 10000);
-  });
-
-  ws.close();
-
-  const allCookies = cookieResponse.result?.cookies ?? [];
-  return allCookies
-    .filter(c => c.domain.includes('kleinanzeigen.de'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-}
 
 /**
  * Auto-detect user ID via profile API.
  */
-async function fetchUserId(cookies: string): Promise<number | null> {
+export async function fetchUserId(cookies: string): Promise<number | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch('https://www.kleinanzeigen.de/m-mein-profil.json', {
-      headers: {
-        'Cookie': cookies,
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-      },
+      headers: { 'Cookie': cookies, 'Accept': 'application/json', 'User-Agent': STEALTH_UA },
+      signal: controller.signal,
     });
     if (res.ok) {
       const profile = await res.json() as { userId?: string };
       if (profile.userId) return parseInt(profile.userId, 10);
     }
-  } catch { /* profile fetch failed */ }
+  } catch { /* profile fetch failed or aborted */ }
+  finally { clearTimeout(timer); }
   return null;
+}
+
+/**
+ * Decode access_token JWT without network call and check if it expires within 30s.
+ * Returns true if the token is missing or expired/about to expire.
+ */
+export function isAccessTokenExpired(cookies: string): boolean {
+  const token = cookies.split('; ')
+    .find(c => c.startsWith('access_token='))
+    ?.slice('access_token='.length);
+  if (!token) return true;
+  try {
+    const raw = token.split('.')[1];
+    const base64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf-8')) as { exp?: number };
+    return payload.exp ? Date.now() >= (payload.exp - 30) * 1000 : false;
+  } catch { return false; }
 }
 
 /**
@@ -234,7 +180,7 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
     const persisted = loadCookiesFromDisk(workspace);
     if (persisted) {
       const userId = await fetchUserId(persisted.cookies);
-      if (userId) {
+      if (userId && !isAccessTokenExpired(persisted.cookies)) {
         const cookieSession: BrowserSession = {
           proc: null,
           cdpPort: getCdpPort(workspace),
@@ -275,15 +221,14 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
     // Start persistent headless Chromium in own process group
     // so stopForBot() can kill the entire tree with process.kill(-pid)
     const proc = spawn(detectBrowserBin(), [
+      ...STEALTH_ARGS,
       '--headless=new',
       '--no-sandbox',
       '--disable-gpu',
-      '--disable-dev-shm-usage',
-      '--password-store=basic',
       `--remote-debugging-port=${session.cdpPort}`,
       '--remote-debugging-address=127.0.0.1',
       `--user-data-dir=${profileDir}`,
-      'https://www.kleinanzeigen.de/m-nachrichten.html',
+      'about:blank',
     ], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     session.proc = proc;
 
@@ -295,107 +240,124 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
       }
     });
 
-    // Wait for CDP
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline) {
-      try {
-        const res = await fetch(`http://127.0.0.1:${session.cdpPort}/json/version`);
-        if (res.ok) break;
-      } catch { /* retry */ }
-      await sleep(500);
-    }
+    // Wait for CDP HTTP endpoint to be reachable
+    await waitForCdp(session.cdpPort, 20000);
 
-    // Wait for page to load
-    await sleep(3000);
+    // Connect CDP and inject stealth patches BEFORE any real navigation
+    // so Auth0 never sees an unpatched headless browser fingerprint
+    const initTargets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(session.cdpPort, '/json');
+    const initPage = initTargets.find(t => t.type === 'page');
+    if (!initPage) throw new Error('Kein Browser-Tab');
 
-    // Check if we need to log in
+    const initWsUrl = initPage.webSocketDebuggerUrl || `ws://127.0.0.1:${session.cdpPort}/devtools/page/${initPage.id}`;
+    const initWs = new WebSocket(initWsUrl);
+    await new Promise<void>((resolve, reject) => {
+      initWs.on('open', () => resolve());
+      initWs.on('error', reject);
+      setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
+    });
+    const initCdp = createCdpClient(initWs);
+    await initCdp.send('Page.enable');
+    await initCdp.send('Runtime.enable');
+    await injectStealthScript(initCdp);
+    initWs.close();
+
+    // Network.getAllCookies works on about:blank — no navigation needed
+    await sleep(500);
     const cookies = await extractCookiesFromCDP(session.cdpPort);
     const userId = await fetchUserId(cookies);
 
     if (userId) {
-      // Already logged in from previous bot session
-      session.cookies = cookies;
-      session.userId = userId;
-      session.lastCookieRefresh = Date.now();
-      session.status = 'ready';
-      saveCookiesToDisk(workspace, cookies, userId);
-      return session;
+      if (!isAccessTokenExpired(cookies)) {
+        // Already logged in from previous bot session with valid token
+        session.cookies = cookies;
+        session.userId = userId;
+        session.lastCookieRefresh = Date.now();
+        session.status = 'ready';
+        saveCookiesToDisk(workspace, cookies, userId);
+        return session;
+      }
+      // JSESSIONID valid but access_token expired — navigate to KA to get fresh token without re-login
+      try {
+        const refreshTargets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(session.cdpPort, '/json');
+        const refreshPage = refreshTargets.find(t => t.type === 'page');
+        if (refreshPage) {
+          const refreshWsUrl = refreshPage.webSocketDebuggerUrl || `ws://127.0.0.1:${session.cdpPort}/devtools/page/${refreshPage.id}`;
+          const refreshWs = new WebSocket(refreshWsUrl);
+          await new Promise<void>((resolve, reject) => {
+            refreshWs.on('open', () => resolve());
+            refreshWs.on('error', reject);
+            setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
+          });
+          const refreshCdp = createCdpClient(refreshWs);
+          await refreshCdp.send('Page.navigate', { url: 'https://www.kleinanzeigen.de/' });
+          await sleep(3000);
+          refreshWs.close();
+          const freshCookies = await extractCookiesFromCDP(session.cdpPort);
+          if (!isAccessTokenExpired(freshCookies)) {
+            session.cookies = freshCookies;
+            session.userId = userId;
+            session.lastCookieRefresh = Date.now();
+            session.status = 'ready';
+            saveCookiesToDisk(workspace, freshCookies, userId);
+            return session;
+          }
+        }
+      } catch { /* refresh failed, fall through to full login */ }
     }
 
     // Need to log in — use the bot's login credentials
     session.status = 'logging_in';
-    const creds = readBotConfig(workspace);
+    const mergedConfig = readMergedConfig(workspace);
+    const loginSection = mergedConfig.login as { username?: string; password?: string } | undefined;
+    const creds = (loginSection?.username && loginSection?.password)
+      ? { username: loginSection.username, password: loginSection.password }
+      : null;
     if (!creds) {
       session.status = 'error';
       session.error = 'Keine Login-Daten in der Konfiguration. Bitte config.yaml prüfen.';
       throw new Error(session.error);
     }
 
-    // Navigate to login page and fill credentials via CDP
-    const targetsRes = await fetch(`http://127.0.0.1:${session.cdpPort}/json`);
-    const targets = await targetsRes.json() as Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>;
+    // Open a fresh CDP WebSocket for the login flow
+    const targets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(session.cdpPort, '/json');
     const page = targets.find(t => t.type === 'page');
     if (!page) throw new Error('Kein Browser-Tab');
 
     const wsUrl = page.webSocketDebuggerUrl || `ws://127.0.0.1:${session.cdpPort}/devtools/page/${page.id}`;
     const ws = new WebSocket(wsUrl);
     await new Promise<void>((resolve, reject) => {
-      ws.on('open', resolve);
+      ws.on('open', () => resolve());
       ws.on('error', reject);
+      setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
     });
 
     const cdp = createCdpClient(ws);
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
-
-    // Navigate to login
-    await cdp.send('Page.navigate', { url: 'https://www.kleinanzeigen.de/m-einloggen.html' });
+    // Stealth already registered via addScriptToEvaluateOnNewDocument above;
+    // all future navigations in this browser process are covered
+    await cdp.send('Page.navigate', { url: LOGIN_URL });
     await sleep(5000);
 
-    // Wait for Auth0 redirect
-    let url = await cdp.evaluate('window.location.href') as string;
-    if (url.includes('login.kleinanzeigen.de') || url.includes('m-einloggen')) {
-      // Wait for login form
-      await sleep(2000);
+    // Dismiss GDPR consent banner before interacting with the form
+    await dismissConsentBanner(cdp);
 
-      // Fill email
-      await cdp.evaluate(`
-        (() => {
-          const inputs = document.querySelectorAll('input');
-          for (const input of inputs) {
-            if (input.type === 'email' || input.name === 'username' || input.name === 'email') {
-              input.focus(); input.value = '';
-              return 'found';
-            }
-          }
-          return 'not_found';
-        })()
-      `);
-      await cdp.send('Input.insertText', { text: creds.username });
-      await sleep(500);
-      await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
-      await sleep(4000);
+    // Fill credentials (email + optional password page)
+    const loginResult = await fillLoginForm(cdp, creds.username, creds.password);
+    if (!loginResult.success) {
+      session.status = 'error';
+      session.error = loginResult.error || 'Login fehlgeschlagen';
+      try { ws.close(); } catch { /* fine */ }
+      throw new Error(session.error);
+    }
 
-      // Fill password
-      url = await cdp.evaluate('window.location.href') as string;
-      if (url.includes('/u/login/password') || url.includes('login.kleinanzeigen.de')) {
-        await cdp.evaluate(`
-          const pw = document.querySelector('input[type="password"], input[name="password"]');
-          if (pw) { pw.focus(); pw.value = ''; }
-        `);
-        await cdp.send('Input.insertText', { text: creds.password });
-        await sleep(500);
-        await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
-        await sleep(6000);
-      }
-
-      // Check for MFA — keep browser alive for code submission
-      url = await cdp.evaluate('window.location.href') as string;
-      if (url.includes('mfa') || url.includes('challenge') || url.includes('verification')) {
-        session.status = 'awaiting_mfa';
-        session.cdpWs = ws;
-        return session;
-      }
+    // Determine where the login flow landed
+    const state = await detectLoginState(cdp);
+    if (state === 'mfa') {
+      session.status = 'awaiting_mfa';
+      session.cdpWs = ws;
+      return session;
     }
 
     ws.close();
@@ -421,44 +383,9 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
   } catch (err) {
     session.status = 'error';
     session.error = (err as Error).message;
+    console.error('[messaging] Session start failed:', (err as Error).message);
     throw err;
   }
-}
-
-function createCdpClient(ws: WebSocket) {
-  let msgId = 0;
-  const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-
-  ws.on('message', (data) => {
-    try {
-      const msg = JSON.parse(data.toString());
-      if (msg.id !== undefined && pending.has(msg.id)) {
-        pending.get(msg.id)!.resolve(msg);
-        pending.delete(msg.id);
-      }
-    } catch { /* ignore */ }
-  });
-
-  return {
-    send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-      return new Promise((resolve, reject) => {
-        const id = ++msgId;
-        pending.set(id, { resolve, reject });
-        ws.send(JSON.stringify({ id, method, params }));
-        setTimeout(() => {
-          if (pending.has(id)) { pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }
-        }, 15000);
-      });
-    },
-    async evaluate(expression: string): Promise<unknown> {
-      const resp = await this.send('Runtime.evaluate', { expression, returnByValue: true }) as {
-        error?: { message: string };
-        result?: { result?: { value?: unknown } };
-      };
-      if (resp.error) throw new Error(resp.error.message);
-      return resp.result?.result?.value;
-    },
-  };
 }
 
 /**
@@ -585,28 +512,15 @@ export async function submitMessagingMfa(
   const cdp = createCdpClient(ws);
 
   try {
-    // Find and fill the MFA code input
-    const codeFilled = await cdp.evaluate(`
-      (() => {
-        const selectors = ['input[name="code"]', 'input[inputmode="numeric"]', 'input[autocomplete="one-time-code"]', 'input[type="tel"]'];
-        for (const sel of selectors) {
-          const input = document.querySelector(sel);
-          if (input && input.offsetParent !== null) {
-            input.focus(); input.value = '';
-            return 'found';
-          }
-        }
-        return 'not_found';
-      })()
-    `) as string;
+    // Fill the MFA code input via the shared helper
+    const codeFilled = await fillInput(cdp, code, MFA_CODE_INPUT_SELECTOR);
 
-    if (codeFilled !== 'found') {
+    if (!codeFilled) {
       session.status = 'error';
       session.error = 'Code-Eingabefeld nicht gefunden. Bitte Messaging neu starten.';
       return { success: false, error: session.error };
     }
 
-    await cdp.send('Input.insertText', { text: code });
     await sleep(500);
     await cdp.evaluate(`document.querySelector('button[type="submit"], button[name="action"]')?.click()`);
 
@@ -746,7 +660,7 @@ async function gatewayFetch(url: string, workspace: string, options?: RequestIni
   const headers: Record<string, string> = {
     'Cookie': session.cookies,
     'Accept': 'application/json',
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+    'User-Agent': STEALTH_UA,
     ...(options?.headers as Record<string, string> || {}),
   };
 
@@ -761,8 +675,6 @@ async function gatewayFetch(url: string, workspace: string, options?: RequestIni
   });
 
   if (response.status === 401 || response.status === 403) {
-    // Session expired — purge both in-memory session AND disk cookies
-    // so ensureSession doesn't re-use the same stale credentials
     stopSession(workspace);
     deleteCookiesFromDisk(workspace);
     throw new Error('Kleinanzeigen-Session abgelaufen. Seite neu laden zum Re-Login.');

@@ -4,6 +4,8 @@ import { jobs } from '@/lib/bot/jobs';
 import type { Job } from '@/types/bot';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
 import { readConfig } from '@/lib/yaml/config';
+import { archiveAdFolder, resolveArchiveDir, unarchiveAdFolder } from './archive';
+import type { KaManageAd } from '@/lib/ka/management-api';
 
 const DOWNLOAD_ALL_JSON = '.last_download_all.json';
 
@@ -99,9 +101,10 @@ export function onJobStarting(jobId: string, command: string, workspace: string)
   if (!command.includes('download') || !command.includes('--ads=all')) return;
 
   const downloadedDir = resolveDownloadDir(workspace);
+  const archiveDir = resolveArchiveDir(resolveDownloadDir(workspace));
   const entries: SnapshotEntry[] = [];
 
-  for (const filePath of findAdFiles(workspace)) {
+  for (const filePath of findAdFiles(workspace, [archiveDir])) {
     const ad = readAd(filePath);
     if (typeof ad.id !== 'number') continue;
 
@@ -135,7 +138,8 @@ function refreshOnlineIds(workspace: string, job: Job): void {
   const existingIds = existing ? new Set(existing.ids) : new Set<number>();
   const currentIds = new Set<number>();
 
-  for (const filePath of findAdFiles(workspace)) {
+  const archiveDir = resolveArchiveDir(resolveDownloadDir(workspace));
+  for (const filePath of findAdFiles(workspace, [archiveDir])) {
     const ad = readAd(filePath);
     if (typeof ad.id === 'number') {
       currentIds.add(ad.id);
@@ -164,12 +168,26 @@ function refreshOnlineIds(workspace: string, job: Job): void {
   }
 }
 
+export function archiveInactiveAdFolders(downloadedDir: string): void {
+  const archiveDir = resolveArchiveDir(downloadedDir);
+  for (const filePath of findAdFiles(downloadedDir, [archiveDir])) {
+    const ad = readAd(filePath);
+    if (ad.active !== false) continue;
+    const folderPath = path.dirname(filePath);
+    if (folderPath.startsWith(downloadedDir + path.sep) && !folderPath.startsWith(archiveDir + path.sep)) {
+      archiveAdFolder(folderPath, downloadedDir);
+    }
+  }
+}
+
 function cleanOrphanedImageDirs(downloadedDir: string, job: Job): void {
   if (!fs.existsSync(downloadedDir)) return;
+  const archiveDir = resolveArchiveDir(downloadedDir);
   let removed = 0;
   for (const entry of fs.readdirSync(downloadedDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dirPath = path.join(downloadedDir, entry.name);
+    if (dirPath === archiveDir) continue;
     const hasYaml = fs.readdirSync(dirPath).some(f => /\.(ya?ml|json)$/i.test(f));
     if (!hasYaml) {
       try {
@@ -181,6 +199,58 @@ function cleanOrphanedImageDirs(downloadedDir: string, job: Job): void {
   }
   if (removed > 0) {
     log(job, `CLEANUP: ${removed} verwaiste Bildordner in ${path.basename(downloadedDir)}/ entfernt`);
+  }
+}
+
+/**
+ * Persist online IDs from a pre-fetched KA management API response.
+ * Called with the result of fetchAdStats so no extra API call is needed.
+ * No-op if the ads list is empty (login failed or API unreachable).
+ */
+export function syncOnlineIdsFromApi(workspace: string, ads: KaManageAd[]): void {
+  if (ads.length === 0) return;
+
+  const result: DownloadAllResult = {
+    timestamp: new Date().toISOString(),
+    ids: ads.map(a => a.id),
+  };
+  const targetPath = path.join(workspace, DOWNLOAD_ALL_JSON);
+  const tempPath = `${targetPath}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(result, null, 2), 'utf-8');
+  fs.renameSync(tempPath, targetPath);
+
+  const pausedIds = new Set(ads.filter(a => a.state === 'paused').map(a => a.id));
+  const onlineIds = new Set(ads.map(a => a.id));
+
+  const downloadedDir = resolveDownloadDir(workspace);
+  const archiveDir = resolveArchiveDir(downloadedDir);
+
+  for (const filePath of findAdFiles(workspace, [archiveDir])) {
+    const ad = readAd(filePath);
+    if (typeof ad.id !== 'number') continue;
+
+    if (pausedIds.has(ad.id) && ad.active !== false) {
+      ad.active = false;
+      writeAd(filePath, ad);
+    } else if (onlineIds.has(ad.id) && !pausedIds.has(ad.id) && ad.active === false) {
+      ad.active = true;
+      writeAd(filePath, ad);
+    }
+  }
+
+  // Also check archive: ads that were archived because paused/inactive but are now online again
+  if (fs.existsSync(archiveDir)) {
+    for (const filePath of findAdFiles(archiveDir)) {
+      const ad = readAd(filePath);
+      if (typeof ad.id !== 'number') continue;
+      if (!onlineIds.has(ad.id) || pausedIds.has(ad.id)) continue;
+      // Ad is online and not paused — restore and unarchive
+      if (ad.active === false) {
+        ad.active = true;
+        writeAd(filePath, ad);
+      }
+      unarchiveAdFolder(path.dirname(filePath), downloadedDir);
+    }
   }
 }
 
@@ -211,11 +281,12 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     if (!job || (job.exit_code !== 0 && job.exit_code !== null)) return;
 
     const downloadedDir = resolveDownloadDir(workspace);
+    const archiveDir = resolveArchiveDir(downloadedDir);
     if (!fs.existsSync(downloadedDir)) return;
 
     // For partial downloads (new, specific IDs): merge new IDs into existing list
     if (!isDownloadAll) {
-      const downloadedFiles = findAdFiles(downloadedDir);
+      const downloadedFiles = findAdFiles(downloadedDir, [archiveDir]);
       const existing = readLastDownloadAll(workspace);
       const existingIds = existing ? new Set(existing.ids) : new Set<number>();
       let added = 0;
@@ -268,7 +339,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     }
 
     // Collect all current downloaded files
-    const downloadedFiles = findAdFiles(downloadedDir);
+    const downloadedFiles = findAdFiles(downloadedDir, [archiveDir]);
     const onlineIds = new Set<number>();
     let mergedCount = 0;
     let newCount = 0;
@@ -334,7 +405,29 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
 
         const ad = readAd(entry.filePath);
         deactivateAd(entry.filePath, ad);
-        log(job, `VERWAIST: ${adLabel(entry.title, entry.id)} — nicht mehr online, deaktiviert`);
+        const adFolder = path.dirname(entry.filePath);
+        if (adFolder.startsWith(downloadedDir + path.sep) && !adFolder.startsWith(archiveDir + path.sep)) {
+          archiveAdFolder(adFolder, downloadedDir);
+        }
+        log(job, `VERWAIST: ${adLabel(entry.title, entry.id)} — nicht mehr online, deaktiviert + archiviert`);
+      }
+    }
+
+    // Remove archived copies for ads that came back online (fresh copy now in downloadedDir)
+    if (fs.existsSync(archiveDir)) {
+      for (const dirEntry of fs.readdirSync(archiveDir, { withFileTypes: true })) {
+        if (!dirEntry.isDirectory()) continue;
+        const archivedFolder = path.join(archiveDir, dirEntry.name);
+        try {
+          const yamlFile = fs.readdirSync(archivedFolder)
+            .find(f => f.startsWith('ad_') && /\.(ya?ml|json)$/i.test(f));
+          if (!yamlFile) continue;
+          const archivedAd = readAd(path.join(archivedFolder, yamlFile));
+          if (typeof archivedAd.id === 'number' && onlineIds.has(archivedAd.id)) {
+            fs.rmSync(archivedFolder, { recursive: true, force: true });
+            log(job, `UNARCHIV: ${dirEntry.name} — wieder online, archivierte Kopie bereinigt`);
+          }
+        } catch { /* ignore */ }
       }
     }
 
@@ -348,6 +441,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     fs.writeFileSync(tempPath, JSON.stringify(result, null, 2), 'utf-8');
     fs.renameSync(tempPath, targetPath);
 
+    archiveInactiveAdFolders(downloadedDir);
     cleanOrphanedImageDirs(downloadedDir, job);
 
     log(job, `--- Ad-Sync abgeschlossen: ${downloadedFiles.length} online, ${mergedCount} gemergt, ${newCount} neu ---`);

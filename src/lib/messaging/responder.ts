@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { listConversations, getConversation, sendMessage } from './gateway';
+import { sleep } from '@/lib/browser/cdp';
 import { buildSystemPrompt, buildChatMessages, loadMessagingRules } from './prompts';
 import { readMergedConfig, AI_DEFAULTS } from '@/lib/yaml/config';
 import type { ConversationDetail } from '@/types/message';
@@ -256,7 +256,7 @@ async function pollAndRespond(workspace: string): Promise<void> {
         const elapsed = Date.now() - msgTime;
         const targetDelay = MIN_RESPONSE_DELAY + Math.random() * MAX_RESPONSE_JITTER;
         if (elapsed < targetDelay) {
-          await new Promise(r => setTimeout(r, targetDelay - elapsed));
+          await sleep(targetDelay - elapsed);
         }
 
         try {
@@ -348,7 +348,7 @@ export function getResponderStatus(workspace: string): {
   pendingReplies: Array<{
     conversationId: string;
     buyerName: string;
-    adTitle: string;
+    adTitle: string | null;
     suggestedReply: string;
     status: string;
     createdAt: number;

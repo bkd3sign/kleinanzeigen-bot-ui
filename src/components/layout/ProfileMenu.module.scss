@@ -3,7 +3,7 @@
   position: relative;
   display: inline-flex;
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -36,7 +36,7 @@
     border-color: var(--border-color-hover);
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     justify-content: flex-start;
     width: 100%;
     min-height: 44px;
@@ -85,6 +85,10 @@
   &:empty {
     display: none;
   }
+
+  @media (min-width: 561px) and (max-width: 960px) {
+    display: none;
+  }
 }
 
 .chevron {
@@ -105,8 +109,15 @@
     stroke-linejoin: round;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     margin-left: auto;
+  }
+}
+
+@media (min-width: 561px) and (max-width: 960px) {
+  .trigger {
+    padding: var(--space-1-5);
+    gap: 0;
   }
 }
 
@@ -123,7 +134,7 @@
   padding: var(--space-1) 0;
   animation: slideDown 150ms var(--ease-out);
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     position: static;
     border: none;
     box-shadow: none;
@@ -156,7 +167,7 @@
     color: var(--text-primary);
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     min-height: 44px;
     padding: var(--space-3) var(--space-4);
     justify-content: flex-start;
@@ -186,7 +197,7 @@
     color: var(--text-primary);
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     min-height: 44px;
     padding: var(--space-3) var(--space-4);
     justify-content: flex-start;
@@ -213,7 +224,7 @@
     stroke-linejoin: round;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     width: 18px;
   }
 }
@@ -223,7 +234,7 @@
   background-color: var(--border-color);
   margin: var(--space-1) 0;
 
-  @media (max-width: 767px) {
+  @media (max-width: 560px) {
     display: none;
   }
 }

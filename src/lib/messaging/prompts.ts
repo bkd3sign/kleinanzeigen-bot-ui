@@ -107,7 +107,7 @@ export function buildSystemPrompt(
   const contact = (adDefaults.contact as Record<string, string>) ?? {};
 
   // Load local ad data (match by ID, fallback to title for re-published ads)
-  const localAd = findLocalAd(workspace, conv.adId, conv.adTitle);
+  const localAd = findLocalAd(workspace, conv.adId, conv.adTitle ?? undefined);
   const autoPriceReduction = localAd?.auto_price_reduction as {
     enabled?: boolean;
     strategy?: string;

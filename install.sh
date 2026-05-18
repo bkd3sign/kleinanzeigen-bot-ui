@@ -10,7 +10,7 @@ set -euo pipefail
 # Usage:
 #   bash install.sh              — interactive guided setup
 #   bash install.sh --yes        — non-interactive, use all defaults
-#   bash install.sh --update     — update existing install (no system deps, ~3 min)
+#   bash install.sh --update     — update existing install (no system deps, ~5-15 min)
 #
 # Env overrides (skip prompts):
 #   INSTALL_DIR, WORKSPACE_DIR, PORT, SERVICE_USER, BOT_RELEASE
@@ -57,10 +57,18 @@ echo -e "${GREEN}${BOLD}║   Kleinanzeigen-Bot UI — Installer               �
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${RESET}"
 echo ""
 
-# ─── Update mode (--update): skip system deps, just pull + build + restart ───
+# ─── Update mode (--update): check version, pull if newer, build + restart ───
 if [[ "$UPDATE_MODE" == "true" ]]; then
-  TOTAL_STEPS=3
-  INSTALL_DIR="${INSTALL_DIR:-/opt/kleinanzeigen-bot-ui}"
+  TOTAL_STEPS=4
+  # Auto-detect install dir from running service if not set via env
+  if [[ -z "${INSTALL_DIR:-}" ]]; then
+    SERVICE_WORKDIR=$(systemctl show kleinanzeigen-bot-ui -p WorkingDirectory --value 2>/dev/null || echo "")
+    if [[ -n "$SERVICE_WORKDIR" ]]; then
+      INSTALL_DIR="${SERVICE_WORKDIR%/.next/standalone}"
+    else
+      INSTALL_DIR="/opt/kleinanzeigen-bot-ui"
+    fi
+  fi
   [[ ! -d "$INSTALL_DIR/.git" ]] && error "No installation found at $INSTALL_DIR — run without --update first"
   NODE_BIN=$(command -v node 2>/dev/null) || error "Node.js not found — run full installer first"
 
@@ -75,16 +83,38 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
     warn "Low disk: ${AVAIL_DISK_MB}MB available — rebuild needs ~1GB free."
   fi
 
-  step 1 "Pulling latest changes"
+  step 1 "Checking for updates"
+  # Read from git object store (immune to working-tree edits of package.json)
+  LOCAL_VERSION=$(git -C "$INSTALL_DIR" show HEAD:package.json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null || \
+    python3 -c "import json; print(json.load(open('$INSTALL_DIR/package.json'))['version'])" 2>/dev/null || echo "")
+  REMOTE_VERSION=$(curl --max-time 10 -fsSL "https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/package.json" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "")
+
+  if [[ -z "$LOCAL_VERSION" ]]; then
+    warn "Could not read local version from package.json — proceeding anyway"
+  elif [[ -z "$REMOTE_VERSION" ]]; then
+    warn "Could not fetch remote version from GitHub — proceeding anyway"
+  elif [[ "$LOCAL_VERSION" == "$REMOTE_VERSION" ]]; then
+    success "Already up to date (v${LOCAL_VERSION})"
+    echo ""
+    exit 0
+  else
+    info "Update available: v${LOCAL_VERSION} → v${REMOTE_VERSION}"
+  fi
+
+  step 2 "Pulling latest changes"
+  # Reset working-tree modifications so git pull --ff-only cannot conflict
+  git -C "$INSTALL_DIR" checkout -- . 2>/dev/null || true
   git -C "$INSTALL_DIR" pull --ff-only
   success "Repository updated"
 
-  step 2 "Rebuilding application"
+  step 3 "Rebuilding application"
   cd "$INSTALL_DIR"
   info "Installing npm dependencies..."
-  npm ci --prefer-offline 2>&1 | tail -3
+  npm ci 2>&1 | tail -3
   info "Building Next.js app..."
-  npm run build 2>&1 | tail -5
+  npm run build 2>&1 | tail -20
   STANDALONE_DIR="$INSTALL_DIR/.next/standalone"
   info "Copying static assets..."
   cp -r public "$STANDALONE_DIR/public"
@@ -93,7 +123,7 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   cp -r node_modules/ws "$STANDALONE_DIR/node_modules/ws"
   success "Build complete"
 
-  step 3 "Restarting service"
+  step 4 "Restarting service"
   systemctl restart kleinanzeigen-bot-ui
   STARTED=false
   for i in {1..10}; do
@@ -108,6 +138,9 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
     warn "Service may not have started — check: journalctl -u kleinanzeigen-bot-ui -n 50"
   fi
 
+  # Read from git object store post-pull to reflect the actual installed version
+  NEW_VERSION=$(git -C "$INSTALL_DIR" show HEAD:package.json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "${REMOTE_VERSION}")
   IP=$(hostname -I | awk '{print $1}')
   PORT=$(systemctl show kleinanzeigen-bot-ui -p Environment --value 2>/dev/null | grep -oP 'PORT=\K\d+' || echo "3737")
   echo ""
@@ -115,6 +148,7 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   echo -e "${GREEN}${BOLD}║   Update complete!                               ║${RESET}"
   echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${RESET}"
   echo ""
+  echo -e "  ${BOLD}Version:${RESET} v${NEW_VERSION}"
   echo -e "  ${BOLD}Web UI:${RESET}  http://${IP}:${PORT}"
   echo ""
   exit 0
@@ -169,8 +203,9 @@ esac
 
 # glibc check — bot binary requires >= 2.38 (built on Ubuntu 24.04)
 if [[ "$PKG_MANAGER" == "apt" ]]; then
-  GLIBC_VERSION=$(ldd --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+$' || echo "0.0")
-  GLIBC_MINOR=$(echo "$GLIBC_VERSION" | cut -d. -f2)
+  # head -1 after grep: aarch64 ldd may produce multiple regex matches on one line
+  GLIBC_VERSION=$(ldd --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+$' | head -1 || echo "0.0")
+  GLIBC_MINOR=$(echo "$GLIBC_VERSION" | cut -d. -f2 | tr -d '[:space:]')
   if [[ "${GLIBC_MINOR}" -lt 38 ]]; then
     echo ""
     echo -e "${RED}${BOLD}  ✗ glibc ${GLIBC_VERSION} is too old — need >= 2.38${RESET}"
@@ -251,17 +286,35 @@ success "OS: ${OS_ID} ${OS_VERSION_ID} | Arch: ${ARCH} | RAM: ${TOTAL_MEM_MB}MB 
 step 2 "Configuration"
 # ─────────────────────────────────────────────────────────────────────────────
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_INSTALL_DIR="${INSTALL_DIR:-/opt/kleinanzeigen-bot-ui}"
+if [[ -f "$SCRIPT_DIR/package.json" ]] && grep -q "kleinanzeigen-bot-ui" "$SCRIPT_DIR/package.json" 2>/dev/null; then
+  DEFAULT_INSTALL_DIR="$SCRIPT_DIR"
+fi
+
+IS_REINSTALL=false
+if [[ -f "$DEFAULT_INSTALL_DIR/package.json" ]] && grep -q "kleinanzeigen-bot-ui" "$DEFAULT_INSTALL_DIR/package.json" 2>/dev/null; then
+  EXISTING_VERSION=$(python3 -c "import json; print(json.load(open('$DEFAULT_INSTALL_DIR/package.json'))['version'])" 2>/dev/null || echo "unknown")
+  echo ""
+  echo -e "${YELLOW}${BOLD}  ⚠ Existing installation detected (v${EXISTING_VERSION}) at ${DEFAULT_INSTALL_DIR}${RESET}"
+  echo -e "  Running install again will do a full reinstall (~10 min)."
+  echo -e "  Your workspace data (config, ads) will NOT be affected."
+  echo -e "  Use this to change service user, port, or repair a broken installation."
+  echo -e "  For a quick version update use instead:"
+  echo -e "    ${BOLD}bash install.sh --update${RESET}"
+  echo ""
+  if [[ "$NON_INTERACTIVE" == "false" ]]; then
+    read -r -p "  Continue with full reinstall? [y/N] " REINSTALL_CONFIRM
+    [[ "${REINSTALL_CONFIRM,,}" != "y" ]] && exit 0
+  fi
+  IS_REINSTALL=true
+fi
+
 if [[ "$NON_INTERACTIVE" == "false" ]]; then
   echo ""
   echo -e "  Answer the following questions to configure your installation."
   echo -e "  Press ${BOLD}Enter${RESET} to accept the default shown in [brackets]."
   echo ""
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_INSTALL_DIR="${INSTALL_DIR:-/opt/kleinanzeigen-bot-ui}"
-if [[ -f "$SCRIPT_DIR/package.json" ]] && grep -q "kleinanzeigen-bot-ui" "$SCRIPT_DIR/package.json" 2>/dev/null; then
-  DEFAULT_INSTALL_DIR="$SCRIPT_DIR"
 fi
 
 ask "Install directory (app source + build)" "$DEFAULT_INSTALL_DIR" INSTALL_DIR
@@ -328,7 +381,7 @@ echo -e "    Service user: $SERVICE_USER"
 echo -e "    Bot release:  $BOT_RELEASE"
 echo ""
 
-if [[ "$NON_INTERACTIVE" == "false" ]]; then
+if [[ "$NON_INTERACTIVE" == "false" ]] && [[ "$IS_REINSTALL" == "false" ]]; then
   read -r -p "  Proceed? [Y/n] " CONFIRM
   [[ "${CONFIRM,,}" == "n" ]] && exit 0
 fi
@@ -351,7 +404,6 @@ if [[ "$PKG_MANAGER" == "apt" ]]; then
 
   # Ubuntu ships chromium as a snap transitional package which cannot run inside
   # a headless systemd service (requires user session / cgroup context).
-  # Add xtradeb/apps directly via GPG key + sources file — no software-properties-common needed.
   # Debian always ships a real .deb — no PPA needed.
   if [[ "$OS_ID" == "ubuntu" ]]; then
     info "Ubuntu: adding xtradeb/apps repo for real Chromium .deb (avoids snap)..."
@@ -453,23 +505,29 @@ success "Workspace directories created at $WORKSPACE_DIR"
 step 5 "Building application"
 # ─────────────────────────────────────────────────────────────────────────────
 
-if [[ -f "$INSTALL_DIR/package.json" ]] && grep -q "kleinanzeigen-bot-ui" "$INSTALL_DIR/package.json" 2>/dev/null; then
-  info "Using source at $INSTALL_DIR"
-elif [[ -d "$INSTALL_DIR/.git" ]]; then
-  info "Updating existing installation at $INSTALL_DIR..."
-  git -C "$INSTALL_DIR" pull --ff-only
+# Full reinstall: always wipe and re-clone for a guaranteed clean state
+if [[ "$IS_REINSTALL" == "true" && -d "$INSTALL_DIR" ]]; then
+  info "Wiping existing installation for clean reinstall..."
+  rm -rf "$INSTALL_DIR"
+fi
+
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+  # Fresh install where a git repo already exists — pull latest
+  git -C "$INSTALL_DIR" checkout -- . 2>/dev/null || true
+  LOCAL_VERSION=$(git -C "$INSTALL_DIR" show HEAD:package.json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null || \
+    python3 -c "import json; print(json.load(open('$INSTALL_DIR/package.json'))['version'])" 2>/dev/null || echo "")
+  REMOTE_VERSION=$(curl --max-time 10 -fsSL "https://raw.githubusercontent.com/bkd3sign/kleinanzeigen-bot-ui/main/package.json" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "")
+  if [[ -n "$LOCAL_VERSION" && -n "$REMOTE_VERSION" && "$LOCAL_VERSION" == "$REMOTE_VERSION" ]]; then
+    info "Already on latest version (v${LOCAL_VERSION}) — using existing source"
+  else
+    info "Pulling latest changes from GitHub..."
+    git -C "$INSTALL_DIR" pull --ff-only
+    success "Repository updated"
+  fi
 else
   if [[ -d "$INSTALL_DIR" ]]; then
-    echo ""
-    warn "$INSTALL_DIR exists but is not a valid installation (no .git, no package.json)."
-    warn "It will be deleted and re-cloned from GitHub."
-    warn "Your workspace data (config, ads) in $WORKSPACE_DIR is NOT affected."
-    warn "Make sure you have a backup of any custom files in $INSTALL_DIR before continuing!"
-    echo ""
-    if [[ "$NON_INTERACTIVE" == "false" ]]; then
-      read -r -p "  Delete $INSTALL_DIR and continue? [y/N] " DEL_CONFIRM
-      [[ "${DEL_CONFIRM,,}" != "y" ]] && exit 0
-    fi
     info "Removing incomplete installation at $INSTALL_DIR..."
     rm -rf "$INSTALL_DIR"
   fi
@@ -485,9 +543,9 @@ if [[ "$TOTAL_MEM_MB" -lt 2048 ]]; then
 fi
 
 info "Installing npm dependencies..."
-npm ci --prefer-offline 2>&1 | tail -3
+npm ci 2>&1 | tail -3
 info "Building Next.js app..."
-npm run build 2>&1 | tail -5
+npm run build 2>&1 | tail -20
 
 STANDALONE_DIR="$INSTALL_DIR/.next/standalone"
 
@@ -562,6 +620,17 @@ if [[ "$SERVICE_USER" != "root" ]]; then
   success "Ownership set"
 else
   chmod 600 "$CONFIG_FILE"
+fi
+
+# Ensure the install directory itself is traversable by the service user
+chmod 755 "$INSTALL_DIR"
+
+# Warn if the parent directory is not world-traversable (common with custom install paths)
+PARENT_DIR="$(dirname "$INSTALL_DIR")"
+if [[ "$SERVICE_USER" != "root" ]] && ! su -s /bin/sh "$SERVICE_USER" -c "test -x '$PARENT_DIR'" 2>/dev/null; then
+  warn "Directory $PARENT_DIR is not accessible for user $SERVICE_USER — fixing..."
+  chmod 755 "$PARENT_DIR"
+  success "Fixed permissions on $PARENT_DIR"
 fi
 
 chmod +x "$BOT_BIN"

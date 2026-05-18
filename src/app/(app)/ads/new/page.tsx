@@ -22,6 +22,7 @@ export default function NewAdPage() {
   const [lockedFields, setLockedFields] = useState<string[]>([]);
   const [templateName, setTemplateName] = useState<string | undefined>();
   const [sourceAdFile, setSourceAdFile] = useState<string | undefined>();
+  const [templateSlug, setTemplateSlug] = useState<string | undefined>();
   const [checked, setChecked] = useState(false);
   const pendingFilesRef = useRef<File[]>([]);
 
@@ -55,6 +56,11 @@ export default function NewAdPage() {
         setSourceAdFile(srcFile);
         sessionStorage.removeItem('template_source_ad_file');
       }
+      const tplSlug = sessionStorage.getItem('template_slug');
+      if (tplSlug) {
+        setTemplateSlug(tplSlug);
+        sessionStorage.removeItem('template_slug');
+      }
     } catch {
       // Ignore parse errors
     }
@@ -85,7 +91,8 @@ export default function NewAdPage() {
     async (data: AdCreateInput) => {
       setIsSaving(true);
       try {
-        const result = await createAd.mutateAsync(data) as { file: string };
+        const payload = templateSlug ? { ...data, _template_slug: templateSlug } : data;
+        const result = await createAd.mutateAsync(payload as AdCreateInput) as { file: string };
         await uploadPendingFiles(result.file);
         router.push('/ads');
       } catch (err) {
@@ -94,7 +101,7 @@ export default function NewAdPage() {
         setIsSaving(false);
       }
     },
-    [createAd, router, uploadPendingFiles, toast],
+    [createAd, router, uploadPendingFiles, toast, templateSlug],
   );
 
   const handlePublish = useCallback(
@@ -114,7 +121,8 @@ export default function NewAdPage() {
 
       setIsPublishing(true);
       try {
-        const result = await createAd.mutateAsync(data) as { file: string };
+        const payload = templateSlug ? { ...data, _template_slug: templateSlug } : data;
+        const result = await createAd.mutateAsync(payload as AdCreateInput) as { file: string };
         await uploadPendingFiles(result.file);
         // New ad has no ID yet — publish all new (unpublished) ads
         await api.post<Job>('/api/bot/publish', { ads: 'new' });
@@ -126,7 +134,7 @@ export default function NewAdPage() {
         setIsPublishing(false);
       }
     },
-    [createAd, toast, router, uploadPendingFiles],
+    [createAd, toast, router, uploadPendingFiles, templateSlug],
   );
 
   // Wait for sessionStorage check and config defaults

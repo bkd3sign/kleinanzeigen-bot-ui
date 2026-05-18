@@ -31,8 +31,29 @@ export function prune(obj: unknown): unknown {
   return obj;
 }
 
+/** Escape non-ASCII characters as \uXXXX, matching Python json.dumps(ensure_ascii=True). */
+function escapeNonAscii(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if (cp > 127) {
+      if (cp > 0xffff) {
+        const hi = ((cp - 0x10000) >> 10) + 0xd800;
+        const lo = ((cp - 0x10000) & 0x3ff) + 0xdc00;
+        out += `\\u${hi.toString(16).padStart(4, '0')}\\u${lo.toString(16).padStart(4, '0')}`;
+      } else {
+        out += `\\u${cp.toString(16).padStart(4, '0')}`;
+      }
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 /** JSON.stringify with recursively sorted keys matching Python json.dumps(sort_keys=True).
  *  Python default separators are (', ', ': ') — space after comma and colon.
+ *  Python default ensure_ascii=True escapes non-ASCII as \uXXXX.
  *  Tracks field paths to apply Python float serialization for known float-typed fields. */
 export function stableStringify(obj: unknown, path = ''): string {
   if (obj === null || obj === undefined) return 'null';
@@ -42,6 +63,11 @@ export function stableStringify(obj: unknown, path = ''): string {
       return obj.toFixed(1);
     }
     return JSON.stringify(obj);
+  }
+  if (typeof obj === 'string') {
+    // JSON.stringify handles control chars (\n, \t, \r, \\, \"); then escape non-ASCII
+    const inner = JSON.stringify(obj).slice(1, -1);
+    return '"' + escapeNonAscii(inner) + '"';
   }
   if (typeof obj !== 'object') return JSON.stringify(obj);
   if (Array.isArray(obj)) {

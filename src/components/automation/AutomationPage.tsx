@@ -8,15 +8,17 @@ import type { Schedule, JobStatus } from '@/types/bot';
 import styles from './AutomationPage.module.scss';
 
 const CRON_PRESETS: { label: string; value: string }[] = [
+  { label: 'Alle 6 Stunden', value: '0 */6 * * *' },
+  { label: 'Alle 12 Stunden', value: '0 */12 * * *' },
   { label: 'Täglich 06:00', value: '0 6 * * *' },
   { label: 'Täglich 12:00', value: '0 12 * * *' },
   { label: 'Täglich 18:00', value: '0 18 * * *' },
-  { label: 'Alle 6 Stunden', value: '0 */6 * * *' },
-  { label: 'Alle 12 Stunden', value: '0 */12 * * *' },
   { label: 'Montags 12:00', value: '0 12 * * 1' },
   { label: 'Mittwochs 12:00', value: '0 12 * * 3' },
   { label: 'Freitags 12:00', value: '0 12 * * 5' },
   { label: 'Samstags 08:00', value: '0 8 * * 6' },
+  { label: 'Alle 7 Tage (Montags 08:00)', value: '0 8 * * 1' },
+  { label: 'Alle 14 Tage (1. + 15. 08:00)', value: '0 8 1,15 * *' },
   { label: 'Benutzerdefiniert', value: 'custom' },
 ];
 
@@ -476,18 +478,8 @@ export function AutomationPage() {
       )}
 
       {/* Info box */}
-      <div style={{
-        padding: 'var(--space-3) var(--space-4)',
-        background: 'var(--bg-tertiary)',
-        borderRadius: 'var(--radius-lg)',
-        fontSize: 'var(--font-size-xs)',
-        color: 'var(--text-muted)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-1)',
-      }}>
-        <span>Bot-Befehle werden nacheinander ausgeführt (max. 1 gleichzeitig).</span>
-        <span>Wenn ein Job läuft, werden neue Jobs in die Warteschlange eingereiht.</span>
+      <div className={styles.infoBox}>
+        <span>Bot-Befehle werden nacheinander ausgeführt (max. 1 gleichzeitig). Neue Jobs werden in die Warteschlange eingereiht.</span>
         <span>Zeitpläne verwenden die Zeitzone des Servers.</span>
       </div>
     </div>

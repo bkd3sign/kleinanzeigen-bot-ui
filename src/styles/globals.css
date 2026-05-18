@@ -6,8 +6,8 @@
 
 /* ============================================================
    Table utilities — shared across all sortable tables
-   Use: className="thSortable" on <th>, className="sortIcon"
-   or "sortIconActive" for sort indicators, "animRow" on <tr>
+   Use: className="thSortable" on <th>, "sortIconActive" on
+   sort indicator spans, "animRow" on <tr>
    ============================================================ */
 
 .thSortable {
@@ -18,13 +18,6 @@
 
 .thSortable:hover {
   color: var(--text-primary);
-}
-
-.sortIcon {
-  display: inline-block;
-  margin-left: 4px;
-  opacity: 0.3;
-  font-size: 10px;
 }
 
 .sortIconActive {

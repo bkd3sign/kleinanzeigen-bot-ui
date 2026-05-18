@@ -9,7 +9,8 @@ import { validateBotCommand } from '@/lib/security/validation';
 
 const SCHEDULES_FILE = path.join(BOT_DIR, 'schedules.yaml');
 
-// Default schedules — created on first load if file doesn't exist
+// Default schedules — created on first load if file doesn't exist.
+// New entries here are backfilled into existing installations by loadSchedules().
 const DEFAULT_SCHEDULES: Schedule[] = [
   {
     id: 'publish-new',
@@ -24,6 +25,14 @@ const DEFAULT_SCHEDULES: Schedule[] = [
     name: 'Fällige Anzeigen veröffentlichen',
     command: 'publish --ads=due',
     cron: '0 6 * * *',
+    enabled: false,
+    created_by: 'system',
+  },
+  {
+    id: 'update-all',
+    name: 'Alle Anzeigen aktualisieren',
+    command: 'update --ads=all',
+    cron: '0 8 * * 1',
     enabled: false,
     created_by: 'system',
   },
@@ -68,7 +77,26 @@ export function loadSchedules(): Schedule[] {
   try {
     const raw = fs.readFileSync(SCHEDULES_FILE, 'utf-8');
     const data = yaml.load(raw) as { schedules?: Schedule[] } | null;
-    return data?.schedules ?? DEFAULT_SCHEDULES;
+    const saved = data?.schedules ?? [];
+
+    // Add any system schedules that are missing (new defaults added after initial setup)
+    const savedIds = new Set(saved.map((s) => s.id));
+    const missing = DEFAULT_SCHEDULES.filter((d) => !savedIds.has(d.id));
+    const merged = missing.length > 0 ? [...saved, ...missing] : saved;
+
+    // Sort: system schedules in DEFAULT_SCHEDULES order, custom schedules at the end
+    const systemOrder = new Map(DEFAULT_SCHEDULES.map((d, i) => [d.id, i]));
+    const sorted = [...merged].sort((a, b) => {
+      const ai = systemOrder.get(a.id) ?? Infinity;
+      const bi = systemOrder.get(b.id) ?? Infinity;
+      return ai - bi;
+    });
+
+    if (missing.length > 0) {
+      saveSchedules(sorted);
+    }
+
+    return sorted;
   } catch {
     return DEFAULT_SCHEDULES;
   }

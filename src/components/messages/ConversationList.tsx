@@ -24,7 +24,8 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 }
 
-function adImageUrl(url: string): string {
+function adImageUrl(url: string | null | undefined): string {
+  if (!url) return '';
   const directUrl = url.replace(/rule=.*$/, 'rule=$_2.JPG');
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   return `/api/messages/image?url=${encodeURIComponent(directUrl)}&token=${token ?? ''}`;
@@ -45,12 +46,15 @@ export function ConversationList({ conversations, selectedId, pendingConversatio
             onClick={() => onSelect(conv.id)}
           >
             <div className={styles.convImage}>
-              <img
-                src={adImageUrl(conv.adImage)}
-                alt={conv.adTitle}
-                loading="lazy"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              {conv.adImage && (
+                <img
+                  src={adImageUrl(conv.adImage)}
+                  alt={conv.adTitle ?? ''}
+                  loading="lazy"
+                  onLoad={(e) => { const img = e.target as HTMLImageElement; if (img.naturalWidth <= 1) img.style.display = 'none'; }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
               {isDeleted && (
                 <div className={styles.convImagePlaceholder}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

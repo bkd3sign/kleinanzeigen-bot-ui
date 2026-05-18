@@ -92,7 +92,7 @@ export const ScheduleCalendar = memo(function ScheduleCalendar({ ads }: Schedule
 
     // Assign expiring ads (60-day platform lifetime via shared getExpiryDate)
     for (const ad of ads) {
-      if (!ad.id) continue;
+      if (!ad.id || ad.active === false) continue;
       const expiry = getExpiryDate(ad);
       if (!expiry) continue;
       const expiryDay = new Date(expiry);

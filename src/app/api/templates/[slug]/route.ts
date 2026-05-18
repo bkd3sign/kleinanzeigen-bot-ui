@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { templateUpdateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { readAd, writeAd } from '@/lib/yaml/ads';
-import { getTemplatesDir } from '@/lib/yaml/templates';
+import { getTemplatesDir, findTemplateFile } from '@/lib/yaml/templates';
 import path from 'path';
 import fs from 'fs';
 
@@ -20,9 +20,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const { slug } = await context.params;
     const templatesDir = getTemplatesDir(user.workspace);
-    const filePath = path.join(templatesDir, `tpl_${slug}.yaml`);
+    const filePath = findTemplateFile(templatesDir, slug);
 
-    if (!fs.existsSync(filePath)) {
+    if (!filePath) {
       return NextResponse.json({ detail: `Template '${slug}' not found` }, { status: 404 });
     }
 
@@ -54,9 +54,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const { slug } = await context.params;
     const templatesDir = getTemplatesDir(user.workspace);
-    const filePath = path.join(templatesDir, `tpl_${slug}.yaml`);
+    const filePath = findTemplateFile(templatesDir, slug);
 
-    if (!fs.existsSync(filePath)) {
+    if (!filePath) {
       return NextResponse.json({ detail: `Template '${slug}' not found` }, { status: 404 });
     }
 
@@ -106,13 +106,19 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     const { slug } = await context.params;
     const templatesDir = getTemplatesDir(user.workspace);
-    const filePath = path.join(templatesDir, `tpl_${slug}.yaml`);
+    const filePath = findTemplateFile(templatesDir, slug);
 
-    if (!fs.existsSync(filePath)) {
+    if (!filePath) {
       return NextResponse.json({ detail: `Template '${slug}' not found` }, { status: 404 });
     }
 
-    fs.unlinkSync(filePath);
+    // Dir-based template: remove entire directory (includes images)
+    const tplDir = path.join(templatesDir, `tpl_${slug}`);
+    if (fs.existsSync(tplDir) && fs.statSync(tplDir).isDirectory()) {
+      fs.rmSync(tplDir, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(filePath);
+    }
 
     return NextResponse.json({ message: 'Template deleted', slug });
   } catch (error) {

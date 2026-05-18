@@ -2,6 +2,7 @@ import { jobs, cancelJob } from '@/lib/bot/jobs';
 import { runBotCommand } from '@/lib/bot/runner';
 import { onJobStarting, onJobCompleted } from '@/lib/bot/hooks';
 import { stopForBot, restartAllBrowserless } from '@/lib/messaging/gateway';
+import { waitForProfileFree, prepareCleanBrowserState } from '@/lib/bot/browser-cleanup';
 
 // Auto-cancel jobs with no output for this many milliseconds
 const STALE_JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -99,11 +100,25 @@ export function dequeueJob(jobId: string): boolean {
 }
 
 /**
- * Execute a job and advance the queue when done.
+ * Returns true when bot output indicates Chromium failed to start or connect.
+ * These errors are transient and caused by a stale profile lock — a clean
+ * retry after profile wipe succeeds in practice.
  */
-function executeAndAdvance(jobId: string, command: string, workspace: string): void {
+function hasBrowserConnectionError(output: string): boolean {
+  return /Failed to connect to browser|ConnectionRefusedError|Fehler beim Starten des Browsers/i.test(output);
+}
+
+/**
+ * Execute a job and advance the queue when done.
+ * Automatically retries once if Chromium fails to connect (profile race).
+ */
+async function executeAndAdvance(jobId: string, command: string, workspace: string): Promise<void> {
   // Bot has absolute priority — stop messaging browser on the shared profile
   stopForBot(workspace);
+
+  // Poll until no Chromium process holds the profile lock (up to 2s).
+  // A fixed sleep is not reliable — OS process exit timing varies.
+  await waitForProfileFree(workspace);
 
   const job = jobs.get(jobId);
   if (job) job.last_output_at = new Date().toISOString();
@@ -111,20 +126,44 @@ function executeAndAdvance(jobId: string, command: string, workspace: string): v
   // Start watchdog that auto-cancels stale jobs
   const watchdog = startWatchdog(jobId);
 
-  onJobStarting(jobId, command, workspace);
-  runBotCommand(command, jobId, workspace)
-    .catch(() => { /* error handled in job status */ })
-    .finally(() => {
-      clearInterval(watchdog);
-      onJobCompleted(jobId, command, workspace);
-      globalQueue.__botQueueRunning = null;
-      processNext();
+  try {
+    onJobStarting(jobId, command, workspace);
+    await runBotCommand(command, jobId, workspace);
 
-      // Restart ALL messaging sessions stopped by bot jobs (multi-user safe)
-      if (!isQueueBusy()) {
-        restartAllBrowserless().catch(() => {});
+    // Auto-retry once when Chromium couldn't connect (stale profile lock or crash).
+    // Matches user behaviour: a manual retry always works after a clean profile wipe.
+    if (job && job.status === 'failed' && hasBrowserConnectionError(job.output)) {
+      const originalError = job.output;
+
+      job.status = 'running';
+      job.exit_code = undefined;
+      job.finished_at = undefined;
+      job.last_output_at = new Date().toISOString();
+      job.output = '';
+
+      prepareCleanBrowserState(workspace);
+      await waitForProfileFree(workspace);
+      await runBotCommand(command, jobId, workspace);
+
+      // If retry also failed, show both outputs so the user can diagnose.
+      // Re-read from the map because runBotCommand mutates status by reference
+      // and TypeScript's narrowing doesn't track that.
+      const retried = jobs.get(jobId);
+      if (retried?.status === 'failed') {
+        retried.output += `\n\n--- [Vorheriger Versuch] ---\n${originalError}`;
       }
-    });
+    }
+  } finally {
+    clearInterval(watchdog);
+    onJobCompleted(jobId, command, workspace);
+    globalQueue.__botQueueRunning = null;
+    processNext();
+
+    // Restart ALL messaging sessions stopped by bot jobs (multi-user safe)
+    if (!isQueueBusy()) {
+      restartAllBrowserless().catch(() => {});
+    }
+  }
 }
 
 /**

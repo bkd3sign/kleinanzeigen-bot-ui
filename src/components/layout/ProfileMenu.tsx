@@ -1,16 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api/client';
-import { Modal, Button, useToast } from '@/components/ui';
+import { useToast } from '@/components/ui';
 import { DownloadModal } from '@/components/bot/DownloadModal';
 import { BotCommandsModal } from '@/components/bot/BotCommandsModal';
-import { JobOutputModal } from '@/components/bot/JobOutputModal';
+import { AboutModal } from '@/components/layout/AboutModal';
 import type { Job } from '@/types/bot';
-import type { CompatibilityResult } from '@/lib/bot/compatibility';
 import styles from './ProfileMenu.module.scss';
 
 export function ProfileMenu() {
@@ -35,29 +34,6 @@ export function ProfileMenu() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [botCmdsOpen, setBotCmdsOpen] = useState(false);
-  const [botVersion, setBotVersion] = useState<string | null>(null);
-  const [updateResult, setUpdateResult] = useState<string | null>(null);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [aboutJobId, setAboutJobId] = useState<string | null>(null);
-  const [compatResult, setCompatResult] = useState<CompatibilityResult | null>(null);
-  const [checkingCompat, setCheckingCompat] = useState(false);
-  const [updatingBot, setUpdatingBot] = useState(false);
-  const [updateDone, setUpdateDone] = useState<string | null>(null);
-
-  const handleAbout = useCallback(async () => {
-    setIsOpen(false);
-    setBotVersion(null);
-    setUpdateResult(null);
-    setCompatResult(null);
-    setUpdateDone(null);
-    setAboutOpen(true);
-    try {
-      const result = await api.get<{ output?: string }>('/api/bot/version');
-      setBotVersion(result.output || JSON.stringify(result));
-    } catch {
-      setBotVersion('Nicht verfügbar');
-    }
-  }, []);
 
   const handleDownload = useCallback(() => {
     setIsOpen(false);
@@ -253,7 +229,7 @@ export function ProfileMenu() {
           {isAdmin && (
             <button
               className={styles.menuItem}
-              onClick={handleAbout}
+              onClick={() => { setIsOpen(false); setAboutOpen(true); }}
             >
               <span className={styles.menuItemIcon}>
                 <svg viewBox="0 0 24 24">
@@ -284,277 +260,9 @@ export function ProfileMenu() {
       )}
     </div>
 
-    <Modal open={aboutOpen} onClose={() => setAboutOpen(false)} title="Über Kleinanzeigen Bot UI">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 'var(--radius-lg)',
-            background: 'var(--accent)', color: 'var(--accent-text)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 'var(--font-size-base)', fontWeight: 'var(--font-bold)',
-          }}>K</div>
-          <div>
-            <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)' }}>
-              Kleinanzeigen Bot UI
-            </div>
-            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>
-              Web-Interface für kleinanzeigen-bot
-            </div>
-          </div>
-        </div>
-        <div style={{
-          padding: 'var(--space-3)', background: 'var(--bg-tertiary)',
-          borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-mono)',
-          fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <span>Bot: {botVersion ?? 'Wird geladen…'} · GUI: v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
-          {updateResult?.startsWith('update:') ? (
-            compatResult && (compatResult.overallStatus !== 'error' || (compatResult.commands.length === 0 && compatResult.flags.length === 0)) && !updateDone ? (
-              <Button
-                variant="primary"
-                size="sm"
-                loading={updatingBot}
-                disabled={updatingBot}
-                onClick={async () => {
-                  setUpdatingBot(true);
-                  try {
-                    const job = await api.post<Job>('/api/bot/update-bot', { channel: 'latest' });
-                    // Poll job status
-                    for (let i = 0; i < 60; i++) {
-                      await new Promise((r) => setTimeout(r, 1000));
-                      try {
-                        const j = await api.get<Job>(`/api/jobs/${job.job_id}`);
-                        if (j.status !== 'running') {
-                          if (j.status === 'completed') {
-                            // Extract new version from output
-                            const versionMatch = j.output?.match(/Bot aktualisiert:.*?→\s*(\S+)/);
-                            const newVersion = versionMatch?.[1] || 'aktualisiert';
-                            setUpdateDone(newVersion);
-                            setBotVersion(newVersion);
-                            toast('success', `Bot aktualisiert auf ${newVersion}`);
-                          } else {
-                            toast('error', 'Bot-Update fehlgeschlagen — siehe Job-Verlauf');
-                          }
-                          // Open job output modal for details
-                          setAboutOpen(false);
-                          setAboutJobId(job.job_id);
-                          break;
-                        }
-                      } catch { break; }
-                    }
-                  } catch {
-                    toast('error', 'Bot-Update konnte nicht gestartet werden');
-                  } finally {
-                    setUpdatingBot(false);
-                  }
-                }}
-              >
-                Bot aktualisieren
-              </Button>
-            ) : updateDone ? (
-              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-success)', fontWeight: 'var(--font-semibold)' }}>
-                Aktualisiert
-              </span>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                loading={checkingCompat}
-                disabled={checkingCompat}
-                onClick={async () => {
-                  setCheckingCompat(true);
-                  setCompatResult(null);
-                  try {
-                    const newVersion = updateResult!.split(':')[1];
-                    const result = await api.get<CompatibilityResult>(
-                      `/api/system/compatibility?mode=upstream&version=${encodeURIComponent(newVersion)}`
-                    );
-                    setCompatResult(result);
-                  } catch {
-                    toast('error', 'Kompatibilitätsprüfung fehlgeschlagen');
-                  } finally {
-                    setCheckingCompat(false);
-                  }
-                }}
-              >
-                Kompatibilität prüfen
-              </Button>
-            )
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              loading={checkingUpdate}
-              disabled={checkingUpdate}
-              onClick={async () => {
-                if (checkingUpdate) return;
-                setCheckingUpdate(true);
-                setUpdateResult(null);
-                try {
-                  const job = await api.post<Job>('/api/bot/update-check', { verbose: true });
-                  for (let i = 0; i < 30; i++) {
-                    await new Promise((r) => setTimeout(r, 2000));
-                    try {
-                      const j = await api.get<Job>(`/api/jobs/${job.job_id}`);
-                      if (j.status !== 'running') {
-                        const output = j.output || '';
-                        const match = output.match(/neue Version.*?verfügbar:\s*(\S+)/i) || output.match(/new version.*?available:\s*(\S+)/i);
-                        if (match) {
-                          setUpdateResult(`update:${match[1]}:${j.job_id}`);
-                        } else if (output.includes('aktuell') || output.includes('up to date')) {
-                          setUpdateResult('Bereits aktuell');
-                        } else {
-                          setUpdateResult(j.status === 'completed' ? 'Bereits aktuell' : 'Prüfung fehlgeschlagen');
-                        }
-                        break;
-                      }
-                    } catch { break; }
-                  }
-                } catch {
-                  setUpdateResult('Fehler beim Starten');
-                } finally {
-                  setCheckingUpdate(false);
-                }
-              }}
-            >
-              Update prüfen
-            </Button>
-          )}
-        </div>
-        {updateResult && (() => {
-          const isUpdate = updateResult.startsWith('update:');
-          if (isUpdate) {
-            const parts = updateResult.split(':');
-            const version = parts[1];
-            const jobId = parts[2];
-            return (
-              <div style={{
-                padding: 'var(--space-2) var(--space-3)',
-                background: 'var(--accent-muted)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 'var(--font-size-sm)',
-                color: 'var(--accent)',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)',
-              }}>
-                <span>
-                  Update verfügbar:{' '}
-                  <a
-                    href={`https://github.com/Second-Hand-Friends/kleinanzeigen-bot/releases`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'var(--accent)', fontWeight: 'var(--font-semibold)', textDecoration: 'underline' }}
-                  >
-                    {version}
-                  </a>
-                </span>
-                <button
-                  onClick={() => { setAboutOpen(false); setAboutJobId(jobId); }}
-                  style={{
-                    background: 'none', border: 'none', color: 'var(--accent)',
-                    fontSize: 'var(--font-size-xs)', cursor: 'pointer', fontFamily: 'inherit',
-                    textDecoration: 'underline', whiteSpace: 'nowrap',
-                  }}
-                >
-                  Details
-                </button>
-              </div>
-            );
-          }
-          return (
-            <div style={{
-              padding: 'var(--space-2) var(--space-3)',
-              background: 'var(--bg-tertiary)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 'var(--font-size-sm)',
-              color: 'var(--text-secondary)',
-            }}>
-              {updateResult}
-            </div>
-          );
-        })()}
-        {/* Update success message */}
-        {updateDone && (
-          <div style={{
-            padding: 'var(--space-3)',
-            background: 'var(--green-muted)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--font-size-sm)',
-            color: 'var(--text-success)',
-            fontWeight: 'var(--font-semibold)',
-          }}>
-            Bot erfolgreich aktualisiert auf {updateDone}
-          </div>
-        )}
-        {/* Compatibility result — shown after checking new version */}
-        {compatResult && !updateDone && (
-          <div style={{
-            padding: 'var(--space-3)',
-            background: compatResult.overallStatus === 'ok' ? 'var(--green-muted)'
-              : compatResult.overallStatus === 'warning' ? 'var(--yellow-muted)'
-              : 'var(--red-muted)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--font-size-sm)',
-          }}>
-            <div style={{
-              fontWeight: 'var(--font-semibold)',
-              color: compatResult.overallStatus === 'ok' ? 'var(--text-success)'
-                : compatResult.overallStatus === 'warning' ? 'var(--text-warning)'
-                : 'var(--text-danger)',
-              marginBottom: compatResult.commands.some(c => c.status !== 'ok') || compatResult.flags.some(f => f.status !== 'ok') ? 'var(--space-2)' : '0',
-            }}>
-              {compatResult.summary}
-            </div>
-            {(compatResult.commands.some(c => c.status !== 'ok') || compatResult.flags.some(f => f.status !== 'ok') || compatResult.schemas?.some(s => s.status !== 'ok')) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                {compatResult.commands
-                  .filter(c => c.status !== 'ok')
-                  .map(c => (
-                    <div key={c.command} style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>
-                      {c.status === 'warning' ? '⚠️' : '❌'} <strong>{c.command}</strong> — {c.message}
-                    </div>
-                  ))}
-                {compatResult.flags
-                  .filter(f => f.status !== 'ok')
-                  .map(f => (
-                    <div key={`${f.command}-${f.flag}`} style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>
-                      {f.status === 'warning' ? '⚠️' : '❌'} <strong>{f.command} {f.flag}</strong> — {f.message}
-                    </div>
-                  ))}
-                {compatResult.schemas?.filter(s => s.status !== 'ok')
-                  .map(s => (
-                    <div key={`${s.schema}-${s.field}`} style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>
-                      <div>{s.status === 'warning' ? '⚠️' : '❌'} <strong>{s.schema}.schema: {s.field}</strong> — {s.message}</div>
-                      {s.detail && (
-                        <div style={{ marginLeft: 'var(--space-5)', color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                          {s.detail.type && <span>Typ: <code>{s.detail.type}</code></span>}
-                          {s.detail.enum && <span> | Werte: <code>{s.detail.enum.join(', ')}</code></span>}
-                          {s.detail.default !== undefined && <span> | Default: <code>{JSON.stringify(s.detail.default)}</code></span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-              </div>
-            )}
-            {compatResult.overallStatus === 'error' && (compatResult.commands.length > 0 || compatResult.flags.length > 0 || (compatResult.schemas?.length ?? 0) > 0) && (
-              <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--font-size-xs)', color: 'var(--text-danger)' }}>
-                Update nicht empfohlen — GUI muss zuerst angepasst werden.
-              </div>
-            )}
-          </div>
-        )}
-        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', textAlign: 'center' }}>
-          Powered by{' '}
-          <a href="https://github.com/Second-Hand-Friends/kleinanzeigen-bot" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>kleinanzeigen-bot</a>
-          {' · '}
-          <a href="https://github.com/bkd3sign/kleinanzeigen-bot-ui" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>UI by BKD3sign</a>
-        </div>
-      </div>
-    </Modal>
-
+    <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     <DownloadModal open={downloadOpen} onClose={() => setDownloadOpen(false)} />
     <BotCommandsModal open={botCmdsOpen} onClose={() => setBotCmdsOpen(false)} />
-    {aboutJobId && <JobOutputModal jobId={aboutJobId} onClose={() => setAboutJobId(null)} />}
     </>
   );
 }

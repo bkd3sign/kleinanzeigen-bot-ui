@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMessagingStatus, useConversations, useResponderStatus, useSubmitMessagingMfa, usePrepareMessagingMfa, useStartMessaging } from '@/hooks/useMessages';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
-import { Spinner, EmptyState, Badge } from '@/components/ui';
+import { Spinner, EmptyState, Badge, useToast } from '@/components/ui';
 import { ConversationList } from '@/components/messages/ConversationList';
 import { ChatView } from '@/components/messages/ChatView';
 import { MfaCodeInput } from '@/components/bot/MfaCodeInput';
@@ -62,6 +62,13 @@ function BrowserlessBanner({ botCommand }: { botCommand?: string | null }) {
 
 function LoginView() {
   const start = useStartMessaging();
+  const { toast } = useToast();
+
+  const handleStart = useCallback(() => {
+    start.mutate(undefined, {
+      onError: (err) => toast('error', (err as Error).message || 'Anmeldung fehlgeschlagen'),
+    });
+  }, [start, toast]);
 
   return (
     <div className={styles.statusCenter}>
@@ -73,7 +80,7 @@ function LoginView() {
       </p>
       <button
         className={bannerStyles.btn}
-        onClick={() => start.mutate()}
+        onClick={handleStart}
         disabled={start.isPending}
         style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2) var(--space-6)' }}
       >

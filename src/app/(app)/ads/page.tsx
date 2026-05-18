@@ -5,9 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAds } from '@/hooks/useAds';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
 import { AdGrid } from '@/components/ads/AdGrid';
-import { AdTable, compareAds } from '@/components/ads/AdTable';
+import { AdTable, makeCompare } from '@/components/ads/AdTable';
 import type { AdSortKey } from '@/components/ads/AdTable';
+import { useAdStats } from '@/hooks/useAdStats';
 import { AdListToolbar } from '@/components/ads/AdListToolbar';
+import type { StatusCounts } from '@/components/ads/AdListToolbar';
 import { AdBulkActions } from '@/components/ads/AdBulkActions';
 import { QuickAiCreate, type QuickAiCreateHandle } from '@/components/ads/QuickAiCreate';
 import { Confetti, Spinner } from '@/components/ui';
@@ -15,24 +17,39 @@ import { api } from '@/lib/api/client';
 import type { AdListItem } from '@/types/ad';
 import type { Job } from '@/types/bot';
 import type { SortDir } from '@/hooks/useSort';
-import { isExpiringSoon } from '@/lib/ads/status';
+import { isExpiringSoon, isExpired, isReserved } from '@/lib/ads/status';
+import type { StatsResponse } from '@/hooks/useAdStats';
 import styles from './ads.module.scss';
 
 type ViewMode = 'grid' | 'table';
 
-function filterByParams(ads: AdListItem[], status: string | null, category: string | null): AdListItem[] {
+function isOnlineOnKA(ad: AdListItem, statsData?: StatsResponse): boolean {
+  const state = ad.id ? statsData?.ads[String(ad.id)]?.state : undefined;
+  return state === 'active' || state === 'paused';
+}
+
+function filterByParams(ads: AdListItem[], status: string | null, category: string | null, statsData?: StatsResponse): AdListItem[] {
   let result = ads;
 
-  if (status === 'online') {
-    result = result.filter((a) => !!a.id);
+  if (status === null) {
+    // Default view: hide inactive ads
+    result = result.filter((a) => a.active !== false);
+  } else if (status === 'all') {
+    // no filter — show everything
+  } else if (status === 'online') {
+    result = result.filter((a) => isOnlineOnKA(a, statsData));
   } else if (status === 'draft') {
     result = result.filter((a) => !a.id);
   } else if (status === 'expiring') {
     result = result.filter((a) => isExpiringSoon(a));
+  } else if (status === 'expired') {
+    result = result.filter((a) => isExpired(a));
   } else if (status === 'changed') {
     result = result.filter((a) => a.is_changed);
   } else if (status === 'orphaned') {
     result = result.filter((a) => a.is_orphaned);
+  } else if (status === 'reserved') {
+    result = result.filter((a) => isReserved(a, a.id ? statsData?.ads[String(a.id)] : undefined));
   } else if (status === 'inactive') {
     result = result.filter((a) => a.active === false);
   }
@@ -47,6 +64,7 @@ function filterByParams(ads: AdListItem[], status: string | null, category: stri
 
 export default function AdsPage() {
   const { data, isLoading } = useAds();
+  const { data: statsData } = useAdStats();
   const { isAiAvailable } = useAiAvailable();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,11 +73,22 @@ export default function AdsPage() {
   const [search, setSearch] = useState('');
   const [tableSortKey, setTableSortKey] = useState<AdSortKey>('title');
   const [tableSortDir, setTableSortDir] = useState<SortDir>('asc');
+  const compareFn = useMemo(() => makeCompare(statsData), [statsData]);
 
   const handleTableSortChange = useCallback((key: AdSortKey, dir: SortDir) => {
     setTableSortKey(key);
     setTableSortDir(dir);
   }, []);
+
+  const handleStatusChange = useCallback((status: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (status === null) {
+      params.delete('status');
+    } else {
+      params.set('status', status);
+    }
+    router.replace(`?${params.toString()}`);
+  }, [router, searchParams]);
   const [view, setView] = useState<ViewMode>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('adListView') as ViewMode) || 'grid';
@@ -87,24 +116,41 @@ export default function AdsPage() {
 
   const allAds = useMemo(() => data?.ads ?? [], [data?.ads]);
 
+  const statusCounts = useMemo<StatusCounts>(() => ({
+    active: allAds.filter((a) => a.active !== false).length,
+    all: allAds.length,
+    online: allAds.filter((a) => isOnlineOnKA(a, statsData)).length,
+    draft: allAds.filter((a) => !a.id).length,
+    reserved: allAds.filter((a) => isReserved(a, a.id ? statsData?.ads[String(a.id)] : undefined)).length,
+    inactive: allAds.filter((a) => a.active === false).length,
+    expired: allAds.filter((a) => isExpired(a)).length,
+    orphaned: allAds.filter((a) => a.is_orphaned).length,
+    expiring: allAds.filter((a) => isExpiringSoon(a)).length,
+    changed: allAds.filter((a) => a.is_changed).length,
+  }), [allAds, statsData]);
+
+  // Status + category filter (before search/sort) — base for filteredAds
+  const statusFilteredAds = useMemo(
+    () => filterByParams(allAds, statusFilter, categoryFilter, statsData),
+    [allAds, statusFilter, categoryFilter, statsData],
+  );
+
   const filteredAds = useMemo(() => {
-    let filtered = filterByParams(allAds, statusFilter, categoryFilter);
     const query = search.toLowerCase();
-    if (query) {
-      filtered = filtered.filter(
-        (a) =>
-          a.title?.toLowerCase().includes(query) ||
-          a.category?.toLowerCase().includes(query),
-      );
-    }
-    // Sort using the same key/dir as the table so both views are in sync
+    let filtered = query
+      ? statusFilteredAds.filter(
+          (a) =>
+            a.title?.toLowerCase().includes(query) ||
+            a.category?.toLowerCase().includes(query),
+        )
+      : statusFilteredAds;
     const copy = [...filtered];
     copy.sort((a, b) => {
-      const cmp = compareAds(a, b, tableSortKey);
+      const cmp = compareFn(a, b, tableSortKey);
       return tableSortDir === 'asc' ? cmp : -cmp;
     });
     return copy;
-  }, [allAds, search, tableSortKey, tableSortDir, statusFilter, categoryFilter]);
+  }, [statusFilteredAds, search, tableSortKey, tableSortDir, compareFn]);
 
   const handleSelect = useCallback((file: string) => {
     setSelectedFiles((prev) => {
@@ -275,6 +321,9 @@ export default function AdsPage() {
             onToggleSelectMode={handleToggleSelectMode}
             totalCount={allAds.length}
             filteredCount={filteredAds.length}
+            statusFilter={statusFilter}
+            onStatusChange={handleStatusChange}
+            statusCounts={statusCounts}
           />
           {filteredAds.length === 0 && search ? (
             <div className={styles.emptyState}>

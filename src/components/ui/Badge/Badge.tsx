@@ -1,7 +1,7 @@
 import type { ReactNode, ReactElement } from 'react';
 import styles from './Badge.module.scss';
 
-export type BadgeVariant = 'default' | 'primary' | 'success' | 'danger' | 'warning' | 'muted' | 'info' | 'running';
+export type BadgeVariant = 'default' | 'primary' | 'success' | 'danger' | 'warning' | 'muted' | 'info' | 'running' | 'reserved';
 
 interface BadgeProps {
   variant?: BadgeVariant;
@@ -18,6 +18,7 @@ const variantClass: Record<BadgeVariant, string | undefined> = {
   muted: styles.badgeMuted,
   info: styles.badgeInfo,
   running: styles.badgeRunning,
+  reserved: styles.badgeReserved,
 };
 
 export function Badge({

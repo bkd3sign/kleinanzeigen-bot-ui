@@ -7,6 +7,8 @@ import path from 'path';
 import { unlink, rm } from 'fs/promises';
 import { existsSync, readdirSync } from 'fs';
 import { globSync } from 'glob';
+import { archiveAdFolder, unarchiveAdFolder, resolveArchiveDir } from '@/lib/bot/archive';
+import { resolveDownloadDir } from '@/lib/bot/hooks';
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
@@ -62,11 +64,31 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     const { path: resolvedPath, ad } = result;
+    const wasActive = ad.active !== false;
+
     const updateData = Object.fromEntries(
       Object.entries(parsed.data).filter(([, v]) => v !== undefined),
     );
     applyAdUpdates(ad, updateData);
     await writeAd(resolvedPath, ad);
+
+    const isNowActive = ad.active !== false;
+    if (typeof ad.id === 'number' && wasActive !== isNowActive) {
+      const downloadDir = resolveDownloadDir(user.workspace);
+      const archiveDir = resolveArchiveDir(downloadDir);
+      const adFolder = path.dirname(resolvedPath);
+      if (isNowActive) {
+        // Folder is inside archive/ → move back to downloadDir
+        if (adFolder.startsWith(archiveDir + path.sep) || adFolder === archiveDir) {
+          unarchiveAdFolder(adFolder, downloadDir);
+        }
+      } else {
+        // Folder is inside downloadDir but NOT in archive/ → move to archive
+        if (adFolder.startsWith(downloadDir + path.sep) && !adFolder.startsWith(archiveDir + path.sep)) {
+          archiveAdFolder(adFolder, downloadDir);
+        }
+      }
+    }
 
     return NextResponse.json({
       message: 'Ad updated',

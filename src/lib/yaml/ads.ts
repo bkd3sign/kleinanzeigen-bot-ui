@@ -1,16 +1,18 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { validatePathWithin, ApiError } from '@/lib/security/validation';
+import { validatePathWithin } from '@/lib/security/validation';
 
 const AD_FILE_EXTENSIONS = new Set(['.yaml', '.yml', '.json']);
 
 /**
  * Find all ad YAML files matching the bot's glob pattern in a workspace.
- * Excludes files in the templates directory.
+ * Excludes files in the templates directory and any additional directories
+ * passed via excludeDirs.
  */
-export function findAdFiles(workspace: string): string[] {
+export function findAdFiles(workspace: string, excludeDirs?: string[]): string[] {
   const templateDir = path.join(workspace, 'ads', 'templates');
+  const excluded = new Set([templateDir, ...(excludeDirs ?? [])]);
   const files: string[] = [];
 
   function walk(dir: string): void {
@@ -19,12 +21,11 @@ export function findAdFiles(workspace: string): string[] {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        walk(fullPath);
+        if (!excluded.has(fullPath)) walk(fullPath);
       } else if (
         entry.isFile() &&
         entry.name.startsWith('ad_') &&
-        AD_FILE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()) &&
-        !fullPath.startsWith(templateDir)
+        AD_FILE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())
       ) {
         files.push(fullPath);
       }

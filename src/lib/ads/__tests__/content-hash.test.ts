@@ -10,6 +10,13 @@ describe('stableStringify', () => {
     expect(stableStringify({ a: [1, 2, 3] })).toBe('{"a": [1, 2, 3]}');
   });
 
+  it('escapes non-ASCII as \\uXXXX matching Python json.dumps(ensure_ascii=True)', () => {
+    // Python: json.dumps({"loc": "Düsseldorf"}) → '{"loc": "D\\u00fcsseldorf"}'
+    expect(stableStringify({ loc: 'Düsseldorf' })).toBe('{"loc": "D\\u00fcsseldorf"}');
+    expect(stableStringify({ s: 'ä' })).toBe('{"s": "\\u00e4"}');
+    expect(stableStringify({ s: '——' })).toBe('{"s": "\\u2014\\u2014"}');
+  });
+
   it('serializes float fields with .0 for integer values (matching Python float coercion)', () => {
     // Python: json.dumps({"shipping_costs": 5.0}) → '{"shipping_costs": 5.0}'
     expect(stableStringify({ shipping_costs: 5 })).toBe('{"shipping_costs": 5.0}');

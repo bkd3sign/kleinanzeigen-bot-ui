@@ -19,13 +19,16 @@ export async function GET(request: NextRequest) {
 
     let status = await getMessagingStatus(user.workspace);
 
-    // Try to (re)establish session when idle — covers both fresh start
-    // and recovery from error (e.g. expired cookies during bot run)
+    // Try session recovery: race with 3s timeout so cookie validation (fast) resolves
+    // quickly, while browser launch (slow) runs in the background without hanging this request.
     if ((status.status === 'not_started' || status.status === 'error') && !isQueueBusy()) {
       try {
-        await ensureSession(user.workspace);
-        status = await getMessagingStatus(user.workspace);
-      } catch { /* no cookies or expired — stay not_started */ }
+        await Promise.race([
+          ensureSession(user.workspace),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ]);
+      } catch { /* no cookies, expired, or browser launching in background */ }
+      status = await getMessagingStatus(user.workspace);
     }
 
     // Extract bot command name when in browserless mode (workspace-scoped)

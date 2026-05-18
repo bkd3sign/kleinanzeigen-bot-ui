@@ -33,10 +33,8 @@ export function useSort<T, K extends string>(
   }, [items, sortKey, sortDir]);
 
   // Returns a sort indicator icon element using global CSS classes (sortIcon / sortIconActive)
-  const sortIcon = useCallback((col: K): React.ReactElement => {
-    if (sortKey !== col) {
-      return React.createElement('span', { className: 'sortIcon' }, '↕');
-    }
+  const sortIcon = useCallback((col: K): React.ReactElement | null => {
+    if (sortKey !== col) return null;
     return React.createElement('span', { className: 'sortIconActive' }, sortDir === 'asc' ? '↑' : '↓');
   }, [sortKey, sortDir]);
 

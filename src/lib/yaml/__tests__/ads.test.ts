@@ -114,6 +114,18 @@ describe('findAdFiles', () => {
     const files = findAdFiles(tmpDir);
     expect(files).toEqual([]);
   });
+
+  it('excludes directories passed in excludeDirs', () => {
+    const archiveDir = path.join(tmpDir, 'downloaded-ads', 'archive');
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'ads', 'ad_active.yaml'), 'title: Active\n');
+    fs.writeFileSync(path.join(archiveDir, 'ad_archived.yaml'), 'title: Archived\n');
+
+    const files = findAdFiles(tmpDir, [archiveDir]);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]).toContain('ad_active.yaml');
+  });
 });
 
 describe('findAdByFile', () => {

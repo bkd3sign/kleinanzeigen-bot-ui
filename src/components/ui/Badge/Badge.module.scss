@@ -39,6 +39,11 @@
   color: var(--text-accent);
 }
 
+.badgeReserved {
+  background-color: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+
 .badgeRunning {
   background-color: var(--accent-muted);
   color: var(--text-accent);

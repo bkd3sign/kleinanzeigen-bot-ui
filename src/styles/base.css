@@ -19,7 +19,8 @@ html {
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100svh;
+  overscroll-behavior-y: none;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);

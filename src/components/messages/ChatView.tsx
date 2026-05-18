@@ -26,7 +26,8 @@ function formatPrice(cents: number): string {
   return `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)} €`;
 }
 
-function adImageUrl(url: string): string {
+function adImageUrl(url: string | null | undefined): string {
+  if (!url) return '';
   const directUrl = url.replace(/rule=.*$/, 'rule=$_57.JPG');
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   return `/api/messages/image?url=${encodeURIComponent(directUrl)}&token=${token ?? ''}`;
@@ -187,12 +188,15 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           </button>
         )}
         <div className={styles.chatHeaderImageWrap}>
-          <img
-            src={adImageUrl(conv.adImage)}
-            alt={conv.adTitle}
-            className={styles.chatHeaderImage}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
+          {conv.adImage && (
+            <img
+              src={adImageUrl(conv.adImage)}
+              alt={conv.adTitle ?? ''}
+              className={styles.chatHeaderImage}
+              onLoad={(e) => { const img = e.target as HTMLImageElement; if (img.naturalWidth <= 1) img.style.display = 'none'; }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
           {conv.adStatus === 'DELETED' && (
             <div className={styles.chatHeaderImageOverlay}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

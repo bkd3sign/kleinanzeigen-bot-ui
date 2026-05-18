@@ -1,6 +1,7 @@
 /* Ad card for grid view - matches legacy .adListCard design */
 
 .card {
+  position: relative;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -26,9 +27,13 @@
   opacity: 0.7;
 }
 
+.cardChanged {
+  border-color: var(--yellow);
+}
+
 .cardExpiring {
-  border-color: var(--orange);
-  box-shadow: 0 0 0 1px var(--orange);
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 1px var(--yellow);
 }
 
 .cardExpired {
@@ -40,7 +45,7 @@
 }
 
 .cardOrphaned {
-  border-color: var(--orange);
+  border-color: var(--yellow);
 }
 
 /* Image area: fixed 180px height with object-fit cover */
@@ -79,66 +84,20 @@
   flex-wrap: wrap;
   gap: var(--space-1);
   z-index: 1;
+  /* Override badge color tokens for image overlay — raise opacity so badges are visible on photos */
+  --green-muted: rgba(34, 197, 94, 0.85);
+  --red-muted: rgba(239, 68, 68, 0.85);
+  --yellow-muted: rgba(245, 158, 11, 0.85);
+  --bg-tertiary: rgba(100, 100, 100, 0.85);
+  --text-success: #fff;
+  --text-danger: #fff;
+  --text-warning: #fff;
+  --text-muted: #fff;
+  --text-secondary: #fff;
 }
 
-.cardStatus {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-semibold);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  backdrop-filter: blur(8px);
-}
 
-.cardStatusPriceReduction {
-  background-color: rgba(245, 158, 11, 0.85);
-  color: #fff;
-}
-
-.cardStatusActive {
-  background-color: rgba(34, 197, 94, 0.85);
-  color: #fff;
-  --pulse-color: rgba(34, 197, 94, 0.3);
-  animation: statusPulse 2.5s ease-in-out infinite;
-}
-
-.cardStatusInactive {
-  background-color: rgba(239, 68, 68, 0.85);
-  color: #fff;
-}
-
-.cardStatusDraft {
-  background-color: rgba(120, 120, 120, 0.85);
-  color: #fff;
-}
-
-.cardStatusChanged {
-  background-color: var(--accent);
-  color: var(--accent-text);
-}
-
-.cardStatusExpiring {
-  background-color: rgba(245, 158, 11, 0.85);
-  color: #fff;
-  --pulse-color: rgba(245, 158, 11, 0.3);
-  animation: statusPulse 2s ease-in-out infinite;
-}
-
-.cardStatusExpired {
-  background-color: rgba(239, 68, 68, 0.85);
-  color: #fff;
-}
-
-.cardStatusOrphaned {
-  background-color: rgba(245, 158, 11, 0.85);
-  color: #fff;
-}
-
-.cardStatusReserved {
-  background-color: rgba(96, 165, 250, 0.85);
-  color: #fff;
-}
-
-/* "..." menu button on image (top-right) */
+/* "..." menu button — positioned relative to .card (top-right corner) */
 .cardMenu {
   position: absolute;
   top: var(--space-2);
@@ -158,7 +117,7 @@
   justify-content: center;
   opacity: 0;
   transition: opacity 0.15s ease;
-  z-index: 1;
+  z-index: 2;
 }
 
 .card:hover .cardMenu {
@@ -173,20 +132,13 @@
 .cardBody {
   padding: var(--space-3) var(--space-4);
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   grid-template-areas:
-    "title title"
-    "price price"
-    "expiry expiry"
-    "meta date";
+    "title"
+    "price"
+    "expiry"
+    "info";
   align-items: baseline;
-}
-
-.cardDate {
-  grid-area: date;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  text-align: right;
 }
 
 .cardTitle {
@@ -228,14 +180,68 @@
   font-weight: var(--font-medium);
 }
 
-.cardMeta {
-  grid-area: meta;
+.cardInfo {
+  grid-area: info;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
-  margin-top: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.cardInfoChips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cardInfoChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+
+  svg {
+    opacity: 0.7;
+  }
+}
+
+.cardInfoStatsGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-1);
+}
+
+.cardInfoCategoryWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cardInfoCategory {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.cardInfoDate {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+
+  svg {
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+}
+
+.cardDateMobile {
+  display: none;
 }
 
 /* Image placeholder when no image available */
@@ -253,6 +259,28 @@
 .cardNew {
   animation: sparkleGlow 2s ease-in-out 3;
   border-radius: var(--radius-lg);
+}
+
+.cardImageCount {
+  position: absolute;
+  bottom: var(--space-2);
+  right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: var(--font-medium);
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  border-radius: var(--radius-sm);
+  z-index: 2;
+  pointer-events: none;
+
+  svg {
+    opacity: 0.9;
+  }
 }
 
 .cardNewBadge {
@@ -302,7 +330,6 @@
   .card {
     display: flex;
     flex-direction: row;
-    position: relative;
   }
 
   .cardImage {
@@ -311,7 +338,7 @@
     height: auto;
     flex-shrink: 0;
     border-radius: 0;
-    position: static;
+    position: relative;
   }
 
   .cardImagePlaceholder svg {
@@ -323,11 +350,6 @@
     top: var(--space-1);
     left: var(--space-1);
     right: 28px;
-  }
-
-  .cardStatus {
-    font-size: 11px;
-    padding: 2px 6px;
   }
 
   .cardMenu {
@@ -357,12 +379,6 @@
     justify-content: flex-start;
   }
 
-  .cardDate {
-    font-size: 11px;
-    margin-bottom: var(--space-1);
-    text-align: left;
-  }
-
   .cardTitle {
     font-size: var(--font-size-xs);
     margin-bottom: var(--space-1);
@@ -381,10 +397,32 @@
     font-size: 10px;
   }
 
-  .cardMeta {
+  .cardInfo {
     font-size: 10px;
-    order: 0;
     margin-top: auto;
+  }
+
+  .cardInfoStatsGroup {
+    margin-left: 0;
+  }
+
+  .cardInfoDate {
+    display: none;
+  }
+
+  .cardDateMobile {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-1);
+    white-space: nowrap;
+
+    svg {
+      opacity: 0.7;
+      flex-shrink: 0;
+    }
   }
 
   .cardNewBadge {

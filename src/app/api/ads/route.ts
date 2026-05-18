@@ -4,10 +4,13 @@ import { adCreateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
 import { readMergedConfig } from '@/lib/yaml/config';
-import { readLastDownloadAll, resolveDownloadDir } from '@/lib/bot/hooks';
+import { readLastDownloadAll, resolveDownloadDir, archiveInactiveAdFolders } from '@/lib/bot/hooks';
 import { getFirstImage } from '@/lib/images/resolve';
 import { computeContentHash } from '@/lib/ads/content-hash';
+import { getTemplatesDir } from '@/lib/yaml/templates';
 import path from 'path';
+
+const backfilledWorkspaces = new Set<string>();
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,6 +20,10 @@ export async function GET(request: NextRequest) {
     }
 
     const ws = user.workspace;
+    if (!backfilledWorkspaces.has(ws)) {
+      backfilledWorkspaces.add(ws);
+      archiveInactiveAdFolders(resolveDownloadDir(ws));
+    }
     const files = await findAdFiles(ws);
     const lastDownload = readLastDownloadAll(ws);
     const onlineIds = lastDownload ? new Set(lastDownload.ids) : null;
@@ -94,6 +101,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    // Extract template slug before Zod validation (not part of schema)
+    const templateSlug = typeof body._template_slug === 'string' ? body._template_slug : null;
+    delete body._template_slug;
     const parsed = adCreateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -182,6 +192,22 @@ export async function POST(request: NextRequest) {
     }
 
     await writeAd(filePath, data);
+
+    // Copy images from template dir to new ad dir
+    if (templateSlug && (data.images as string[])?.length > 0) {
+      const { existsSync, copyFileSync } = await import('fs');
+      const tplImagesDir = path.join(getTemplatesDir(ws), `tpl_${templateSlug}`);
+      if (existsSync(tplImagesDir)) {
+        for (const imgName of data.images as string[]) {
+          const src = path.join(tplImagesDir, imgName);
+          const dest = path.join(adDir, imgName);
+          try {
+            if (existsSync(src) && !existsSync(dest)) copyFileSync(src, dest);
+          } catch { /* skip unreadable files */ }
+        }
+      }
+    }
+
     return NextResponse.json({
       message: 'Ad created',
       file: path.relative(ws, filePath),

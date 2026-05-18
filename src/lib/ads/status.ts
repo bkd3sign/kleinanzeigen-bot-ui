@@ -1,4 +1,5 @@
 import type { AdListItem } from '@/types/ad';
+import type { AdStatsEntry } from '@/types/stats';
 
 const DAY_MS = 86400000;
 
@@ -53,9 +54,9 @@ export function isExpiringSoon(ad: AdListItem): boolean {
   return remaining > 0 && remaining <= EXPIRY_WARNING_DAYS * DAY_MS;
 }
 
-/** True when the ad title contains "reserviert" (case-insensitive). */
-export function isReserved(ad: AdListItem): boolean {
-  return (ad.title ?? '').toLowerCase().includes('reserviert');
+/** True when the ad is reserved: KA state is "paused", or title contains "reserviert". */
+export function isReserved(ad: AdListItem, adStats?: AdStatsEntry): boolean {
+  return adStats?.state === 'paused' || (ad.title ?? '').toLowerCase().includes('reserviert');
 }
 
 /** Days remaining until the 60-day platform expiry (negative = overdue). */

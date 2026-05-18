@@ -134,6 +134,7 @@
   --font-mono: "JetBrains Mono", "SF Mono", Monaco,
     Consolas, monospace;
 
+  --font-size-2xs: 0.625rem;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -177,6 +178,14 @@
 
   /* Layout */
   --sidebar-width: 240px;
+  /* hamburger mode (≤560px): 0 vertical padding + 34px content, min-height kicks in → 52px */
   --header-height: 52px;
   --content-max-width: 1200px;
+}
+
+/* Icon-only and full nav (≥561px): 16px padding × 2 + 32px button (6px pad + 1px border + 18px icon + 1px border + 6px pad) = 64px */
+@media (min-width: 561px) {
+  :root {
+    --header-height: 64px;
+  }
 }

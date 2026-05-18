@@ -223,7 +223,7 @@ function PricePreview({
       republication_interval: republicationInterval,
       repost_count: botInfo?.repost_count ?? 0,
       price_reduction_count: botInfo?.price_reduction_count ?? 0,
-      created_on: botInfo?.created_on ?? undefined,
+      created_on: botInfo?.created_on ?? new Date().toISOString(),
       updated_on: botInfo?.updated_on ?? undefined,
       auto_price_reduction: {
         enabled: true,

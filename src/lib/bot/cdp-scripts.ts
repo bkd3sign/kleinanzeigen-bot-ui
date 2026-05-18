@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import WebSocket from 'ws';
+import { waitForCdp, cdpHttpGet, sleep } from '@/lib/browser/cdp';
 
 const BOT_DIR = process.env.BOT_DIR || process.cwd();
 const EXTENSIONS_DIR = path.join(BOT_DIR, 'extensions');
@@ -98,25 +99,6 @@ function getEnabledScripts(): Array<{ name: string; source: string }> {
   return scripts;
 }
 
-/**
- * Wait for Chrome to start and expose its CDP endpoint.
- */
-async function waitForCDP(port: number, timeoutMs = 30_000): Promise<string | null> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) {
-        const data = await res.json() as { webSocketDebuggerUrl?: string };
-        return data.webSocketDebuggerUrl ?? null;
-      }
-    } catch {
-      // Chrome not ready yet
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-  return null;
-}
 
 /**
  * Inject scripts into a target session via CDP.
@@ -228,9 +210,7 @@ async function startInjectionLoop(
         // Only inject on top-level frame navigations to kleinanzeigen
         if (frame && !frame.parentId && frame.url?.includes('kleinanzeigen.de')) {
           // Small delay to ensure document is ready for script evaluation
-          setTimeout(() => {
-            injectIntoSession(ws, sessionId, scripts, msgId);
-          }, 100);
+          sleep(100).then(() => injectIntoSession(ws, sessionId, scripts, msgId));
         }
       }
 
@@ -262,9 +242,16 @@ export async function injectExtensionScripts(
   const scripts = getEnabledScripts();
   if (scripts.length === 0) return;
 
-  const browserWsUrl = await waitForCDP(cdpPort);
-  if (!browserWsUrl) {
+  try {
+    await waitForCdp(cdpPort, 30_000);
+  } catch {
     log?.('[EXT]  Could not connect to Chrome CDP\n');
+    return;
+  }
+  const version = await cdpHttpGet<{ webSocketDebuggerUrl?: string }>(cdpPort, '/json/version');
+  const browserWsUrl = version.webSocketDebuggerUrl ?? null;
+  if (!browserWsUrl) {
+    log?.('[EXT]  No browser WebSocket URL\n');
     return;
   }
 

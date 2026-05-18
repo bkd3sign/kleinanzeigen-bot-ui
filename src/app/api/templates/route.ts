@@ -4,6 +4,7 @@ import { templateCreateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { readAd, writeAd } from '@/lib/yaml/ads';
 import { getTemplatesDir, findTemplateFiles, slugFromName } from '@/lib/yaml/templates';
+import { resolveImageFiles } from '@/lib/images/resolve';
 import path from 'path';
 import fs from 'fs';
 
@@ -59,12 +60,42 @@ export async function POST(request: NextRequest) {
     const templatesDir = getTemplatesDir(user.workspace);
     fs.mkdirSync(templatesDir, { recursive: true });
 
-    const filePath = path.join(templatesDir, `tpl_${slug}.yaml`);
-    if (fs.existsSync(filePath)) {
+    // Dir-based template: ads/templates/tpl_{slug}/tpl_{slug}.yaml
+    const tplDir = path.join(templatesDir, `tpl_${slug}`);
+    const filePath = path.join(tplDir, `tpl_${slug}.yaml`);
+
+    // Also check legacy flat path for conflict
+    const legacyPath = path.join(templatesDir, `tpl_${slug}.yaml`);
+    if (fs.existsSync(filePath) || fs.existsSync(legacyPath)) {
       return NextResponse.json(
         { detail: `Template '${slug}' already exists` },
         { status: 409 },
       );
+    }
+
+    // Resolve and copy images from source ad
+    const sourceAdFile = ad_data._source_ad_file as string | undefined;
+    let resolvedImages: string[] = [];
+    if (sourceAdFile && Array.isArray(ad_data.images) && (ad_data.images as string[]).length > 0) {
+      const sourceAdPath = path.join(user.workspace, sourceAdFile);
+      if (fs.existsSync(sourceAdPath)) {
+        const sourceAdDir = path.dirname(sourceAdPath);
+        resolvedImages = resolveImageFiles(sourceAdDir, ad_data.images as string[]);
+      }
+    }
+
+    fs.mkdirSync(tplDir, { recursive: true });
+
+    // Copy image files into template directory
+    if (resolvedImages.length > 0 && sourceAdFile) {
+      const sourceAdDir = path.dirname(path.join(user.workspace, sourceAdFile));
+      for (const imgName of resolvedImages) {
+        const src = path.join(sourceAdDir, imgName);
+        const dest = path.join(tplDir, imgName);
+        try {
+          if (fs.existsSync(src)) fs.copyFileSync(src, dest);
+        } catch { /* skip unreadable files */ }
+      }
     }
 
     const data: Record<string, unknown> = {
@@ -72,6 +103,8 @@ export async function POST(request: NextRequest) {
       _template_description: description,
       _locked_fields: locked_fields,
       ...ad_data,
+      // Store resolved filenames, not globs
+      images: resolvedImages,
     };
     writeAd(filePath, data);
 

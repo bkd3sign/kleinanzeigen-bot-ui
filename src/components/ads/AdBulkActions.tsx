@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { useDeleteAdByFile } from '@/hooks/useAds';
@@ -17,11 +18,14 @@ interface AdBulkActionsProps {
 export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProps) {
   const deleteAd = useDeleteAdByFile();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Map selected file paths to ad objects
   const selectedAds = ads.filter((a) => selectedFiles.has(a.file));
   const publishedAds = selectedAds.filter((a) => !!a.id);
   const draftAds = selectedAds.filter((a) => !a.id);
+  const activeAds = selectedAds.filter((a) => a.active !== false);
+  const inactiveAds = selectedAds.filter((a) => a.active === false);
 
   const handleBulkPublish = useCallback(async () => {
     if (draftAds.length > 0) {
@@ -61,18 +65,41 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
     }
   }, [publishedAds, toast]);
 
-  const handleBulkExtend = useCallback(async () => {
-    if (publishedAds.length === 0) {
-      toast('error', 'Keine veröffentlichten Anzeigen in der Auswahl');
+  const handleBulkDeactivate = useCallback(async () => {
+    if (activeAds.length === 0) {
+      toast('error', 'Keine aktiven Anzeigen in der Auswahl');
       return;
     }
-    const ids = publishedAds.map((a) => String(a.id)).join(',');
     try {
-      await api.post('/api/bot/extend', { ads: ids });
+      await Promise.all(
+        activeAds.map((a) =>
+          api.put(`/api/ads/by-file/${a.file.split('/').map(encodeURIComponent).join('/')}`, { active: false }),
+        ),
+      );
+      queryClient.invalidateQueries({ queryKey: ['ads'] });
+      toast('success', `${activeAds.length} Anzeige${activeAds.length > 1 ? 'n' : ''} deaktiviert`);
     } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Fehler beim Verlängern');
+      toast('error', err instanceof Error ? err.message : 'Fehler beim Deaktivieren');
     }
-  }, [publishedAds, toast]);
+  }, [activeAds, queryClient, toast]);
+
+  const handleBulkActivate = useCallback(async () => {
+    if (inactiveAds.length === 0) {
+      toast('error', 'Keine inaktiven Anzeigen in der Auswahl');
+      return;
+    }
+    try {
+      await Promise.all(
+        inactiveAds.map((a) =>
+          api.put(`/api/ads/by-file/${a.file.split('/').map(encodeURIComponent).join('/')}`, { active: true }),
+        ),
+      );
+      queryClient.invalidateQueries({ queryKey: ['ads'] });
+      toast('success', `${inactiveAds.length} Anzeige${inactiveAds.length > 1 ? 'n' : ''} aktiviert`);
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Fehler beim Aktivieren');
+    }
+  }, [inactiveAds, queryClient, toast]);
 
   const handleBulkDelete = useCallback(async () => {
     const ok = await showConfirm(
@@ -126,6 +153,16 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
           <Button variant="outline" size="sm" onClick={handleBulkUpdate}>
             Aktualisieren
           </Button>
+          {activeAds.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleBulkDeactivate}>
+              Deaktivieren
+            </Button>
+          )}
+          {inactiveAds.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleBulkActivate}>
+              Aktivieren
+            </Button>
+          )}
           <Button variant="danger" size="sm" onClick={handleBulkDelete}>
             Entfernen
           </Button>

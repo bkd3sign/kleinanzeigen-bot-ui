@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import styles from './DropdownMenu.module.scss';
 
 export interface DropdownMenuItem {
-  label: string;
+  label: React.ReactNode;
   icon?: React.ReactNode;
   onClick: () => void;
   danger?: boolean;

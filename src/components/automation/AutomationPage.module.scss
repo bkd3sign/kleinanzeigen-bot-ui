@@ -241,6 +241,17 @@
 }
 
 /* Empty state */
+.infoBox {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 .emptyHint {
   font-size: var(--font-size-sm);
   color: var(--text-muted);

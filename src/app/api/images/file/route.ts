@@ -2,11 +2,23 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { loadUsers, ensureJwtSecret, getUserWorkspace } from '@/lib/yaml/users';
 import { decodeJwt } from '@/lib/auth/jwt';
-import { findAdByFile } from '@/lib/yaml/ads';
 import { validatePathWithin } from '@/lib/security/validation';
 import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/images/upload';
-import { readFileSync, existsSync } from 'fs';
+import { readFile, stat, existsSync } from 'fs';
+import { promisify } from 'util';
 import path from 'path';
+
+const readFileAsync = promisify(readFile);
+const statAsync = promisify(stat);
+
+const MIME_MAP: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,52 +42,47 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Authentication required' }, { status: 401 });
     }
 
-    const data = await loadUsers();
+    // loadUsers() has mtime-based in-memory cache — no disk I/O on cache hit
+    const data = loadUsers();
     if (!data) {
       return NextResponse.json({ detail: 'Setup required' }, { status: 401 });
     }
 
-    const secret = await ensureJwtSecret(data);
+    const secret = ensureJwtSecret(data);
     const payload = await decodeJwt(jwtToken, secret);
     const userId = payload.sub as string;
     const ws = getUserWorkspace(userId);
 
-    // Find ad file and resolve image
-    const result = await findAdByFile(file, ws);
-    if (!result) {
-      return NextResponse.json({ detail: `Ad file ${file} not found` }, { status: 404 });
-    }
+    // Derive adDir from the relative file path — no YAML parse needed
+    const normalizedFile = file.normalize('NFD');
+    const adDir = path.join(ws, path.dirname(normalizedFile));
+    validatePathWithin(adDir, ws);
 
-    const { path: filePath } = result;
-    const adDir = path.dirname(filePath);
     const imagePath = path.join(adDir, name);
-
-    // Security: prevent directory traversal
-    const validPath = validatePathWithin(imagePath, adDir);
-    if (!validPath) {
-      return NextResponse.json({ detail: 'Access denied' }, { status: 403 });
-    }
+    validatePathWithin(imagePath, adDir);
 
     const ext = path.extname(name).toLowerCase();
-    if (!existsSync(imagePath) || !ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext) || !existsSync(imagePath)) {
       return NextResponse.json({ detail: `Image ${name} not found` }, { status: 404 });
     }
 
-    const content = readFileSync(imagePath);
-    const mimeMap: Record<string, string> = {
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.bmp': 'image/bmp',
-    };
-    const contentType = mimeMap[ext] ?? 'application/octet-stream';
+    // ETag from mtime+size — enables 304 on repeat visits
+    const fileStat = await statAsync(imagePath);
+    const etag = `"${fileStat.mtimeMs.toString(36)}-${fileStat.size.toString(36)}"`;
+
+    if (request.headers.get('if-none-match') === etag) {
+      return new Response(null, { status: 304 });
+    }
+
+    const content = await readFileAsync(imagePath);
+    const contentType = MIME_MAP[ext] ?? 'application/octet-stream';
 
     return new Response(content, {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'private, max-age=3600',
+        'ETag': etag,
+        'Last-Modified': new Date(fileStat.mtimeMs).toUTCString(),
       },
     });
   } catch (error) {

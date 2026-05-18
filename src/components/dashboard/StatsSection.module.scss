@@ -1,0 +1,223 @@
+.section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: clamp(var(--space-3), 3vw, var(--space-5));
+}
+
+.sectionTitle {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.titleMeta {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-normal, 400);
+  color: var(--text-muted);
+}
+
+.empty {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+  table-layout: fixed;
+}
+
+.colTitle  { width: auto; }
+.colStatus { width: 95px; }
+.colNum    { width: 68px; }
+.colDate   { width: 88px; }
+
+.tableHeader {
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tableHeaderNum {
+  text-align: right;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tableRow {
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.tableCell {
+  padding: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.tableCellTitle {
+  padding: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  vertical-align: middle;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tableCellNum {
+  padding: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+  text-align: right;
+  vertical-align: middle;
+}
+
+// Expanded history section
+.historyExpandRow {
+  background: var(--surface-subdued);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.historyExpandCell {
+  padding: var(--space-2) 0 var(--space-3);
+}
+
+.historyScroll {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.noData {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  padding: var(--space-3) 0;
+}
+
+.historyHeader {
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.historyHeaderNum {
+  text-align: right;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.historyHeaderRight {
+  text-align: right;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.historyRow {
+  border-bottom: 1px solid var(--border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.historyCell {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.historyCellNum {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.historyCellRight {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+@media (max-width: 767px) {
+  .table,
+  .historyTable {
+    table-layout: auto;
+    min-width: max-content;
+  }
+
+  // With table-layout: auto the title column sizes naturally — disable truncation
+  .tableCellTitle {
+    max-width: none;
+    overflow: visible;
+    white-space: nowrap;
+  }
+
+  .tableHeader,
+  .tableHeaderNum,
+  .tableCell,
+  .tableCellNum,
+  .tableCellTitle {
+    padding: var(--space-2);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  .historyHeader,
+  .historyHeaderNum,
+  .historyHeaderRight,
+  .historyCell,
+  .historyCellNum,
+  .historyCellRight {
+    padding: var(--space-1) var(--space-2);
+    white-space: nowrap;
+  }
+}

@@ -37,7 +37,8 @@
 }
 
 .animPageEnter {
-  animation: pageEnter 250ms var(--ease-out) both;
+  /* backwards fill: no transform persists after animation ends, so position:fixed children stay viewport-relative */
+  animation: pageEnter 250ms var(--ease-out) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
