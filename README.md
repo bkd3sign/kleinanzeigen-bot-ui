@@ -463,7 +463,7 @@ The installer guides you through all settings interactively. For non-interactive
 sudo INSTALL_DIR=/opt/kleinanzeigen-bot-ui \
      WORKSPACE_DIR=/opt/workspace \
      PORT=3737 \
-     SERVICE_USER=root \
+     SERVICE_USER=botuser \
      BOT_RELEASE=latest \
      bash /tmp/install.sh --yes
 ```
@@ -475,7 +475,7 @@ sudo INSTALL_DIR=/opt/kleinanzeigen-bot-ui \
 | `INSTALL_DIR` | `/opt/kleinanzeigen-bot-ui` | App source + Next.js build output |
 | `WORKSPACE_DIR` | `/opt/workspace` | Config, ads, bot binary, user data |
 | `PORT` | `3737` | Web interface port |
-| `SERVICE_USER` | `root` | User the systemd service runs as (`root` or `botuser` or custom) |
+| `SERVICE_USER` | `botuser` | User the systemd service runs as (`botuser` recommended, or `root` or custom) |
 | `BOT_RELEASE` | `latest` | Bot binary release tag (e.g. `2026+fd3bf64`) |
 
 **Workspace layout after installation:**

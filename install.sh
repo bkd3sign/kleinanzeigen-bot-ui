@@ -232,7 +232,7 @@ if [[ "$PKG_MANAGER" == "apt" ]]; then
   fi
 fi
 
-# LXC AppArmor check
+# LXC AppArmor + namespace check
 if [[ "$IS_LXC" == "true" ]]; then
   APPARMOR_STATUS=$(cat /proc/self/attr/current 2>/dev/null | tr -d '\0' || echo "unconfined")
   if [[ "$APPARMOR_STATUS" != "unconfined" ]]; then
@@ -253,6 +253,24 @@ if [[ "$IS_LXC" == "true" ]]; then
     fi
   else
     success "AppArmor: unconfined (OK for Chromium)"
+  fi
+
+  if ! unshare --user echo ok &>/dev/null; then
+    echo ""
+    echo -e "${YELLOW}${BOLD}  ⚠ User namespaces are blocked in this LXC container!${RESET}"
+    echo -e "  Chromium needs kernel namespace support to start."
+    echo ""
+    echo -e "  Fix on the Proxmox host:"
+    echo -e "    ${BOLD}pct set <CTID> --features keyctl=1,nesting=1${RESET}"
+    echo -e "    ${BOLD}pct restart <CTID>${RESET}"
+    echo -e "  Then re-run this script."
+    echo ""
+    if [[ "$NON_INTERACTIVE" == "false" ]]; then
+      read -r -p "  Continue anyway? [y/N] " CONTINUE
+      [[ "${CONTINUE,,}" != "y" ]] && exit 0
+    fi
+  else
+    success "User namespaces: available (OK for Chromium)"
   fi
 fi
 
@@ -456,28 +474,11 @@ done
 [[ -z "$CHROMIUM_BIN" ]] && error "Chromium not found after installation"
 success "Chromium: $CHROMIUM_BIN"
 
-# Chromium headless smoke test
-info "Testing Chromium headless launch..."
-CHROMIUM_TEST=$(timeout 20 "$CHROMIUM_BIN" \
-  --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --password-store=basic \
-  --dump-dom about:blank 2>&1 || true)
-
-if echo "$CHROMIUM_TEST" | grep -q "<html"; then
-  success "Chromium headless test passed"
-elif echo "$CHROMIUM_TEST" | grep -qi "apparmor\|permission denied\|operation not permitted"; then
-  echo ""
-  echo -e "${RED}${BOLD}  ✗ Chromium blocked — AppArmor or permission issue${RESET}"
-  echo ""
-  echo "$CHROMIUM_TEST" | grep -i "error\|denied\|apparmor" | head -3 | sed 's/^/  /'
-  echo ""
-  echo -e "  Fix on the Proxmox host:"
-  echo -e "  ${BOLD}    /etc/pve/lxc/<ID>.conf  →  lxc.apparmor.profile: unconfined${RESET}"
-  echo -e "  Then restart the container and re-run this script."
-  echo ""
-  exit 1
-else
-  warn "Chromium smoke test inconclusive — continuing (first bot run will confirm)"
+# Verify Chromium binary is executable
+if ! timeout 5 "$CHROMIUM_BIN" --version &>/dev/null; then
+  error "Chromium binary not executable: $CHROMIUM_BIN"
 fi
+success "Chromium binary OK: $($CHROMIUM_BIN --version 2>/dev/null | head -1)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 step 4 "Setting up service user and directories"
@@ -489,7 +490,26 @@ if [[ "$SERVICE_USER" != "root" ]]; then
     useradd -r -m -s /bin/bash "$SERVICE_USER"
     success "User created: $SERVICE_USER"
   else
-    success "User exists: $SERVICE_USER"
+    USER_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
+    USER_SHELL=$(getent passwd "$SERVICE_USER" | cut -d: -f7)
+    REPAIRED=false
+    if [[ ! -d "$USER_HOME" || "$USER_HOME" == "/nonexistent" ]]; then
+      info "Repairing home directory for $SERVICE_USER (was: $USER_HOME)..."
+      usermod -d "/home/$SERVICE_USER" "$SERVICE_USER"
+      mkdir -p "/home/$SERVICE_USER"
+      chown "$SERVICE_USER:$SERVICE_USER" "/home/$SERVICE_USER"
+      REPAIRED=true
+    fi
+    if [[ "$USER_SHELL" == */nologin || "$USER_SHELL" == */false ]]; then
+      info "Repairing shell for $SERVICE_USER (was: $USER_SHELL)..."
+      usermod -s /bin/bash "$SERVICE_USER"
+      REPAIRED=true
+    fi
+    if [[ "$REPAIRED" == "true" ]]; then
+      success "User repaired: $SERVICE_USER (home: $(getent passwd "$SERVICE_USER" | cut -d: -f6), shell: /bin/bash)"
+    else
+      success "User OK: $SERVICE_USER"
+    fi
   fi
 fi
 
@@ -500,6 +520,47 @@ mkdir -p \
   "$WORKSPACE_DIR/.temp"
 
 success "Workspace directories created at $WORKSPACE_DIR"
+
+# Chromium smoke test as service user — verifies the real runtime scenario
+info "Testing Chromium as service user ${SERVICE_USER}..."
+if [[ "$SERVICE_USER" == "root" ]]; then
+  CHROMIUM_USER_TEST=$(timeout 20 "$CHROMIUM_BIN" \
+    --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --password-store=basic \
+    --dump-dom about:blank 2>&1 || true)
+else
+  _USER_HOME_NOW=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
+  CHROMIUM_USER_TEST=$(su -s /bin/bash "$SERVICE_USER" -c "
+    export HOME='$_USER_HOME_NOW'
+    timeout 20 '$CHROMIUM_BIN' --headless --no-sandbox \
+      --disable-dev-shm-usage --disable-gpu --password-store=basic \
+      --dump-dom about:blank
+  " 2>&1 || true)
+fi
+if echo "$CHROMIUM_USER_TEST" | grep -q "<html"; then
+  success "Chromium test passed as ${SERVICE_USER}"
+elif echo "$CHROMIUM_USER_TEST" | grep -qi "apparmor\|permission denied\|operation not permitted"; then
+  echo ""
+  echo -e "${RED}${BOLD}  ✗ Chromium blocked — AppArmor or permission issue${RESET}"
+  echo "$CHROMIUM_USER_TEST" | grep -i "error\|denied\|apparmor" | head -3 | sed 's/^/  /'
+  echo ""
+  echo -e "  Fix on the Proxmox host:"
+  echo -e "  ${BOLD}    /etc/pve/lxc/<ID>.conf  →  lxc.apparmor.profile: unconfined${RESET}"
+  exit 1
+elif echo "$CHROMIUM_USER_TEST" | grep -qi "namespace\|clone\|unshare"; then
+  echo ""
+  echo -e "${RED}${BOLD}  ✗ Chromium blocked — kernel namespaces not available${RESET}"
+  echo -e "  Fix on the Proxmox host:"
+  echo -e "  ${BOLD}    pct set <CTID> --features keyctl=1,nesting=1${RESET}"
+  exit 1
+else
+  echo ""
+  echo -e "${RED}${BOLD}  ✗ Chromium test failed as ${SERVICE_USER}${RESET}"
+  echo "$CHROMIUM_USER_TEST" | head -10 | sed 's/^/  /'
+  echo ""
+  echo -e "  Debug manually:"
+  echo -e "  ${BOLD}    su -s /bin/bash ${SERVICE_USER} -c \"${CHROMIUM_BIN} --headless --no-sandbox --dump-dom about:blank\"${RESET}"
+  exit 1
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 step 5 "Building application"
@@ -599,8 +660,12 @@ with open(f) as fh:
     d = yaml.safe_load(fh) or {}
 b = d.setdefault('browser', {})
 b['binary_location'] = cb
-if not b.get('arguments'):
-    b['arguments'] = ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--password-store=basic']
+required_args = ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--password-store=basic']
+existing_args = b.get('arguments', [])
+for arg in required_args:
+    if arg not in existing_args:
+        existing_args.append(arg)
+b['arguments'] = existing_args
 b.setdefault('use_private_window', True)
 with open(f, 'w') as fh:
     yaml.dump(d, fh, allow_unicode=True, default_flow_style=False)
@@ -622,8 +687,9 @@ else
   chmod 600 "$CONFIG_FILE"
 fi
 
-# Ensure the install directory itself is traversable by the service user
+# Ensure the install directory and path to standalone are traversable by the service user
 chmod 755 "$INSTALL_DIR"
+chmod 755 "$INSTALL_DIR/.next"
 
 # Warn if the parent directory is not world-traversable (common with custom install paths)
 PARENT_DIR="$(dirname "$INSTALL_DIR")"
@@ -637,6 +703,12 @@ chmod +x "$BOT_BIN"
 
 SERVICE_FILE="/etc/systemd/system/kleinanzeigen-bot-ui.service"
 
+if [[ "$SERVICE_USER" == "root" ]]; then
+  SERVICE_HOME="/root"
+else
+  SERVICE_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
+fi
+
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Kleinanzeigen Bot UI
@@ -646,6 +718,7 @@ After=network.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${STANDALONE_DIR}
+Environment=HOME=${SERVICE_HOME}
 Environment=BOT_DIR=${WORKSPACE_DIR}
 Environment=BOT_CMD=${BOT_BIN}
 Environment=PORT=${PORT}

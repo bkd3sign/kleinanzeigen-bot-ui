@@ -1,6 +1,6 @@
 {
   "name": "kleinanzeigen-bot-ui",
-  "version": "2.55.0",
+  "version": "2.55.1",
   "description": "Web UI for kleinanzeigen-bot — manage ads, run bot commands, AI messaging, and scheduling via a modern Next.js dashboard",
   "author": "BKD3sign",
   "license": "AGPL-3.0",
@@ -40,6 +40,9 @@
     "react-hook-form": "^7.72.1",
     "ws": "^8.20.0",
     "zod": "^3.24.0"
+  },
+  "overrides": {
+    "postcss": ">=8.5.10"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
