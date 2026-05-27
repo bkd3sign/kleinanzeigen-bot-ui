@@ -4,10 +4,40 @@ import { jobs } from '@/lib/bot/jobs';
 import type { Job } from '@/types/bot';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
 import { readConfig } from '@/lib/yaml/config';
-import { archiveAdFolder, resolveArchiveDir, unarchiveAdFolder } from './archive';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
+import { computeContentHash } from '@/lib/ads/content-hash';
+import {
+  archiveAdFolder,
+  resolveArchiveDir,
+  resolveArchiveSubDir,
+  unarchiveAdFolder,
+  migrateArchiveIfNeeded,
+  ARCHIVE_SUBDIR_ADS,
+  ARCHIVE_SUBDIR_DOWNLOADS,
+  type ArchiveOrigin,
+} from './archive';
 import type { KaManageAd } from '@/lib/ka/management-api';
 
 const DOWNLOAD_ALL_JSON = '.last_download_all.json';
+
+// Translate internal API values (e.g. "jack_jones") → display text ("Jack & Jones")
+// in ad.special_attributes so the bot can re-publish without manual intervention.
+// Mutates ad in-place; caller is responsible for writing the file.
+function normalizeDownloadedAd(ad: Record<string, unknown>): boolean {
+  const catData = loadCatAttrsData();
+  const category = String(ad.category ?? '');
+  if (!catData || !category || !ad.special_attributes) return false;
+
+  const original = ad.special_attributes as Record<string, string>;
+  const translated = translateAttrValues(original, category, catData);
+  const changed = Object.keys(translated).some(k => translated[k] !== original[k]);
+  if (!changed) return false;
+
+  ad.special_attributes = translated;
+  // Keep hash in sync so the ad doesn't appear "changed" after normalization
+  if (ad.content_hash) ad.content_hash = computeContentHash(ad);
+  return true;
+}
 
 export function resolveDownloadDir(workspace: string): string {
   try {
@@ -16,6 +46,97 @@ export function resolveDownloadDir(workspace: string): string {
     if (dir) return path.resolve(workspace, dir);
   } catch { /* fall through */ }
   return path.join(workspace, 'downloaded-ads');
+}
+
+export function resolveAdsDir(workspace: string): string {
+  return path.join(workspace, 'ads');
+}
+
+/**
+ * Merge no-ID drafts with matching downloaded files (matched by title+category).
+ * "Draft" = any ad file outside downloaded-ads/ and archive with no id field.
+ * "Download" = any ad file inside the config-defined downloaded-ads/ dir with a numeric id.
+ * Uses config-resolved paths (download.dir) — no hardcoded directory names.
+ * Works for both single-user and multi-user (each call scoped to its workspace).
+ * Returns count of merged pairs. Fast no-op when no draft files exist.
+ */
+export function mergeDraftPairs(workspace: string): number {
+  const downloadedDir = resolveDownloadDir(workspace);
+  const archiveDir = resolveArchiveDir(workspace);
+  const dlDirPrefix = downloadedDir + path.sep;
+  const archiveDirPrefix = archiveDir + path.sep;
+
+  // Single workspace scan (respects template exclusion and archive exclusion)
+  const allFiles = findAdFiles(workspace, [archiveDir]);
+
+  // Fast bail-out: no files outside download/archive dir → nothing to merge
+  if (!allFiles.some(f => !f.startsWith(dlDirPrefix))) return 0;
+
+  type Entry = { filePath: string; ad: Record<string, unknown>; key: string };
+  const drafts: Entry[] = [];
+  for (const filePath of allFiles) {
+    // Draft = outside downloaded-ads/ (config-resolved) and outside archive
+    if (filePath.startsWith(dlDirPrefix) || filePath.startsWith(archiveDirPrefix)) continue;
+    let ad: Record<string, unknown>;
+    try { ad = readAd(filePath); } catch { continue; }
+    if (ad.id != null) continue;
+    const title = ((ad.title as string) || '').trim().toLowerCase();
+    const category = (ad.category as string) || '';
+    if (!title || !category) continue;
+    drafts.push({ filePath, ad, key: `${title}|${category}` });
+  }
+  if (drafts.length === 0) return 0;
+
+  const downloads: Entry[] = [];
+  for (const filePath of allFiles) {
+    if (!filePath.startsWith(dlDirPrefix)) continue;
+    let ad: Record<string, unknown>;
+    try { ad = readAd(filePath); } catch { continue; }
+    if (typeof ad.id !== 'number') continue;
+    const title = ((ad.title as string) || '').trim().toLowerCase();
+    const category = (ad.category as string) || '';
+    if (!title || !category) continue;
+    downloads.push({ filePath, ad, key: `${title}|${category}` });
+  }
+
+  const draftsByKey = new Map<string, Entry[]>();
+  for (const d of drafts) {
+    const arr = draftsByKey.get(d.key) ?? [];
+    arr.push(d);
+    draftsByKey.set(d.key, arr);
+  }
+
+  const downloadsByKey = new Map<string, Entry[]>();
+  for (const d of downloads) {
+    const arr = downloadsByKey.get(d.key) ?? [];
+    arr.push(d);
+    downloadsByKey.set(d.key, arr);
+  }
+
+  let merged = 0;
+  for (const [, draftList] of draftsByKey) {
+    if (draftList.length !== 1) continue;
+    const dlList = downloadsByKey.get(draftList[0].key);
+    if (!dlList || dlList.length !== 1) continue;
+
+    const draft = draftList[0];
+    const dl = dlList[0];
+
+    for (const field of LOCAL_ONLY_FIELDS) {
+      const val = draft.ad[field];
+      if (val == null) continue;
+      if (typeof val === 'number' && val === 0) continue;
+      dl.ad[field] = val;
+    }
+    try {
+      dl.ad.content_hash = computeContentHash(dl.ad);
+      writeAd(dl.filePath, dl.ad);
+      removeAdFile(draft.filePath);
+      merged++;
+    } catch { /* skip pair on I/O error */ }
+  }
+
+  return merged;
 }
 
 // Local-only fields preserved from the snapshot (not stored on Kleinanzeigen)
@@ -75,7 +196,8 @@ function deactivateAd(filePath: string, ad: Record<string, unknown>): void {
   writeAd(filePath, ad);
 }
 
-function removeAdFile(filePath: string): void {
+/** Delete ad YAML and remove the parent folder if no other YAML/JSON files remain. */
+export function removeAdFile(filePath: string): void {
   try {
     fs.unlinkSync(filePath);
     const dir = path.dirname(filePath);
@@ -101,7 +223,7 @@ export function onJobStarting(jobId: string, command: string, workspace: string)
   if (!command.includes('download') || !command.includes('--ads=all')) return;
 
   const downloadedDir = resolveDownloadDir(workspace);
-  const archiveDir = resolveArchiveDir(resolveDownloadDir(workspace));
+  const archiveDir = resolveArchiveDir(workspace);
   const entries: SnapshotEntry[] = [];
 
   for (const filePath of findAdFiles(workspace, [archiveDir])) {
@@ -138,7 +260,7 @@ function refreshOnlineIds(workspace: string, job: Job): void {
   const existingIds = existing ? new Set(existing.ids) : new Set<number>();
   const currentIds = new Set<number>();
 
-  const archiveDir = resolveArchiveDir(resolveDownloadDir(workspace));
+  const archiveDir = resolveArchiveDir(workspace);
   for (const filePath of findAdFiles(workspace, [archiveDir])) {
     const ad = readAd(filePath);
     if (typeof ad.id === 'number') {
@@ -168,26 +290,40 @@ function refreshOnlineIds(workspace: string, job: Job): void {
   }
 }
 
-export function archiveInactiveAdFolders(downloadedDir: string): void {
-  const archiveDir = resolveArchiveDir(downloadedDir);
+export function archiveInactiveAdFolders(workspace: string): void {
+  const downloadedDir = resolveDownloadDir(workspace);
+  const adsDir = resolveAdsDir(workspace);
+  const archiveDir = resolveArchiveDir(workspace);
+
+  migrateArchiveIfNeeded(workspace, downloadedDir);
+
   for (const filePath of findAdFiles(downloadedDir, [archiveDir])) {
     const ad = readAd(filePath);
     if (ad.active !== false) continue;
     const folderPath = path.dirname(filePath);
-    if (folderPath.startsWith(downloadedDir + path.sep) && !folderPath.startsWith(archiveDir + path.sep)) {
-      archiveAdFolder(folderPath, downloadedDir);
+    if (folderPath.startsWith(downloadedDir + path.sep)) {
+      archiveAdFolder(folderPath, workspace, ARCHIVE_SUBDIR_DOWNLOADS);
+    }
+  }
+
+  if (fs.existsSync(adsDir)) {
+    for (const filePath of findAdFiles(adsDir, [archiveDir])) {
+      const ad = readAd(filePath);
+      if (ad.active !== false) continue;
+      const folderPath = path.dirname(filePath);
+      if (folderPath.startsWith(adsDir + path.sep)) {
+        archiveAdFolder(folderPath, workspace, ARCHIVE_SUBDIR_ADS);
+      }
     }
   }
 }
 
 function cleanOrphanedImageDirs(downloadedDir: string, job: Job): void {
   if (!fs.existsSync(downloadedDir)) return;
-  const archiveDir = resolveArchiveDir(downloadedDir);
   let removed = 0;
   for (const entry of fs.readdirSync(downloadedDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dirPath = path.join(downloadedDir, entry.name);
-    if (dirPath === archiveDir) continue;
     const hasYaml = fs.readdirSync(dirPath).some(f => /\.(ya?ml|json)$/i.test(f));
     if (!hasYaml) {
       try {
@@ -223,7 +359,8 @@ export function syncOnlineIdsFromApi(workspace: string, ads: KaManageAd[]): void
   const onlineIds = new Set(ads.map(a => a.id));
 
   const downloadedDir = resolveDownloadDir(workspace);
-  const archiveDir = resolveArchiveDir(downloadedDir);
+  const adsDir = resolveAdsDir(workspace);
+  const archiveDir = resolveArchiveDir(workspace);
 
   for (const filePath of findAdFiles(workspace, [archiveDir])) {
     const ad = readAd(filePath);
@@ -249,7 +386,7 @@ export function syncOnlineIdsFromApi(workspace: string, ads: KaManageAd[]): void
         ad.active = true;
         writeAd(filePath, ad);
       }
-      unarchiveAdFolder(path.dirname(filePath), downloadedDir);
+      unarchiveAdFolder(path.dirname(filePath), workspace, adsDir, downloadedDir);
     }
   }
 }
@@ -281,7 +418,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     if (!job || (job.exit_code !== 0 && job.exit_code !== null)) return;
 
     const downloadedDir = resolveDownloadDir(workspace);
-    const archiveDir = resolveArchiveDir(downloadedDir);
+    const archiveDir = resolveArchiveDir(workspace);
     if (!fs.existsSync(downloadedDir)) return;
 
     // For partial downloads (new, specific IDs): merge new IDs into existing list
@@ -294,6 +431,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
       for (const filePath of downloadedFiles) {
         const ad = readAd(filePath);
         if (typeof ad.id !== 'number') continue;
+        if (normalizeDownloadedAd(ad)) writeAd(filePath, ad);
         if (!existingIds.has(ad.id)) {
           existingIds.add(ad.id);
           added++;
@@ -360,6 +498,9 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
         snap = snapByTitle.get(titleKey);
       }
 
+      // Normalize text-based attribute values (brand_s: jack_jones → "Jack & Jones")
+      const attrNormalized = normalizeDownloadedAd(ad);
+
       if (snap) {
         // Restore local-only fields from snapshot
         const restored: string[] = [];
@@ -373,24 +514,35 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
           }
         }
 
-        if (restored.length > 0) {
+        const idChanged = snap.id !== (ad.id as number);
+        if (restored.length > 0 || attrNormalized) {
           writeAd(filePath, ad);
-          const idChanged = snap.id !== (ad.id as number);
           const prefix = idChanged ? `id: ${snap.id}→${ad.id}, ` : '';
-          log(job, `SYNC: ${adLabel(ad.title as string, ad.id as number)} — ${prefix}wiederhergestellt [${restored.join(', ')}]`);
+          if (restored.length > 0) {
+            log(job, `SYNC: ${adLabel(ad.title as string, ad.id as number)} — ${prefix}wiederhergestellt [${restored.join(', ')}]`);
+          } else {
+            log(job, `OK: ${adLabel(ad.title as string, ad.id as number)} — Attribute normalisiert`);
+          }
         } else {
           log(job, `OK: ${adLabel(ad.title as string, ad.id as number)} — keine lokalen Felder zu restaurieren`);
         }
 
-        // If snapshot was from ads/, delete that file (now live in downloaded-ads/)
-        if (snap.inAds && fs.existsSync(snap.filePath)) {
+        // If the snapshot file is a different path AND the ID actually changed,
+        // the ad was genuinely reposted — remove the old folder.
+        // Guard: same ID but different path = pre-existing duplicate (handled by stale cleanup below).
+        if (snap.filePath !== filePath && fs.existsSync(snap.filePath) && (idChanged || snap.inAds)) {
           deletedAdsPaths.add(snap.filePath);
           removeAdFile(snap.filePath);
-          log(job, `LIVE: ads/-Entwurf gelöscht → ${path.basename(snap.filePath)}`);
+          if (snap.inAds) {
+            log(job, `LIVE: ads/-Entwurf gelöscht → ${path.basename(snap.filePath)}`);
+          } else {
+            log(job, `REPOST: Alter Ordner entfernt → ${path.basename(path.dirname(snap.filePath))} (ID ${snap.id} → ${ad.id as number})`);
+          }
         }
 
         mergedCount++;
       } else {
+        if (attrNormalized) writeAd(filePath, ad);
         log(job, `NEU: ${adLabel(ad.title as string, ad.id as number)} — in downloaded-ads/ verfügbar`);
         newCount++;
       }
@@ -406,18 +558,21 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
         const ad = readAd(entry.filePath);
         deactivateAd(entry.filePath, ad);
         const adFolder = path.dirname(entry.filePath);
-        if (adFolder.startsWith(downloadedDir + path.sep) && !adFolder.startsWith(archiveDir + path.sep)) {
-          archiveAdFolder(adFolder, downloadedDir);
+        if (!adFolder.startsWith(archiveDir + path.sep)) {
+          const origin: ArchiveOrigin = entry.inAds ? ARCHIVE_SUBDIR_ADS : ARCHIVE_SUBDIR_DOWNLOADS;
+          archiveAdFolder(adFolder, workspace, origin);
         }
         log(job, `VERWAIST: ${adLabel(entry.title, entry.id)} — nicht mehr online, deaktiviert + archiviert`);
       }
     }
 
     // Remove archived copies for ads that came back online (fresh copy now in downloadedDir)
-    if (fs.existsSync(archiveDir)) {
-      for (const dirEntry of fs.readdirSync(archiveDir, { withFileTypes: true })) {
+    for (const subdir of [ARCHIVE_SUBDIR_ADS, ARCHIVE_SUBDIR_DOWNLOADS]) {
+      const subDirPath = resolveArchiveSubDir(workspace, subdir);
+      if (!fs.existsSync(subDirPath)) continue;
+      for (const dirEntry of fs.readdirSync(subDirPath, { withFileTypes: true })) {
         if (!dirEntry.isDirectory()) continue;
-        const archivedFolder = path.join(archiveDir, dirEntry.name);
+        const archivedFolder = path.join(subDirPath, dirEntry.name);
         try {
           const yamlFile = fs.readdirSync(archivedFolder)
             .find(f => f.startsWith('ad_') && /\.(ya?ml|json)$/i.test(f));
@@ -441,10 +596,35 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     fs.writeFileSync(tempPath, JSON.stringify(result, null, 2), 'utf-8');
     fs.renameSync(tempPath, targetPath);
 
-    archiveInactiveAdFolders(downloadedDir);
+    archiveInactiveAdFolders(workspace);
     cleanOrphanedImageDirs(downloadedDir, job);
 
-    log(job, `--- Ad-Sync abgeschlossen: ${downloadedFiles.length} online, ${mergedCount} gemergt, ${newCount} neu ---`);
+    // Remove stale folders: folder name doesn't match YAML id while a correctly-named
+    // folder for the same id exists. Catches duplicates that survived due to missing snapshots
+    // (e.g. server restart mid-job) or in-place bot updates without folder rename.
+    const byId = new Map<number, string[]>();
+    for (const fp of findAdFiles(downloadedDir, [archiveDir])) {
+      let stalead: Record<string, unknown>;
+      try { stalead = readAd(fp); } catch { continue; }
+      if (typeof stalead.id !== 'number') continue;
+      const arr = byId.get(stalead.id) ?? [];
+      arr.push(fp);
+      byId.set(stalead.id, arr);
+    }
+    let staleCount = 0;
+    for (const [staleId, paths] of byId) {
+      if (paths.length <= 1) continue;
+      const canonical = paths.find(p => path.basename(path.dirname(p)) === `ad_${staleId}`);
+      if (!canonical) continue;
+      for (const fp of paths) {
+        if (fp === canonical) continue;
+        removeAdFile(fp);
+        staleCount++;
+        log(job, `CLEANUP: Verwaister Ordner entfernt → ${path.basename(path.dirname(fp))} (Duplikat von id: ${staleId})`);
+      }
+    }
+
+    log(job, `--- Ad-Sync abgeschlossen: ${downloadedFiles.length} online, ${mergedCount} gemergt, ${newCount} neu${staleCount > 0 ? `, ${staleCount} Duplikate bereinigt` : ''} ---`);
   } catch (err) {
     console.warn('[hooks] Failed to process download-all result:', err);
     const job = jobs.get(jobId);

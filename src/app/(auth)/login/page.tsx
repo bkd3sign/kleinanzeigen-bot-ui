@@ -30,6 +30,7 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
+    defaultValues: { rememberMe: false },
   });
 
   const onSubmit = useCallback(
@@ -73,6 +74,11 @@ export default function LoginPage() {
             {...register('password')}
           />
 
+          <label className={styles.authCheckbox}>
+            <input type="checkbox" {...register('rememberMe')} />
+            <span>Angemeldet bleiben</span>
+          </label>
+
           <Button
             type="submit"
             variant="primary"
@@ -81,7 +87,7 @@ export default function LoginPage() {
             disabled={isSubmitting}
             className={styles.authSubmitBtn}
           >
-            {isSubmitting ? 'Wird angemeldet\u2026' : 'Anmelden'}
+            {isSubmitting ? 'Wird angemeldet…' : 'Anmelden'}
           </Button>
         </form>
       </div>

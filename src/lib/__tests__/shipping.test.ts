@@ -21,11 +21,11 @@ describe('allCarriersOf', () => {
 
 describe('cheapestPriceOf', () => {
   it('returns cheapest S price (Hermes Päckchen)', () => {
-    expect(cheapestPriceOf('S')).toBe(4.89);
+    expect(cheapestPriceOf('S')).toBe(5.19);
   });
 
   it('returns cheapest M price (Hermes M)', () => {
-    expect(cheapestPriceOf('M')).toBe(6.49);
+    expect(cheapestPriceOf('M')).toBe(6.99);
   });
 
   it('returns cheapest L price (DHL 10kg)', () => {

@@ -3,11 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adUpdateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdById, readAd, writeAd, applyAdUpdates } from '@/lib/yaml/ads';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
+import { computeContentHash } from '@/lib/ads/content-hash';
+import { toNFC } from '@/lib/images/normalize';
 import { startJob } from '@/lib/bot/jobs';
 import path from 'path';
 import { unlink, rm } from 'fs/promises';
 import { existsSync, readdirSync } from 'fs';
 import { globSync } from 'glob';
+import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/images/upload';
 
 interface RouteContext {
   params: Promise<{ adId: string }>;
@@ -32,7 +36,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const { path: filePath, ad } = result;
-    ad.file = path.relative(user.workspace, filePath);
+
+    // Normalize text-based attributes on read and write back if changed.
+    // Ensures files downloaded by the bot (which stores API values) are corrected
+    // on disk before the bot attempts to re-publish them.
+    const catData = loadCatAttrsData();
+    const category = String(ad.category ?? '');
+    if (catData && category && ad.special_attributes) {
+      const original = ad.special_attributes as Record<string, string>;
+      const translated = translateAttrValues(original, category, catData);
+      const changed = Object.keys(translated).some(k => translated[k] !== original[k]);
+      if (changed) {
+        ad.special_attributes = translated;
+        // Keep hash in sync so the ad doesn't appear "changed" after normalization
+        if (ad.content_hash) ad.content_hash = computeContentHash(ad);
+        writeAd(filePath, ad);
+      }
+    }
+
+    ad.file = toNFC(path.relative(user.workspace, filePath));
     return NextResponse.json(ad);
   } catch (error) {
     return handleApiError(error);
@@ -71,19 +93,29 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       Object.entries(parsed.data).filter(([, v]) => v !== undefined),
     );
     applyAdUpdates(ad, updateData);
+
+    // Translate API values → display text for text-based attributes (e.g. brand_s: jack_jones → "Jack & Jones")
+    const catData = loadCatAttrsData();
+    const category = String(ad.category ?? '');
+    if (catData && category && ad.special_attributes) {
+      ad.special_attributes = translateAttrValues(
+        ad.special_attributes as Record<string, string>,
+        category,
+        catData,
+      );
+    }
+
     await writeAd(filePath, ad);
 
     return NextResponse.json({
       message: 'Ad updated',
-      file: path.relative(user.workspace, filePath),
+      file: toNFC(path.relative(user.workspace, filePath)),
       data: ad,
     });
   } catch (error) {
     return handleApiError(error);
   }
 }
-
-const ALLOWED_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
@@ -107,7 +139,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
 
     const { path: filePath } = result;
-    const relFile = path.relative(user.workspace, filePath);
+    const relFile = toNFC(path.relative(user.workspace, filePath));
     const response: Record<string, unknown> = { message: 'Ad deleted locally', file: relFile };
 
     if (remote) {

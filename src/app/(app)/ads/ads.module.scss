@@ -83,6 +83,15 @@
   line-height: var(--leading-relaxed);
 }
 
+/* Extra bottom clearance when the fixed bulk-action bar is visible */
+.hasBulkBar {
+  padding-bottom: 88px;
+
+  @media (max-width: 767px) {
+    padding-bottom: 160px;
+  }
+}
+
 /* Global drop overlay */
 .dropOverlay {
   position: fixed;

@@ -63,11 +63,13 @@ export interface AdListItem {
   repost_count: number;
   republication_interval?: number;
   shipping_type?: ShippingType;
+  shipping_options?: string[];
   auto_price_reduction?: AutoPriceReduction;
   price_reduction_count: number;
   has_description: boolean;
   is_changed: boolean;
   is_orphaned: boolean;
+  is_archived: boolean;
   file: string;
 }
 

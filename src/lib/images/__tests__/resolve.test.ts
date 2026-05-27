@@ -55,7 +55,7 @@ describe('resolveImageFiles', () => {
     fs.writeFileSync(path.join(subDir, 'nested.png'), 'fake');
 
     const result = resolveImageFiles(tmpDir, ['photos/*.png']);
-    expect(result).toContain('nested.png');
+    expect(result).toContain('photos/nested.png');
   });
 });
 
@@ -85,5 +85,14 @@ describe('getFirstImage', () => {
 
     const result = getFirstImage(tmpDir, ['*.jpg', '*.png']);
     expect(result).toBe('photo.png');
+  });
+
+  it('returns relative path for subdirectory match', () => {
+    const subDir = path.join(tmpDir, 'fotos');
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.writeFileSync(path.join(subDir, 'bild.jpg'), 'fake');
+
+    const result = getFirstImage(tmpDir, ['fotos/*.jpg']);
+    expect(result).toBe('fotos/bild.jpg');
   });
 });

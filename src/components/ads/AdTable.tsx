@@ -14,7 +14,8 @@ import type { SortDir } from '@/hooks/useSort';
 import type { AdListItem } from '@/types/ad';
 import type { Job } from '@/types/bot';
 import { isExpired, isExpiringSoon, isReserved, getExpiryDate } from '@/lib/ads/status';
-import { getCurrentPrice } from '@/lib/ads/pricing';
+import { detectSizeGroup } from '@/lib/shipping';
+import { getCurrentPrice, getAprError } from '@/lib/ads/pricing';
 import type { AdStatsEntry } from '@/types/stats';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import styles from './AdTable.module.scss';
@@ -72,13 +73,13 @@ const ICONS: Record<string, string[]> = {
 };
 
 function getStatusRank(ad: AdListItem): number {
-  if (!ad.id) return 0;                    // Draft
-  if (ad.active === false) return 1;       // Inactive
-  if (isExpired(ad)) return 2;             // Expired
-  if (isExpiringSoon(ad)) return 3;        // Expiring soon
-  if (ad.is_orphaned) return 4;            // Orphaned
-  if (ad.is_changed) return 5;             // Changed
-  return 6;                                // Active
+  if (!ad.id && !ad.is_archived) return 0;        // Draft
+  if (ad.active === false || ad.is_archived) return 1; // Inactive / archived
+  if (isExpired(ad)) return 2;                     // Expired
+  if (isExpiringSoon(ad)) return 3;                // Expiring soon
+  if (ad.is_orphaned) return 4;                    // Orphaned
+  if (ad.is_changed) return 5;                     // Changed
+  return 6;                                        // Active
 }
 
 function getAprRank(ad: AdListItem): number {
@@ -86,18 +87,30 @@ function getAprRank(ad: AdListItem): number {
   return ad.auto_price_reduction.min_price ?? 0;
 }
 
+const SHIPPING_SIZE_RANK: Record<string, number> = { S: 1, M: 2, L: 3, I: 4 };
+
 function getShippingRank(ad: AdListItem): number {
-  if (!ad.shipping_type) return 0;
-  if (ad.shipping_type === 'PICKUP') return 1;
-  if (ad.shipping_type === 'SHIPPING') return 2;
-  return 3;
+  if (!ad.shipping_type || ad.shipping_type === 'NOT_APPLICABLE') return 0;
+  if (ad.shipping_type === 'PICKUP') return 5;
+  return SHIPPING_SIZE_RANK[shippingSizeLabel(ad)] ?? 4;
 }
 
-function formatShipping(type: string | null | undefined): string {
-  if (type === 'SHIPPING') return 'Versand';
-  if (type === 'PICKUP') return 'Abholung';
-  if (type === 'SHIPPING_AND_PICKUP') return 'Beides';
-  return '–';
+function shippingSizeLabel(ad: AdListItem): string {
+  if (ad.shipping_type !== 'SHIPPING') return '';
+  return detectSizeGroup(ad.shipping_options ?? []) ?? 'I';
+}
+
+function ShippingCell({ ad }: { ad: AdListItem }) {
+  if (!ad.shipping_type || ad.shipping_type === 'NOT_APPLICABLE') {
+    return <span className={styles.shippingEmpty}>–</span>;
+  }
+  const label = ad.shipping_type === 'SHIPPING' ? 'Versand' : 'Abholung';
+  const size = shippingSizeLabel(ad);
+  return (
+    <span className={styles.shippingWrap}>
+      {label}{size ? <span className={styles.sizeHint}>{size}</span> : null}
+    </span>
+  );
 }
 
 export function compareAds(a: AdListItem, b: AdListItem, key: AdSortKey): number {
@@ -321,13 +334,12 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
         </thead>
         <tbody>
           {sortedAds.map((ad, i) => {
-            const isDraft = !ad.id;
+            const isDraft = !ad.id && !ad.is_archived;
             const isSelected = selectedFiles.has(ad.file);
             const expiring = isExpiringSoon(ad);
             const expired = isExpired(ad);
-            const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-            const imageUrl = ad.first_image && ad.file && token
-              ? `/api/images/file?file=${encodeURIComponent(ad.file)}&name=${encodeURIComponent(ad.first_image)}&token=${encodeURIComponent(token)}`
+            const imageUrl = ad.first_image && ad.file
+              ? `/api/images/file?file=${encodeURIComponent(ad.file)}&name=${encodeURIComponent(ad.first_image)}`
               : null;
             const adStats = ad.id ? statsData?.ads[String(ad.id)] : undefined;
 
@@ -364,11 +376,17 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                       <div className={styles.name} title={ad.title}>{ad.title || '(Ohne Titel)'}</div>
                       {(ad.shipping_type || adStats) && (
                         <div className={styles.mobileMeta}>
-                          {ad.shipping_type === 'SHIPPING' && (
-                            <span className={styles.metaChip} title="Versand">
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                            </span>
-                          )}
+                          {ad.shipping_type === 'SHIPPING' && (() => {
+                            const size = shippingSizeLabel(ad);
+                            return (
+                              <span className={styles.metaChip} title="Versand">
+                                <span className="shippingIconWrap">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                                  {size ? <span className="shippingIconSize">{size}</span> : null}
+                                </span>
+                              </span>
+                            );
+                          })()}
                           {ad.shipping_type === 'PICKUP' && (
                             <span className={styles.metaChip} title="Nur Abholung">
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -395,9 +413,19 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                 <td className={`${styles.td} ${styles.tdPrice}`}>{formatPrice(ad)}</td>
 
                 <td className={`${styles.td} ${styles.tdApr}`}>
-                  {ad.auto_price_reduction?.enabled ? (
-                    <Badge variant="warning">↓{ad.auto_price_reduction.min_price ?? '?'}€</Badge>
-                  ) : '–'}
+                  {ad.auto_price_reduction?.enabled ? (() => {
+                    const aprErr = ad.price != null ? getAprError(ad.price, ad.auto_price_reduction!) : null;
+                    const aprTitle = aprErr?.type === 'ineffective'
+                      ? `Preisreduktion wirkungslos — die Reduktion ergibt nach Rundung auf ganze Euro keine Preisänderung`
+                      : aprErr?.type === 'stuck'
+                      ? `Preis steckt fest — ab ~${aprErr.stuckAt} € rundet die Reduktion auf 0, der Mindestpreis ${ad.auto_price_reduction!.min_price} € wird nie erreicht`
+                      : undefined;
+                    return (
+                      <Badge variant={aprErr ? 'danger' : 'warning'} title={aprTitle}>
+                        ↓{ad.auto_price_reduction!.min_price ?? '?'}€{aprErr ? ' ⚠' : ''}
+                      </Badge>
+                    );
+                  })() : '–'}
                 </td>
 
                 <td className={`${styles.td} ${styles.tdInterval}`}>
@@ -414,7 +442,7 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                       : expired ? 'danger'
                       : expiring ? 'warning'
                       : ad.is_orphaned ? 'warning'
-                      : ad.is_changed ? 'warning'
+                      : ad.is_changed ? 'info'
                       : 'success';
                     const label = isDraft ? 'Entwurf'
                       : isReserved(ad, adStats) ? 'Reserviert'
@@ -428,7 +456,7 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                   })()}
                 </td>
 
-                <td className={`${styles.td} ${styles.tdShipping}`}>{formatShipping(ad.shipping_type)}</td>
+                <td className={`${styles.td} ${styles.tdShipping}`}><ShippingCell ad={ad} /></td>
 
                 <td className={`${styles.td} ${styles.tdViews}`}>{adStats?.views ?? 0}</td>
                 <td className={`${styles.td} ${styles.tdWatchlist}`}>{adStats?.watchlist ?? 0}</td>

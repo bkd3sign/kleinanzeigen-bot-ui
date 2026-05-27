@@ -1,6 +1,44 @@
 import type { AdListItem, AutoPriceReduction } from '@/types/ad';
 import { getNextRepubDate } from './status';
 
+export type AprErrorType = 'ineffective' | 'stuck';
+
+export interface AprError {
+  type: AprErrorType;
+  /** The lowest price the APR can actually reach (due to rounding). */
+  stuckAt: number;
+}
+
+/**
+ * Detects whether an APR config has a rounding error that prevents price reductions.
+ *
+ * 'ineffective': the very first reduction step rounds back to the original price.
+ * 'stuck': the reduction works initially but will eventually round to zero change
+ *   before reaching min_price, leaving the price permanently stuck above the floor.
+ */
+export function getAprError(price: number, apr: AutoPriceReduction): AprError | null {
+  if (!apr.enabled || !apr.strategy || !apr.amount || price <= 0) return null;
+
+  const { strategy, amount } = apr;
+  const minPrice = apr.min_price ?? 0;
+  const roundedPrice = Math.round(price);
+
+  if (strategy === 'PERCENTAGE') {
+    // A price P is "stuck" when P * amount/100 < 0.5 (rounds to 0 change).
+    // The largest such integer is floor(50 / amount).
+    const stuckAt = Math.floor(50 / amount);
+    if (roundedPrice <= stuckAt) return { type: 'ineffective', stuckAt: roundedPrice };
+    if (stuckAt > minPrice) return { type: 'stuck', stuckAt };
+    return null;
+  }
+
+  // FIXED strategy: ineffective when amount rounds to 0 change from original price
+  if (Math.round(roundedPrice - amount) >= roundedPrice) {
+    return { type: 'ineffective', stuckAt: roundedPrice };
+  }
+  return null;
+}
+
 const DAY_MS = 86400000;
 
 interface PricedAd {

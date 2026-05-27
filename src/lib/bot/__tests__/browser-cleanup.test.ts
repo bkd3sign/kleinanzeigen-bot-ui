@@ -9,7 +9,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { execFileSync } from 'child_process';
-import { waitForProfileFree, cleanBrowserProfile, killOrphanedChromium } from '../browser-cleanup';
+import { waitForProfileFree, cleanBrowserProfile, cleanStaleLocks, killOrphanedChromium } from '../browser-cleanup';
 
 const mockExecFileSync = vi.mocked(execFileSync);
 
@@ -40,9 +40,41 @@ describe('cleanBrowserProfile', () => {
     }
   });
 
+  it('removes session-restore files that trigger headless-unsafe restore mode after crash', () => {
+    const profileDir = path.join(tmpDir, '.temp', 'browser-profile');
+    const defaultDir = path.join(profileDir, 'Default');
+    fs.mkdirSync(defaultDir, { recursive: true });
+    const sessionFiles = ['Current Session', 'Current Tabs', 'Last Session', 'Last Tabs'];
+    for (const f of sessionFiles) {
+      fs.writeFileSync(path.join(defaultDir, f), 'session-data');
+    }
+
+    cleanBrowserProfile(tmpDir);
+
+    for (const f of sessionFiles) {
+      expect(fs.existsSync(path.join(defaultDir, f))).toBe(false);
+    }
+  });
+
   it('does not throw when files are already missing (ENOENT)', () => {
     // Profile dir exists but files don't
     expect(() => cleanBrowserProfile(tmpDir)).not.toThrow();
+  });
+
+  it('removes cache directories recursively (Default/GPUCache, Default/Cache, etc.)', () => {
+    const profileDir = path.join(tmpDir, '.temp', 'browser-profile');
+    const cacheDirs = ['Default/GPUCache', 'Default/Cache', 'Default/Code Cache', 'Default/DawnCache'];
+    for (const dir of cacheDirs) {
+      const full = path.join(profileDir, dir);
+      fs.mkdirSync(full, { recursive: true });
+      fs.writeFileSync(path.join(full, 'data.bin'), 'cache');
+    }
+
+    cleanBrowserProfile(tmpDir);
+
+    for (const dir of cacheDirs) {
+      expect(fs.existsSync(path.join(profileDir, dir))).toBe(false);
+    }
   });
 
   it('preserves files outside the stale list (e.g. Cookies)', () => {
@@ -54,6 +86,43 @@ describe('cleanBrowserProfile', () => {
     cleanBrowserProfile(tmpDir);
 
     expect(fs.existsSync(path.join(defaultDir, 'Cookies'))).toBe(true);
+  });
+});
+
+describe('cleanStaleLocks', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-test-'));
+    const profileDir = path.join(tmpDir, '.temp', 'browser-profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('removes lock and session-restore files', () => {
+    const profileDir = path.join(tmpDir, '.temp', 'browser-profile');
+    fs.writeFileSync(path.join(profileDir, 'SingletonLock'), 'stale');
+    fs.mkdirSync(path.join(profileDir, 'Default'), { recursive: true });
+    fs.writeFileSync(path.join(profileDir, 'Default', 'Current Session'), 'session');
+
+    cleanStaleLocks(tmpDir);
+
+    expect(fs.existsSync(path.join(profileDir, 'SingletonLock'))).toBe(false);
+    expect(fs.existsSync(path.join(profileDir, 'Default', 'Current Session'))).toBe(false);
+  });
+
+  it('preserves cache dirs so Chromium can reuse V8/GPU caches', () => {
+    const profileDir = path.join(tmpDir, '.temp', 'browser-profile');
+    const gpuCache = path.join(profileDir, 'Default', 'GPUCache');
+    fs.mkdirSync(gpuCache, { recursive: true });
+    fs.writeFileSync(path.join(gpuCache, 'index'), 'shader-cache');
+
+    cleanStaleLocks(tmpDir);
+
+    expect(fs.existsSync(gpuCache)).toBe(true);
   });
 });
 
@@ -103,10 +172,10 @@ describe('waitForProfileFree', () => {
     vi.useRealTimers();
   });
 
-  it('resolves immediately when pgrep finds no processes (exit 1)', async () => {
+  it('resolves after grace period when pgrep finds no processes (exit 1)', async () => {
     mockExecFileSync.mockImplementation(() => { throw new Error('exit 1'); });
 
-    const promise = waitForProfileFree('/workspace', 2000);
+    const promise = waitForProfileFree('/workspace', 5000);
     await vi.runAllTimersAsync();
     await promise;
 

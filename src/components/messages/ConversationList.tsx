@@ -27,8 +27,7 @@ function formatDate(dateStr: string): string {
 function adImageUrl(url: string | null | undefined): string {
   if (!url) return '';
   const directUrl = url.replace(/rule=.*$/, 'rule=$_2.JPG');
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  return `/api/messages/image?url=${encodeURIComponent(directUrl)}&token=${token ?? ''}`;
+  return `/api/messages/image?url=${encodeURIComponent(directUrl)}`;
 }
 
 export function ConversationList({ conversations, selectedId, pendingConversationIds, onSelect }: ConversationListProps) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdByFile, useUpdateAdByFile, useDeleteAdByFile, useDuplicateAd } from '@/hooks/useAds';
 import { AdForm, type AdFormData } from '@/components/ads/AdForm/AdForm';
@@ -22,6 +22,16 @@ export default function EditAdPage() {
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [resolvedImages, setResolvedImages] = useState<string[] | null>(null);
+
+  // Resolve glob patterns (e.g. "*.jpg") to actual filenames on disk
+  useEffect(() => {
+    if (!file || !ad) return;
+    api.get<{ images: string[] }>(`/api/images/list?file=${encodeURIComponent(file)}`)
+      .then(r => setResolvedImages(r.images))
+      .catch(() => setResolvedImages(ad.images ?? []));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, !!ad]);
 
   const handleSubmit = useCallback(
     async (data: AdCreateInput) => {
@@ -101,7 +111,9 @@ export default function EditAdPage() {
     }
   }, [file, duplicateAd, toast, router]);
 
-  if (isLoading) {
+  // Wait for both the ad and its resolved image list before mounting the form —
+  // useForm reads defaultValues only once at mount, so resolvedImages must be ready first.
+  if (isLoading || (!isError && resolvedImages === null)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
         <Spinner size="lg" />
@@ -141,7 +153,7 @@ export default function EditAdPage() {
     shipping_costs: ad.shipping_costs,
     shipping_options: ad.shipping_options ?? [],
     sell_directly: ad.sell_directly,
-    images: ad.images ?? [],
+    images: resolvedImages ?? ad.images ?? [],
     contact_name: ad.contact?.name ?? '',
     contact_zipcode: ad.contact?.zipcode ?? '',
     contact_location: ad.contact?.location ?? '',

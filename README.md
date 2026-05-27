@@ -63,14 +63,14 @@ Each ad has exactly one status, determined by priority:
 
 | Priority | Status | Badge | Condition |
 |----------|--------|-------|-----------|
-| 1 | **Entwurf** | `muted` (gray) | No kleinanzeigen.de ID (never published) |
+| 1 | **Entwurf** | `muted` (gray) | No kleinanzeigen.de ID and not archived (never published) |
 | 2 | **Reserviert** | `reserved` (violet) | KA state is `paused`, or title contains "reserviert" |
-| 3 | **Inaktiv** | `danger` (red) | Manually or automatically deactivated |
+| 3 | **Inaktiv** | `danger` (red) | Manually deactivated, automatically deactivated, or archived |
 | 4 | **Abgelaufen** | `danger` (red) | Published > 60 days ago |
 | 5 | **Läuft bald ab** | `warning` (orange) | Expires within 7 days |
 | 6 | **Verwaist** | `warning` (orange) | Has ID but no longer found online (grayscale image) |
-| 7 | **Geändert** | `warning` (yellow) | Content hash differs from stored hash |
-| 8 | **Aktiv** | `success` (green, pulse) | Published and active |
+| 7 | **Geändert** | `info` (blue) | Content hash differs from stored hash |
+| 8 | **Aktiv** | `success` (green) | Published and active |
 
 #### Ad Sync & Orphan Detection
 
@@ -148,7 +148,8 @@ Automatically lower prices on each republication cycle:
 
 ### Multi-User & Authentication
 
-- **JWT-based auth** — Secure token authentication with bcrypt password hashing
+- **JWT-based auth** — 15-minute access tokens + httpOnly refresh cookies; silent renewal keeps sessions alive without re-login
+- **"Stay signed in"** — Optional 30-day persistent session via httpOnly refresh cookie; without it the session ends when the browser closes
 - **Role system** — Admin (full access) and User (personal workspace only)
 - **Workspace isolation** — Each user gets their own ads, config, templates, schedules, and browser profile
 - **Invite system** — Admin generates invite links (7-day expiry) for registration
@@ -224,7 +225,7 @@ If `extensions.yaml` or the `extensions/` directory don't exist, the system is c
 - **Images** — Upload, list, reorder, delete
 - **Jobs** — Queue status, cancel, repeat
 - **Schedules** — Cron automation CRUD
-- **Auth** — JWT login, registration, password reset, invite system
+- **Auth** — JWT login with persistent sessions (15 min access token + 30 day httpOnly refresh cookie), registration, password reset, invite system
 - **Admin** — User management, invite management, messaging overview
 - **System** — Health, setup wizard, config, categories, locations, compatibility
 - **Logs** — Bot output, SSE streaming
@@ -394,6 +395,8 @@ docker compose up -d
 
 Docker pulls the pre-built image from [GitHub Container Registry](https://github.com/bkd3sign/kleinanzeigen-bot-ui/pkgs/container/kleinanzeigen-bot-ui) automatically. No build step needed.
 
+Local/LAN mode (HTTP) is the default — no configuration needed. Only set `COOKIE_SECURE=true` in the compose file if you're running behind an HTTPS reverse proxy (nginx, Caddy, Traefik).
+
 ---
 
 ### Option B — Docker, build from source
@@ -477,6 +480,7 @@ sudo INSTALL_DIR=/opt/kleinanzeigen-bot-ui \
 | `PORT` | `3737` | Web interface port |
 | `SERVICE_USER` | `botuser` | User the systemd service runs as (`botuser` recommended, or `root` or custom) |
 | `BOT_RELEASE` | `latest` | Bot binary release tag (e.g. `2026+fd3bf64`) |
+| `COOKIE_SECURE` | *(unset)* | Set to `true` only if running behind an HTTPS reverse proxy |
 
 **Workspace layout after installation:**
 
@@ -529,7 +533,7 @@ After starting via any option, open `http://<your-ip>:3737/setup` and complete:
 
 ## Security
 
-Designed for **trusted environments** (home network, family use). Kleinanzeigen.de credentials are stored in plain text in `config.yaml` — only deploy for users you trust. JWT auth, rate limiting, and security headers (CSP, HSTS, X-Frame-Options) are built in. Use a reverse proxy with HTTPS if exposed beyond localhost.
+Designed for **trusted environments** (home network, family use). Kleinanzeigen.de credentials are stored in plain text in `config.yaml` — only deploy for users you trust. JWT auth (15 min access tokens + 30 day httpOnly refresh cookies), rate limiting, and security headers (CSP, HSTS, X-Frame-Options) are built in. Use a reverse proxy with HTTPS if exposed beyond localhost, and set `COOKIE_SECURE=true` in your deployment config.
 
 ---
 

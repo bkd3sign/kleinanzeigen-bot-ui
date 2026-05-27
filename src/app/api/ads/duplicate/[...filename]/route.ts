@@ -2,10 +2,12 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdByFile, readAd, writeAd } from '@/lib/yaml/ads';
+import { toNFC } from '@/lib/images/normalize';
 import path from 'path';
 import { mkdir, copyFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { globSync } from 'glob';
+import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/images/upload';
 
 const BOT_MANAGED_FIELDS = new Set([
   'id',
@@ -15,7 +17,6 @@ const BOT_MANAGED_FIELDS = new Set([
   'repost_count',
   'price_reduction_count',
 ]);
-const ALLOWED_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
 interface RouteContext {
   params: Promise<{ filename: string[] }>;
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await writeAd(dest, newAd);
     return NextResponse.json({
       message: 'Ad duplicated',
-      file: path.relative(ws, dest),
+      file: toNFC(path.relative(ws, dest)),
       data: newAd,
     });
   } catch (error) {

@@ -3,6 +3,8 @@
 import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User } from '@/types/auth';
+import { tryRefreshToken } from '@/lib/api/client';
+import { isTokenNearExpiry } from '@/lib/auth/token-utils';
 
 // Sync interval: check server for role/profile changes every 30 seconds
 const SYNC_INTERVAL_MS = 30_000;
@@ -25,31 +27,57 @@ export const AuthContext = createContext<AuthContextType>({
   updateUser: () => {},
 });
 
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const syncRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const initDoneRef = useRef(false);
   const router = useRouter();
 
+  // Clears all session state and cookies, then optionally redirects to login.
+  // Stops the sync interval immediately to prevent stale syncUser calls after logout.
+  const clearSession = useCallback((redirect = true) => {
+    if (syncRef.current) {
+      clearInterval(syncRef.current);
+      syncRef.current = null;
+    }
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    if (redirect) router.replace('/login');
+  }, [router]);
+
   /**
-   * Sync user profile from server — detects role changes, token invalidation, etc.
-   * Returns false if the token was invalid (caller should treat as logged out).
+   * Sync user profile from server. Proactively refreshes the access token
+   * when it is within REFRESH_THRESHOLD_MS of expiry.
    */
   const syncUser = useCallback(async (currentToken: string): Promise<boolean> => {
+    let tokenToUse = currentToken;
+
+    // Proactive refresh: if token expires soon, renew before the API call
+    if (isTokenNearExpiry(currentToken)) {
+      const newToken = await tryRefreshToken();
+      if (newToken) {
+        tokenToUse = newToken;
+        setToken(newToken);
+      } else {
+        clearSession();
+        return false;
+      }
+    }
+
     try {
       const res = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${currentToken}` },
+        headers: { Authorization: `Bearer ${tokenToUse}` },
         signal: AbortSignal.timeout(10000),
       });
 
       if (res.status === 401) {
-        // Token expired or invalidated — clear state and redirect to login
-        setToken(null);
-        setUser(null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        router.replace('/login');
+        clearSession();
         return false;
       }
 
@@ -75,28 +103,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Network error or timeout — silently ignore, retry on next interval
       return true;
     }
-  }, [router]);
+  }, [clearSession]);
 
-  // Initial load from localStorage + server token validation before rendering app
+  // Stable refs so the one-time init closure always calls the latest callbacks
+  // without needing them in the dependency array (which would re-fire init on
+  // every router navigation in Next.js App Router).
+  const syncUserRef = useRef(syncUser);
+  const clearSessionRef = useRef(clearSession);
+  syncUserRef.current = syncUser;
+  clearSessionRef.current = clearSession;
+
+  // Initial load: restore from localStorage and handle expired/near-expired tokens.
+  // Runs exactly once per mount — initDoneRef prevents a second run if React
+  // strict-mode or a dep change triggers the effect again.
   useEffect(() => {
+    if (initDoneRef.current) return;
+    initDoneRef.current = true;
+
     const init = async () => {
       const savedToken = localStorage.getItem('token');
       const savedUser = localStorage.getItem('user');
+
       if (savedToken && savedUser) {
         try {
-          setToken(savedToken);
-          setUser(JSON.parse(savedUser));
-          await syncUser(savedToken);
+          if (!isTokenNearExpiry(savedToken)) {
+            // Always refresh on init so the kb_token access cookie is set before
+            // any <img> requests fire. Falls back to savedToken if refresh fails.
+            const refreshed = await tryRefreshToken();
+            const tokenToUse = refreshed ?? savedToken;
+            setToken(tokenToUse);
+            setUser(JSON.parse(savedUser));
+            await syncUserRef.current(tokenToUse);
+          } else {
+            // Token expired or near-expiry — try refresh before showing app
+            const newToken = await tryRefreshToken();
+            if (newToken) {
+              setToken(newToken);
+              setUser(JSON.parse(savedUser));
+              await syncUserRef.current(newToken);
+            } else {
+              // No valid refresh cookie — clear everything and let user log in again
+              clearSessionRef.current(false);
+            }
+          }
         } catch {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
+          clearSessionRef.current(false);
         }
       }
-      // Always finish loading — even if token was invalid
+
       setIsLoading(false);
     };
     init();
-  }, [syncUser]);
+  }, []);
+
+  // Keep React token state in sync when client.ts or QueryProvider refreshes the token
+  // (e.g. proactive focus-refresh from QueryProvider without going through syncUser)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const newToken = (e as CustomEvent<string>).detail;
+      if (newToken) setToken(newToken);
+    };
+    window.addEventListener('kb:token-refreshed', handler);
+    return () => window.removeEventListener('kb:token-refreshed', handler);
+  }, []);
 
   // Periodic sync while logged in — only when tab is visible
   useEffect(() => {
@@ -111,7 +180,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!document.hidden) syncUser(token);
     }, SYNC_INTERVAL_MS);
 
-    // Sync immediately when tab becomes visible again (catches long idle periods)
     const handleVisibility = () => {
       if (!document.hidden) syncUser(token);
     };
@@ -134,11 +202,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-  }, []);
+    clearSession(false);
+  }, [clearSession]);
 
   const updateUser = useCallback((updates: Partial<User>) => {
     setUser((prev) => {

@@ -33,7 +33,13 @@ interface ExpiryItem {
   type: 'expiry';
 }
 
-type DayItem = RepubItem | ExpiryItem;
+interface OverdueItem {
+  ad: AdListItem;
+  type: 'overdue';
+  overdueDate: Date;
+}
+
+type DayItem = RepubItem | ExpiryItem | OverdueItem;
 
 interface DayBucket {
   date: Date;
@@ -71,11 +77,20 @@ export const ScheduleCalendar = memo(function ScheduleCalendar({ ads }: Schedule
 
     const windowEnd = new Date(today.getTime() + 7 * DAY_MS);
 
-    // Assign ALL republication dates within the 7-day window
+    // Assign overdue ads (next repub was before today) to today's slot
+    for (const ad of ads) {
+      if (ad.active === false || !ad.republication_interval) continue;
+      const next = getNextRepubDate(ad);
+      if (!next || next.getTime() >= today.getTime()) continue;
+      buckets[0].items.push({ ad, type: 'overdue', overdueDate: next });
+    }
+
+    // Assign ALL republication dates within the 7-day window (skip overdue ads)
     for (const ad of ads) {
       if (ad.active === false || !ad.republication_interval) continue;
       const first = getNextRepubDate(ad);
       if (!first) continue;
+      if (first.getTime() < today.getTime()) continue;
       const intervalMs = ad.republication_interval * DAY_MS;
       let repub = first;
       while (repub <= windowEnd) {
@@ -131,19 +146,31 @@ export const ScheduleCalendar = memo(function ScheduleCalendar({ ads }: Schedule
               {day.items.map((item) => {
                 const { ad, type } = item;
                 const priceChange = type === 'repub' ? item.priceChange : null;
+                const overdueDate = type === 'overdue' ? item.overdueDate : null;
+                const chipClass =
+                  type === 'expiry' ? styles.chipExpiry :
+                  type === 'overdue' ? styles.chipOverdue :
+                  styles.chipRepub;
+                const overdueLabel = overdueDate
+                  ? ` (seit ${overdueDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })})`
+                  : '';
                 return (
                   <Link
                     key={`${type}-${ad.file}`}
                     href={`/ads/edit?file=${encodeURIComponent(ad.file)}`}
-                    className={`${styles.chip} ${type === 'expiry' ? styles.chipExpiry : styles.chipRepub}`}
+                    className={`${styles.chip} ${chipClass}`}
                     title={
                       type === 'expiry'
                         ? `Ablauf: ${ad.title || ''}`
+                        : type === 'overdue'
+                        ? `Ausstehend seit ${overdueDate?.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} Uhr: ${ad.title || ''}`
                         : `Republizierung: ${ad.title || ''}${priceChange ? ` (${priceChange})` : ''}`
                     }
                   >
                     {type === 'expiry'
                       ? `Abl: ${ad.title || 'Unbenannt'}`
+                      : type === 'overdue'
+                      ? `⚠ Rep: ${ad.title || 'Unbenannt'}${overdueLabel}`
                       : <>Rep: {ad.title || 'Unbenannt'}{priceChange && <span className={styles.chipPrice}> ({priceChange})</span>}</>
                     }
                   </Link>

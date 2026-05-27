@@ -53,7 +53,8 @@ export function SaveAsTemplateModal({ open, onClose, adFile, adTitle }: SaveAsTe
     setAdData(null);
 
     setLoading(true);
-    api.get<Ad>(`/api/ads/by-file/${adFile}`)
+    const encFile = adFile.split('/').map(encodeURIComponent).join('/');
+    api.get<Ad>(`/api/ads/by-file/${encFile}`)
       .then((data) => {
         // Strip bot-managed fields
         const cleaned: Record<string, unknown> = {};

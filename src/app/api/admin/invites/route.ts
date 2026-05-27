@@ -24,13 +24,18 @@ export async function GET(request: NextRequest) {
       await saveUsers(data);
     }
 
+    const users = data.users ?? [];
+
     return NextResponse.json({
-      invites: active.map((i) => ({
-        token_hash: i.token_hash,
-        created_by: i.created_by ?? '',
-        created_at: i.created_at ?? '',
-        expires_at: i.expires_at ?? '',
-      })),
+      invites: active.map((i) => {
+        const creator = users.find((u) => u.id === i.created_by);
+        return {
+          token_hash: i.token_hash,
+          created_by: creator?.display_name ?? creator?.email ?? i.created_by ?? '',
+          created_at: i.created_at ?? '',
+          expires_at: i.expires_at ?? '',
+        };
+      }),
       total: active.length,
     });
   } catch (error) {

@@ -6,7 +6,6 @@ import yaml from 'js-yaml';
 import { jobs, jobPids } from '@/lib/bot/jobs';
 import { readMergedConfig } from '@/lib/yaml/config';
 import { extractCDPPort, injectExtensionScripts } from '@/lib/bot/cdp-scripts';
-import { prepareCleanBrowserState } from '@/lib/bot/browser-cleanup';
 import { hookCookiesAfterLogin } from '@/lib/stats/cookie-hook';
 import { fetchAdStats } from '@/lib/stats/stats-fetcher';
 import { syncOnlineIdsFromApi } from '@/lib/bot/hooks';
@@ -29,6 +28,7 @@ export function detectJobStatus(
   exitCode: number,
 ): 'completed' | 'completed_with_errors' | 'failed' {
   const resultLines = output.split('\n')
+    .map(l => l.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} /, ''))
     .filter(l => /^\[(INFO|WARNUNG)\]/.test(l.trimStart()))
     .join('\n');
   const hasSuccesses = /ERFOLG|erfolgreich|successfully/i.test(resultLines);
@@ -64,9 +64,6 @@ export async function runBotCommand(
     configPath = path.join(workspace, 'config.yaml');
   }
 
-  // Kill orphaned chromium + clean stale profile files for this workspace
-  prepareCleanBrowserState(workspace);
-
   const logfileFlag = `--logfile=${path.join(BOT_DIR, 'kleinanzeigen-bot.log')}`;
   const langFlag = '--lang=de';
   const cmdArgs = command.split(/\s+/).filter(Boolean);
@@ -92,26 +89,45 @@ export async function runBotCommand(
 
     let totalSize = 0;
     let truncated = false;
+    let pendingLine = ''; // buffer for partial lines between chunks
+
+    // Match Python logging format: YYYY-MM-DD HH:MM:SS,mmm (local time, comma separator)
+    const formatTs = (): string => {
+      const d = new Date();
+      const p2 = (n: number) => String(n).padStart(2, '0');
+      const p3 = (n: number) => String(n).padStart(3, '0');
+      return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())},${p3(d.getMilliseconds())}`;
+    };
 
     function processData(data: Buffer): void {
       const text = data.toString('utf-8');
-      totalSize += text.length;
 
       if (!truncated) {
-        lines.push(text);
+        // Split into complete lines; last entry is an incomplete line (no trailing \n yet)
+        const combined = pendingLine + text;
+        const parts = combined.split('\n');
+        pendingLine = parts.pop() ?? '';
+
+        // Prepend timestamp to each complete non-empty line; preserve blank lines as-is
+        const stamped = parts.map(line => line ? `${formatTs()} ${line}` : '').join('\n')
+          + (parts.length > 0 ? '\n' : '');
+
+        totalSize += stamped.length;
+        if (stamped) lines.push(stamped);
+
         if (totalSize > MAX_JOB_OUTPUT_SIZE) {
           truncated = true;
           lines.push('\n--- Output truncated (exceeded 5 MB limit) ---\n');
         }
       }
 
-      // Detect Chrome CDP port and wire up post-login hooks
+      // Detect Chrome CDP port and wire up post-login hooks (on raw text, before timestamp injection)
       const cdpPort = extractCDPPort(text);
       if (cdpPort && job) { job.cdp_port = cdpPort; }
       if (cdpPort) {
         const appendLine = (msg: string) => {
           if (!truncated) {
-            lines.push(msg);
+            lines.push(`${formatTs()} ${msg}`);
             if (job) job.output = lines.join('');
           }
         };
@@ -148,6 +164,12 @@ export async function runBotCommand(
     proc.stderr?.on('data', processData);
 
     proc.on('close', (code) => {
+      // Flush any incomplete line that had no trailing newline
+      if (pendingLine && !truncated) {
+        lines.push(`${formatTs()} ${pendingLine}\n`);
+        pendingLine = '';
+      }
+
       const pid = jobPids.get(jobId);
       jobPids.delete(jobId);
       jobStdins.delete(jobId);
@@ -161,10 +183,11 @@ export async function runBotCommand(
 
       resolve();
 
-      // Kill Chrome process group. Scraping now runs via HTTP and doesn't need Chrome.
+      // Kill Chrome process group immediately (SIGKILL: no delay, no ignore).
+      // SIGTERM is too slow — Chromium can linger, recreate SingletonLock, and block retries.
       // MFA keeps Chrome alive deliberately — killOrphanedChromium() handles that path.
       if (pid && !job?.mfa_required) {
-        try { process.kill(-pid, 'SIGTERM'); } catch { /* already gone */ }
+        try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone */ }
       }
     });
 

@@ -77,7 +77,10 @@ export default function NewAdPage() {
         const formData = new FormData();
         formData.append('files', file);
         try {
-          await api.upload(url, formData);
+          const res = await api.upload<{ rejected?: { name: string; reason: string }[] }>(url, formData);
+          for (const r of res.rejected ?? []) {
+            toast('error', `${r.name}: ${r.reason}`);
+          }
         } catch (err) {
           toast('error', `Bild „${file.name}" konnte nicht hochgeladen werden: ${(err as Error).message}`);
         }

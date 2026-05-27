@@ -92,7 +92,7 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
         fetch('/api/ads/attribute-suggest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, categoryId, attrs: data.attrs }),
+          body: JSON.stringify({ title, categoryId, categoryPath: data.id, attrs: data.attrs }),
         }),
       ]);
 

@@ -5,6 +5,7 @@ import { useForm, FormProvider, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { adCreateSchema, type AdCreateInput } from '@/validation/schemas';
 import { Button, Toggle, useToast } from '@/components/ui';
+import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import { InfoTip } from './InfoTip';
 import { DetailsSection } from './DetailsSection';
 import { LocationSection } from './LocationSection';
@@ -182,11 +183,12 @@ export function AdForm({
     e.preventDefault();
     dragCounter.current = 0;
     setDragOver(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
-    if (files.length > 0 && dropHandlerRef.current) {
-      dropHandlerRef.current(files);
+    const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
+    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+    if (accepted.length > 0 && dropHandlerRef.current) {
+      dropHandlerRef.current(accepted);
     }
-  }, []);
+  }, [toast]);
 
   const onFormError = useCallback((errors: FieldErrors<AdCreateInput>) => {
     const fieldNames: Record<string, string> = {

@@ -80,14 +80,21 @@ export function isMultiUser(): boolean {
 
 /**
  * Get workspace path for a given user ID.
- * Single user (owner only): BOT_DIR root
- * Multi user: BOT_DIR/users/<userId>
+ * - Multi-user: always BOT_DIR/users/<userId>
+ * - Single-user, no users/<userId>/ dir: BOT_DIR root (fresh install)
+ * - Single-user, users/<userId>/ exists: BOT_DIR/users/<userId>
+ *   (owner was previously migrated to multi-user layout; stay there even if
+ *   all non-owner users were later deleted — prevents data mismatch on revert)
  */
 export function getUserWorkspace(userId: string): string {
-  if (isSingleUser()) {
-    return BOT_DIR;
+  if (!isSingleUser()) {
+    return path.join(BOT_DIR, 'users', userId);
   }
-  return path.join(BOT_DIR, 'users', userId);
+  const userPath = path.join(BOT_DIR, 'users', userId);
+  if (fs.existsSync(userPath)) {
+    return userPath;
+  }
+  return BOT_DIR;
 }
 
 /**
@@ -162,6 +169,28 @@ export function migrateOwnerToMultiUser(ownerId: string): void {
       }
     }
     fs.rmSync(rootDownloaded, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Atomically create users.yaml if it does not yet exist.
+ * Uses the O_EXCL flag so concurrent calls cannot both succeed.
+ * Returns true if the file was written, false if it already existed.
+ */
+export function initUsersFile(data: UsersData): boolean {
+  const content = yaml.dump(data, {
+    flowLevel: -1,
+    sortKeys: false,
+    noCompatMode: true,
+  });
+  try {
+    fs.writeFileSync(USERS_FILE, content, { encoding: 'utf-8', flag: 'wx' });
+    usersCache = data;
+    usersCacheMtime = fs.statSync(USERS_FILE).mtimeMs;
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw err;
   }
 }
 

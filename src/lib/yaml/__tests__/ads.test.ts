@@ -146,6 +146,37 @@ describe('findAdByFile', () => {
     const result = findAdByFile('ads/ad_missing.yaml', tmpDir);
     expect(result).toBeNull();
   });
+
+  it('falls back to archive/downloads when file was archived from downloaded-ads', () => {
+    const archivedDir = path.join(tmpDir, 'archive', 'downloads', 'ad_X');
+    fs.mkdirSync(archivedDir, { recursive: true });
+    fs.writeFileSync(path.join(archivedDir, 'ad_X.yaml'), 'title: Archived\n');
+
+    const result = findAdByFile('downloaded-ads/ad_X/ad_X.yaml', tmpDir);
+    expect(result).not.toBeNull();
+    expect(result!.ad.title).toBe('Archived');
+    expect(result!.path).toBe(path.join(archivedDir, 'ad_X.yaml'));
+  });
+
+  it('falls back to archive/ads when draft was archived from ads', () => {
+    const archivedDir = path.join(tmpDir, 'archive', 'ads', 'ad_Y');
+    fs.mkdirSync(archivedDir, { recursive: true });
+    fs.writeFileSync(path.join(archivedDir, 'ad_Y.yaml'), 'title: ArchivedDraft\n');
+
+    const result = findAdByFile('ads/ad_Y/ad_Y.yaml', tmpDir);
+    expect(result).not.toBeNull();
+    expect(result!.ad.title).toBe('ArchivedDraft');
+  });
+
+  it('falls back to downloaded-ads when ad was unarchived', () => {
+    const liveDir = path.join(tmpDir, 'downloaded-ads', 'ad_Z');
+    fs.mkdirSync(liveDir, { recursive: true });
+    fs.writeFileSync(path.join(liveDir, 'ad_Z.yaml'), 'title: Live\n');
+
+    const result = findAdByFile('archive/downloads/ad_Z/ad_Z.yaml', tmpDir);
+    expect(result).not.toBeNull();
+    expect(result!.ad.title).toBe('Live');
+  });
 });
 
 describe('applyAdUpdates', () => {

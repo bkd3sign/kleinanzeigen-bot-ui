@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { validatePathWithin } from '@/lib/security/validation';
+import { toNFC } from '@/lib/images/normalize';
+import { resolveExistingPath } from '@/lib/fs/resolve-path';
 
 const AD_FILE_EXTENSIONS = new Set(['.yaml', '.yml', '.json']);
 
@@ -96,39 +98,37 @@ export function findAdById(
   return null;
 }
 
-/**
- * Find an ad file by its filename (e.g. 'ads/ad_example.yaml' or 'ad_example.yaml').
- * Validates that the resolved path stays within the workspace.
- */
 export function findAdByFile(
   filename: string,
   workspace: string,
 ): { path: string; ad: Record<string, unknown> } | null {
-  // Normalize unicode (macOS uses NFD, browsers use NFC)
-  const normalizedFilename = filename.normalize('NFD');
+  const nfc = toNFC(filename);
+  const folderName = path.basename(path.dirname(nfc));
+  const fileBaseName = path.basename(nfc);
 
-  for (const fn of [normalizedFilename, filename]) {
-    // Try exact path first
-    const exactPath = path.join(workspace, fn);
-    try {
-      validatePathWithin(exactPath, workspace);
-    } catch {
-      continue;
-    }
-    if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
-      return { path: exactPath, ad: readAd(exactPath) };
-    }
+  // Build all plausible relative paths.
+  const relativePaths: string[] = [nfc, path.join('ads', nfc)];
+  if (folderName && folderName !== '.' && folderName !== nfc) {
+    // File may have been moved by archive/unarchive — try standard locations.
+    relativePaths.push(
+      path.join('downloaded-ads', folderName, fileBaseName),
+      path.join('ads', folderName, fileBaseName),
+      path.join('archive', 'downloads', folderName, fileBaseName),
+      path.join('archive', 'ads', folderName, fileBaseName),
+    );
+  }
 
-    // Try just filename in ads/
-    const adsPath = path.join(workspace, 'ads', fn);
+  // Try each path — resolveExistingPath checks both NFC and NFD on disk
+  // (Linux ext4 matches byte-exact, so files written in NFD need NFD lookup).
+  for (const relPath of relativePaths) {
+    const candidate = path.join(workspace, relPath);
     try {
-      validatePathWithin(adsPath, workspace);
-    } catch {
-      continue;
-    }
-    if (fs.existsSync(adsPath) && fs.statSync(adsPath).isFile()) {
-      return { path: adsPath, ad: readAd(adsPath) };
-    }
+      validatePathWithin(candidate, workspace);
+      const resolved = resolveExistingPath(candidate);
+      if (resolved && fs.statSync(resolved).isFile()) {
+        return { path: resolved, ad: readAd(resolved) };
+      }
+    } catch { /* path traversal */ }
   }
 
   return null;

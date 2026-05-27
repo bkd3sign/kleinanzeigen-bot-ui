@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdByFile, writeAd } from '@/lib/yaml/ads';
 import { isValidImage, ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_SIZE } from '@/lib/images/upload';
+import { sanitizeUploadFilename, toNFC } from '@/lib/images/normalize';
 import path from 'path';
 import fs from 'fs';
 
@@ -34,16 +35,22 @@ export async function POST(request: NextRequest) {
     }
 
     const uploaded: string[] = [];
+    const rejected: { name: string; reason: string }[] = [];
 
     for (const upload of files) {
       if (!(upload instanceof File)) continue;
 
       const ext = path.extname(upload.name).toLowerCase();
-      if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) continue;
+      if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+        rejected.push({ name: upload.name, reason: `Format ${ext} wird nicht unterstützt. Erlaubt: ${[...ALLOWED_IMAGE_EXTENSIONS].join(', ')}` });
+        continue;
+      }
 
-      // Sanitize filename: keep only safe characters
-      const safeName = upload.name.replace(/[^a-zA-Z0-9._-]/g, '');
-      if (!safeName) continue;
+      const safeName = sanitizeUploadFilename(upload.name);
+      if (!safeName) {
+        rejected.push({ name: upload.name, reason: 'Dateiname enthält keine gültigen Zeichen' });
+        continue;
+      }
 
       const content = Buffer.from(await upload.arrayBuffer());
 
@@ -57,10 +64,8 @@ export async function POST(request: NextRequest) {
 
       // Validate image magic bytes
       if (!isValidImage(content)) {
-        return NextResponse.json(
-          { detail: `File '${upload.name}' is not a valid image` },
-          { status: 400 },
-        );
+        rejected.push({ name: upload.name, reason: 'Datei ist kein gültiges Bild (ungültige Bilddaten)' });
+        continue;
       }
 
       const dest = path.join(adDir, safeName);
@@ -68,17 +73,18 @@ export async function POST(request: NextRequest) {
       uploaded.push(safeName);
     }
 
-    // Add filenames to ad images list if not already present
+    // Add uploaded filenames to ad images list if not already present.
+    // NFC compare guards against NFD entries from macOS-written YAML.
     const images = (ad.images as string[]) ?? [];
     for (const name of uploaded) {
-      if (!images.includes(name)) {
+      if (!images.some(img => toNFC(img) === toNFC(name))) {
         images.push(name);
       }
     }
     ad.images = images;
     writeAd(result.path, ad);
 
-    return NextResponse.json({ uploaded, images });
+    return NextResponse.json({ uploaded, rejected, images });
   } catch (error) {
     return handleApiError(error);
   }

@@ -2,13 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_SIZE, isValidImage } from '../upload';
 
 describe('ALLOWED_IMAGE_EXTENSIONS', () => {
-  it('contains expected extensions', () => {
+  it('contains exactly the formats the bot accepts', () => {
     expect(ALLOWED_IMAGE_EXTENSIONS.has('.jpg')).toBe(true);
     expect(ALLOWED_IMAGE_EXTENSIONS.has('.jpeg')).toBe(true);
     expect(ALLOWED_IMAGE_EXTENSIONS.has('.png')).toBe(true);
     expect(ALLOWED_IMAGE_EXTENSIONS.has('.gif')).toBe(true);
-    expect(ALLOWED_IMAGE_EXTENSIONS.has('.webp')).toBe(true);
-    expect(ALLOWED_IMAGE_EXTENSIONS.has('.bmp')).toBe(true);
+  });
+
+  it('does not contain formats the bot rejects', () => {
+    expect(ALLOWED_IMAGE_EXTENSIONS.has('.webp')).toBe(false);
+    expect(ALLOWED_IMAGE_EXTENSIONS.has('.bmp')).toBe(false);
   });
 
   it('does not contain dangerous extensions', () => {
@@ -30,9 +33,9 @@ describe('isValidImage', () => {
     expect(isValidImage(Buffer.alloc(0))).toBe(false);
   });
 
-  it('rejects too-small buffer (less than 12 bytes)', () => {
+  it('rejects too-small buffer (less than 8 bytes)', () => {
     expect(isValidImage(Buffer.alloc(5))).toBe(false);
-    expect(isValidImage(Buffer.alloc(11))).toBe(false);
+    expect(isValidImage(Buffer.alloc(7))).toBe(false);
   });
 
   it('rejects random data', () => {
@@ -41,7 +44,6 @@ describe('isValidImage', () => {
   });
 
   it('accepts valid JPEG magic bytes', () => {
-    // JPEG: FF D8 FF + padding to 12 bytes
     const jpegBuffer = Buffer.alloc(100);
     jpegBuffer[0] = 0xff;
     jpegBuffer[1] = 0xd8;
@@ -50,7 +52,6 @@ describe('isValidImage', () => {
   });
 
   it('accepts valid PNG magic bytes', () => {
-    // PNG: 89 50 4E 47 0D 0A 1A 0A + padding
     const pngBuffer = Buffer.alloc(100);
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(pngBuffer);
     expect(isValidImage(pngBuffer)).toBe(true);
@@ -68,18 +69,17 @@ describe('isValidImage', () => {
     expect(isValidImage(gifBuffer)).toBe(true);
   });
 
-  it('accepts valid BMP magic bytes', () => {
-    const bmpBuffer = Buffer.alloc(100);
-    Buffer.from('BM', 'ascii').copy(bmpBuffer);
-    expect(isValidImage(bmpBuffer)).toBe(true);
-  });
-
-  it('accepts valid WebP magic bytes', () => {
-    // WebP: RIFF....WEBP
+  it('rejects WebP (not supported by bot)', () => {
     const webpBuffer = Buffer.alloc(100);
     Buffer.from('RIFF', 'ascii').copy(webpBuffer, 0);
     Buffer.from('WEBP', 'ascii').copy(webpBuffer, 8);
-    expect(isValidImage(webpBuffer)).toBe(true);
+    expect(isValidImage(webpBuffer)).toBe(false);
+  });
+
+  it('rejects BMP (not supported by bot)', () => {
+    const bmpBuffer = Buffer.alloc(100);
+    Buffer.from('BM', 'ascii').copy(bmpBuffer);
+    expect(isValidImage(bmpBuffer)).toBe(false);
   });
 
   it('rejects text content disguised as image', () => {

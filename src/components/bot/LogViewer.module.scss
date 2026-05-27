@@ -77,6 +77,12 @@
   word-break: break-word;
   overflow-wrap: anywhere;
   color: #fafafa;
+
+  // Terminal always has a dark background — force readable selection regardless of OS theme
+  ::selection {
+    background: rgba(99, 102, 241, .5);
+    color: #fff;
+  }
 }
 
 .line {
@@ -107,6 +113,66 @@
 
 .error {
   color: var(--text-danger);
+}
+
+/* Close button in fullscreen toolbar */
+.toggleBtnClose {
+  border-color: var(--color-danger, #ef4444);
+  color: var(--text-danger);
+
+  &:hover {
+    background-color: rgba(239, 68, 68, .1);
+    border-color: var(--color-danger, #ef4444);
+    color: var(--text-danger);
+  }
+}
+
+/* Fullscreen overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, .85);
+  display: flex;
+  flex-direction: column;
+  animation: overlayIn var(--transition-fast) ease;
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.overlayInner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.toolbarFullscreen {
+  border-bottom: 1px solid var(--border-color);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated, var(--bg-card));
+}
+
+.overlayBody {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+
+.overlayEsc {
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-color);
+  opacity: .6;
 }
 
 @media (max-width: 767px) {

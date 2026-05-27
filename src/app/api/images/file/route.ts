@@ -2,9 +2,12 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { loadUsers, ensureJwtSecret, getUserWorkspace } from '@/lib/yaml/users';
 import { decodeJwt } from '@/lib/auth/jwt';
+import { ACCESS_COOKIE } from '@/lib/auth/cookies';
 import { validatePathWithin } from '@/lib/security/validation';
 import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/images/upload';
-import { readFile, stat, existsSync } from 'fs';
+import { toNFC } from '@/lib/images/normalize';
+import { resolveExistingPath } from '@/lib/fs/resolve-path';
+import { readFile, stat } from 'fs';
 import { promisify } from 'util';
 import path from 'path';
 
@@ -16,8 +19,6 @@ const MIME_MAP: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.bmp': 'image/bmp',
 };
 
 export async function GET(request: NextRequest) {
@@ -25,19 +26,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const file = searchParams.get('file');
     const name = searchParams.get('name');
-    let jwtToken = searchParams.get('token');
 
     if (!file || !name) {
       return NextResponse.json({ detail: 'file and name parameters required' }, { status: 400 });
     }
 
-    // Authenticate via query param token or Authorization header
-    if (!jwtToken) {
-      const auth = request.headers.get('authorization');
-      if (auth?.startsWith('Bearer ')) {
-        jwtToken = auth.slice(7);
-      }
-    }
+    // Authenticate via httpOnly access cookie (sent automatically by browser with <img> requests)
+    // or Authorization header (for direct API clients)
+    const jwtToken =
+      request.cookies.get(ACCESS_COOKIE)?.value ??
+      request.headers.get('authorization')?.slice(7) ??
+      null;
+
     if (!jwtToken) {
       return NextResponse.json({ detail: 'Authentication required' }, { status: 401 });
     }
@@ -54,27 +54,33 @@ export async function GET(request: NextRequest) {
     const ws = getUserWorkspace(userId);
 
     // Derive adDir from the relative file path — no YAML parse needed
-    const normalizedFile = file.normalize('NFD');
+    const normalizedFile = toNFC(file);
+    const nfcName = toNFC(name);
     const adDir = path.join(ws, path.dirname(normalizedFile));
     validatePathWithin(adDir, ws);
 
-    const imagePath = path.join(adDir, name);
+    const imagePath = path.join(adDir, nfcName);
     validatePathWithin(imagePath, adDir);
 
-    const ext = path.extname(name).toLowerCase();
-    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext) || !existsSync(imagePath)) {
-      return NextResponse.json({ detail: `Image ${name} not found` }, { status: 404 });
+    const ext = path.extname(nfcName).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+      return NextResponse.json({ detail: `Image ${nfcName} not found` }, { status: 404 });
+    }
+
+    const resolvedPath = resolveExistingPath(imagePath);
+    if (!resolvedPath) {
+      return NextResponse.json({ detail: `Image ${nfcName} not found` }, { status: 404 });
     }
 
     // ETag from mtime+size — enables 304 on repeat visits
-    const fileStat = await statAsync(imagePath);
+    const fileStat = await statAsync(resolvedPath);
     const etag = `"${fileStat.mtimeMs.toString(36)}-${fileStat.size.toString(36)}"`;
 
     if (request.headers.get('if-none-match') === etag) {
       return new Response(null, { status: 304 });
     }
 
-    const content = await readFileAsync(imagePath);
+    const content = await readFileAsync(resolvedPath);
     const contentType = MIME_MAP[ext] ?? 'application/octet-stream';
 
     return new Response(content, {

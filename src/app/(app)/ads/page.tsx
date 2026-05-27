@@ -12,7 +12,8 @@ import { AdListToolbar } from '@/components/ads/AdListToolbar';
 import type { StatusCounts } from '@/components/ads/AdListToolbar';
 import { AdBulkActions } from '@/components/ads/AdBulkActions';
 import { QuickAiCreate, type QuickAiCreateHandle } from '@/components/ads/QuickAiCreate';
-import { Confetti, Spinner } from '@/components/ui';
+import { Confetti, Spinner, useToast } from '@/components/ui';
+import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import { api } from '@/lib/api/client';
 import type { AdListItem } from '@/types/ad';
 import type { Job } from '@/types/bot';
@@ -39,7 +40,7 @@ function filterByParams(ads: AdListItem[], status: string | null, category: stri
   } else if (status === 'online') {
     result = result.filter((a) => isOnlineOnKA(a, statsData));
   } else if (status === 'draft') {
-    result = result.filter((a) => !a.id);
+    result = result.filter((a) => !a.id && !a.is_archived);
   } else if (status === 'expiring') {
     result = result.filter((a) => isExpiringSoon(a));
   } else if (status === 'expired') {
@@ -66,6 +67,7 @@ export default function AdsPage() {
   const { data, isLoading } = useAds();
   const { data: statsData } = useAdStats();
   const { isAiAvailable } = useAiAvailable();
+  const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const statusFilter = searchParams.get('status');
@@ -120,7 +122,7 @@ export default function AdsPage() {
     active: allAds.filter((a) => a.active !== false).length,
     all: allAds.length,
     online: allAds.filter((a) => isOnlineOnKA(a, statsData)).length,
-    draft: allAds.filter((a) => !a.id).length,
+    draft: allAds.filter((a) => !a.id && !a.is_archived).length,
     reserved: allAds.filter((a) => isReserved(a, a.id ? statsData?.ads[String(a.id)] : undefined)).length,
     inactive: allAds.filter((a) => a.active === false).length,
     expired: allAds.filter((a) => isExpired(a)).length,
@@ -149,8 +151,15 @@ export default function AdsPage() {
       const cmp = compareFn(a, b, tableSortKey);
       return tableSortDir === 'asc' ? cmp : -cmp;
     });
+    // In select mode, keep selected ads visible even if they'd be filtered out —
+    // so their row highlight doesn't silently disappear after a status change.
+    if (selectMode && selectedFiles.size > 0) {
+      const visibleFiles = new Set(copy.map((a) => a.file));
+      const pinned = allAds.filter((a) => selectedFiles.has(a.file) && !visibleFiles.has(a.file));
+      if (pinned.length > 0) return [...copy, ...pinned];
+    }
     return copy;
-  }, [statusFilteredAds, search, tableSortKey, tableSortDir, compareFn]);
+  }, [statusFilteredAds, search, tableSortKey, tableSortDir, compareFn, selectMode, selectedFiles, allAds]);
 
   const handleSelect = useCallback((file: string) => {
     setSelectedFiles((prev) => {
@@ -202,12 +211,13 @@ export default function AdsPage() {
     // Skip addFiles when drop landed inside QuickAiCreate — it handles files itself
     const insideQuickAi = !!(e.target as HTMLElement).closest('[data-quickai]');
     if (!insideQuickAi) {
-      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
-      if (files.length > 0 && quickAiRef.current) {
-        quickAiRef.current.addFiles(files);
+      const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
+      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+      if (accepted.length > 0 && quickAiRef.current) {
+        quickAiRef.current.addFiles(accepted);
       }
     }
-  }, []);
+  }, [toast]);
 
   const handleDownloadAll = useCallback(async () => {
     setDownloading(true);
@@ -232,7 +242,7 @@ export default function AdsPage() {
     <>
     {showConfetti && <Confetti />}
     <div
-      className="animStagger"
+      className={`animStagger${selectMode && selectedFiles.size > 0 ? ` ${styles.hasBulkBar}` : ''}`}
       onDragEnter={handleGlobalDragEnter}
       onDragLeave={handleGlobalDragLeave}
       onDragOver={handleGlobalDragOver}

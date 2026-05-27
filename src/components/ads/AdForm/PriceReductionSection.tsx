@@ -219,6 +219,7 @@ function PricePreview({
       has_description: true,
       is_changed: false,
       is_orphaned: false,
+      is_archived: false,
       price,
       republication_interval: republicationInterval,
       repost_count: botInfo?.repost_count ?? 0,

@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => (a.started_at > b.started_at ? 1 : -1));
     for (const job of recentJobs) {
       if (job.output) {
-        const prefix = `[job:${job.command}] `;
+        const user = path.basename(job.workspace);
+        const prefix = `[job:${user}:${job.command}] `;
         for (const line of job.output.split('\n')) {
           if (line.trim()) allLines.push(`${prefix}${line}`);
         }

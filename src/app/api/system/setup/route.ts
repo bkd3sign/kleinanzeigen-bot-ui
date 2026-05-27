@@ -2,11 +2,11 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { setupSchema } from '@/validation/schemas';
 import { hashPassword } from '@/lib/auth/password';
-import { createJwt } from '@/lib/auth/jwt';
+import { createJwt, createRefreshToken } from '@/lib/auth/jwt';
+import { REFRESH_COOKIE, REFRESH_COOKIE_OPTIONS, ACCESS_COOKIE, ACCESS_COOKIE_OPTIONS } from '@/lib/auth/cookies';
 import {
   loadUsers,
-  saveUsers,
-  isMultiUser,
+  initUsersFile,
   generateUserId,
   createUserWorkspace,
 } from '@/lib/yaml/users';
@@ -22,15 +22,13 @@ export async function POST(request: NextRequest) {
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] ?? 'unknown';
     setupLimiter.check(clientIp);
 
-    // Check if setup is already completed
-    if (isMultiUser()) {
-      const usersData = loadUsers();
-      if (usersData && usersData.users.length > 0) {
-        return NextResponse.json(
-          { detail: 'Setup already completed. Users already exist.' },
-          { status: 409 },
-        );
-      }
+    // Block re-setup if ANY users exist — isMultiUser() would miss single-user mode
+    const existingData = loadUsers();
+    if (existingData && existingData.users.length > 0) {
+      return NextResponse.json(
+        { detail: 'Setup already completed. Users already exist.' },
+        { status: 409 },
+      );
     }
 
     const body = await request.json().catch(() => ({}));
@@ -64,7 +62,12 @@ export async function POST(request: NextRequest) {
       users: [newUser],
       invites: [],
     };
-    saveUsers(usersData);
+    if (!initUsersFile(usersData)) {
+      return NextResponse.json(
+        { detail: 'Setup already completed. Users already exist.' },
+        { status: 409 },
+      );
+    }
 
     // Ensure root server config exists with browser/ai/publishing settings before
     // writing user config — in single-user mode ws === BOT_DIR, so we must write
@@ -95,8 +98,8 @@ export async function POST(request: NextRequest) {
     ensureExtensionsDir();
 
     const token = createJwt(newUser, secret);
-
-    return NextResponse.json({
+    const refreshToken = createRefreshToken(newUser, secret, false);
+    const response = NextResponse.json({
       status: 'ok',
       token,
       user: {
@@ -106,6 +109,9 @@ export async function POST(request: NextRequest) {
         display_name: newUser.display_name,
       },
     });
+    response.cookies.set(REFRESH_COOKIE, refreshToken, REFRESH_COOKIE_OPTIONS);
+    response.cookies.set(ACCESS_COOKIE, token, ACCESS_COOKIE_OPTIONS);
+    return response;
   } catch (error) {
     return handleApiError(error);
   }

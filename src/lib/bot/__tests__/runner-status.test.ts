@@ -80,4 +80,21 @@ describe('detectJobStatus', () => {
   it('returns failed for empty output with non-zero exit', () => {
     expect(detectJobStatus('', 1)).toBe('failed');
   });
+
+  it('correctly parses output with timestamp prefix per line', () => {
+    const output = [
+      '2026-05-27 06:37:30,123 [INFO] Suche nach Anzeigendateien...',
+      '2026-05-27 06:37:30,456 [INFO] 5 Anzeigen geladen',
+      '2026-05-27 06:37:31,001 [INFO] FERTIG: Keine Konfigurationsfehler gefunden.',
+    ].join('\n');
+    expect(detectJobStatus(output, 0)).toBe('completed');
+  });
+
+  it('detects failures in timestamped output', () => {
+    const output = [
+      '2026-05-27 06:37:30,123 [INFO] Anzeige 1 erfolgreich veröffentlicht',
+      '2026-05-27 06:37:31,456 [INFO] Anzeige 2 fehlgeschlagen',
+    ].join('\n');
+    expect(detectJobStatus(output, 0)).toBe('completed_with_errors');
+  });
 });

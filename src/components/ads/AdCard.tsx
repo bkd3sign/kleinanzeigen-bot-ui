@@ -10,7 +10,8 @@ import { Badge, DropdownMenu, useToast, showConfirm } from '@/components/ui';
 import { useCategoryName } from '@/hooks/useCategories';
 import type { AdListItem } from '@/types/ad';
 import { isExpired, isExpiringSoon, getExpiryDaysLeft, getExpiryDate, isReserved } from '@/lib/ads/status';
-import { getCurrentPrice } from '@/lib/ads/pricing';
+import { getCurrentPrice, getAprError } from '@/lib/ads/pricing';
+import { detectSizeGroup } from '@/lib/shipping';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import styles from './AdCard.module.scss';
 
@@ -105,13 +106,12 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
       .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Duplizieren'));
   }, [encFile, refreshAds, toast]);
 
-  const isDraft = !ad.id;
+  const isDraft = !ad.id && !ad.is_archived;
   const expiring = isExpiringSoon(ad);
   const expired = isExpired(ad);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const imageUrl = ad.first_image && ad.file && token
-    ? `/api/images/file?file=${encodeURIComponent(ad.file)}&name=${encodeURIComponent(ad.first_image)}&token=${encodeURIComponent(token)}`
+  const imageUrl = ad.first_image && ad.file
+    ? `/api/images/file?file=${encodeURIComponent(ad.file)}&name=${encodeURIComponent(ad.first_image)}`
     : null;
 
   const handleClick = useCallback(() => {
@@ -156,7 +156,7 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
     : expired ? 'danger'
     : expiring ? 'warning'
     : ad.is_orphaned ? 'warning'
-    : ad.is_changed ? 'warning'
+    : ad.is_changed ? 'info'
     : 'success' as const;
   const statusText = isDraft ? 'Entwurf'
     : isReserved(ad, adStats) ? 'Reserviert'
@@ -254,9 +254,19 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
         {/* Status badge (top-left) */}
         <div className={styles.cardStatusWrap}>
           <Badge variant={statusVariant}>{statusText}</Badge>
-          {ad.auto_price_reduction?.enabled && (
-            <Badge variant="warning">↓{ad.auto_price_reduction.min_price ?? '?'}€</Badge>
-          )}
+          {ad.auto_price_reduction?.enabled && (() => {
+            const aprErr = ad.price != null ? getAprError(ad.price, ad.auto_price_reduction!) : null;
+            const aprTitle = aprErr?.type === 'ineffective'
+              ? `Preisreduktion wirkungslos — die Reduktion ergibt nach Rundung auf ganze Euro keine Preisänderung`
+              : aprErr?.type === 'stuck'
+              ? `Preis steckt fest — ab ~${aprErr.stuckAt} € rundet die Reduktion auf 0, der Mindestpreis ${ad.auto_price_reduction!.min_price} € wird nie erreicht`
+              : undefined;
+            return (
+              <Badge variant={aprErr ? 'danger' : 'warning'} title={aprTitle}>
+                ↓{ad.auto_price_reduction!.min_price ?? '?'}€{aprErr ? ' ⚠' : ''}
+              </Badge>
+            );
+          })()}
         </div>
 
       </div>
@@ -291,11 +301,17 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
         {(ad.shipping_type || adStats || expiresDisplay) && (
           <div className={styles.cardInfo}>
             <span className={styles.cardInfoChips}>
-              {ad.shipping_type === 'SHIPPING' && (
-                <span className={styles.cardInfoChip} title="Versand">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                </span>
-              )}
+              {ad.shipping_type === 'SHIPPING' && (() => {
+                const size = detectSizeGroup(ad.shipping_options ?? []) ?? 'I';
+                return (
+                  <span className={styles.cardInfoChip} title="Versand">
+                    <span className="shippingIconWrap">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                      <span className="shippingIconSize">{size}</span>
+                    </span>
+                  </span>
+                );
+              })()}
               {ad.shipping_type === 'PICKUP' && (
                 <span className={styles.cardInfoChip} title="Nur Abholung">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>

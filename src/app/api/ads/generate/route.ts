@@ -5,9 +5,13 @@ import { aiLimiter } from '@/lib/auth/rate-limiter';
 import { readMergedConfig, AI_DEFAULTS } from '@/lib/yaml/config';
 import { allCarriersOf, cheapestPriceOf, type ShippingSizeId } from '@/lib/shipping';
 import { trackAdGeneration } from '@/lib/messaging/responder';
-import path from 'path';
-import { readFileSync, existsSync } from 'fs';
 import { shortKey as attrShortKey } from '@/lib/ads/category-attributes';
+import {
+  loadCatAttrsData,
+  needsDisplayText,
+  translateAttrValues,
+  type CatAttrsData,
+} from '@/lib/ads/normalize-attributes';
 import { normalizeAdType, normalizePriceType, normalizeShippingType } from './normalize';
 
 export async function POST(request: NextRequest) {
@@ -65,16 +69,7 @@ export async function POST(request: NextRequest) {
       : (aiConfig.prompt ?? AI_DEFAULTS.prompt);
 
     // Load category_attributes.json — used for KA ID validation and attribute context in prompt
-    interface AttrOption { value: string; text: string; }
-    interface SharedAttrDef { options?: AttrOption[]; type?: string; text?: string; }
-    interface CatAttrEntry { attributes: Array<{ attribute_key: string; options?: AttrOption[] }>; shared: string[]; }
-    interface CatAttrsData { categories: Record<string, CatAttrEntry>; shared_attributes: Record<string, SharedAttrDef>; }
-
-    let catAttrsData: CatAttrsData | null = null;
-    const catAttrsPath = path.join(process.cwd(), 'public', 'data', 'category_attributes.json');
-    if (existsSync(catAttrsPath)) {
-      try { catAttrsData = JSON.parse(readFileSync(catAttrsPath, 'utf-8')); } catch { /* ignore */ }
-    }
+    const catAttrsData: CatAttrsData | null = loadCatAttrsData();
     const validCategoryIds = catAttrsData ? new Set(Object.keys(catAttrsData.categories)) : new Set<string>();
 
     // Pre-fetch KA category-suggest using prompt text — runs in parallel with no extra latency
@@ -108,11 +103,15 @@ export async function POST(request: NextRequest) {
         for (const ref of entry.shared ?? []) {
           const def = catAttrsData.shared_attributes[ref];
           if (!def?.options?.length) continue;
-          lines.push(`${attrShortKey(ref)}: ${def.options.map((o) => o.value).join(' | ')}`);
+          const sk = attrShortKey(ref);
+          const useText = needsDisplayText(sk, def.options);
+          lines.push(`${sk}: ${def.options.map((o) => useText ? o.text : o.value).join(' | ')}`);
         }
         for (const attr of entry.attributes ?? []) {
           if (!attr.options?.length) continue;
-          lines.push(`${attrShortKey(attr.attribute_key)}: ${attr.options.map((o) => o.value).join(' | ')}`);
+          const sk = attrShortKey(attr.attribute_key);
+          const useText = needsDisplayText(sk, attr.options);
+          lines.push(`${sk}: ${attr.options.map((o) => useText ? o.text : o.value).join(' | ')}`);
         }
         if (lines.length > 0) {
           attrContextMsg = `ERKANNTE KATEGORIE: ${kaId}\nPFLICHT: Du MUSST "special_attributes" mit Werten für ALLE folgenden Felder füllen. Nutze EXAKT diese Schlüsselnamen und wähle einen der erlaubten Werte (kein Freitext, nur die vorgegebenen Werte). Felder die du nicht kennst: leer lassen, aber NIEMALS Platzhalter wie "[Wert]" verwenden:\n${lines.join('\n')}`;
@@ -251,6 +250,17 @@ export async function POST(request: NextRequest) {
           };
         }
 
+        // Translate API values → display text for text-based attributes.
+        // The KA attribute-suggest endpoint returns internal values (e.g. "jack_jones"),
+        // but the bot's input combobox handler requires the display text ("Jack & Jones").
+        if (catAttrsData && adData.special_attributes) {
+          adData.special_attributes = translateAttrValues(
+            adData.special_attributes as Record<string, string>,
+            activeId,
+            catAttrsData,
+          );
+        }
+
         // Mini AI call: fill any remaining empty select-type attributes that neither AI nor KA filled
         if (catAttrsData && activeId && catAttrsData.categories[activeId]) {
           const catEntry = catAttrsData.categories[activeId];
@@ -262,14 +272,16 @@ export async function POST(request: NextRequest) {
             if (!def?.options?.length) continue;
             const sk = attrShortKey(ref);
             if (!currentAttrs[sk]) {
-              missingLines.push(`${sk}: ${def.options.map((o) => o.value).join(' | ')}`);
+              const useText = needsDisplayText(sk, def.options);
+              missingLines.push(`${sk}: ${def.options.map((o) => useText ? o.text : o.value).join(' | ')}`);
             }
           }
           for (const attr of catEntry.attributes ?? []) {
             if (!attr.options?.length) continue;
             const sk = attrShortKey(attr.attribute_key);
             if (!currentAttrs[sk]) {
-              missingLines.push(`${sk}: ${attr.options.map((o) => o.value).join(' | ')}`);
+              const useText = needsDisplayText(sk, attr.options);
+              missingLines.push(`${sk}: ${attr.options.map((o) => useText ? o.text : o.value).join(' | ')}`);
             }
           }
 
@@ -379,8 +391,9 @@ ${missingLines.join('\n')}`;
     return NextResponse.json({ ad: adData });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[AI Generate]', msg);
-    return NextResponse.json({ detail: `AI generation error: ${msg}` }, { status: 500 });
+    const cause = error instanceof Error ? (error.cause as Error | undefined) : undefined;
+    console.error('[AI Generate]', msg, cause ? `(cause: ${cause.message ?? cause})` : '');
+    return NextResponse.json({ detail: `AI generation error: ${msg}${cause ? ` (${cause.message ?? cause})` : ''}` }, { status: 500 });
   }
 }
 

@@ -79,7 +79,10 @@ export function PlzLocationPicker({
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      lastFetchedZip.current = '';
+    };
   // Intentional: only re-fetch when ZIP changes, ignore callback/state refs
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zipValue]);

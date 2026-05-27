@@ -5,6 +5,8 @@ import { getCurrentUser } from '@/lib/auth/middleware';
 import { readAd, writeAd } from '@/lib/yaml/ads';
 import { getTemplatesDir, findTemplateFiles, slugFromName } from '@/lib/yaml/templates';
 import { resolveImageFiles } from '@/lib/images/resolve';
+import { toNFC } from '@/lib/images/normalize';
+import { resolveExistingPath } from '@/lib/fs/resolve-path';
 import path from 'path';
 import fs from 'fs';
 
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
         description: data._template_description ?? '',
         locked_fields: data._locked_fields ?? [],
         category: data.category ?? '',
-        file: path.relative(user.workspace, filePath),
+        file: toNFC(path.relative(user.workspace, filePath)),
       });
     }
 
@@ -76,10 +78,11 @@ export async function POST(request: NextRequest) {
     // Resolve and copy images from source ad
     const sourceAdFile = ad_data._source_ad_file as string | undefined;
     let resolvedImages: string[] = [];
+    let resolvedSourceAdPath: string | null = null;
     if (sourceAdFile && Array.isArray(ad_data.images) && (ad_data.images as string[]).length > 0) {
-      const sourceAdPath = path.join(user.workspace, sourceAdFile);
-      if (fs.existsSync(sourceAdPath)) {
-        const sourceAdDir = path.dirname(sourceAdPath);
+      resolvedSourceAdPath = resolveExistingPath(path.join(user.workspace, sourceAdFile));
+      if (resolvedSourceAdPath) {
+        const sourceAdDir = path.dirname(resolvedSourceAdPath);
         resolvedImages = resolveImageFiles(sourceAdDir, ad_data.images as string[]);
       }
     }
@@ -87,13 +90,13 @@ export async function POST(request: NextRequest) {
     fs.mkdirSync(tplDir, { recursive: true });
 
     // Copy image files into template directory
-    if (resolvedImages.length > 0 && sourceAdFile) {
-      const sourceAdDir = path.dirname(path.join(user.workspace, sourceAdFile));
+    if (resolvedImages.length > 0 && resolvedSourceAdPath) {
+      const sourceAdDir = path.dirname(resolvedSourceAdPath);
       for (const imgName of resolvedImages) {
-        const src = path.join(sourceAdDir, imgName);
+        const src = resolveExistingPath(path.join(sourceAdDir, imgName));
         const dest = path.join(tplDir, imgName);
         try {
-          if (fs.existsSync(src)) fs.copyFileSync(src, dest);
+          if (src) fs.copyFileSync(src, dest);
         } catch { /* skip unreadable files */ }
       }
     }
@@ -111,7 +114,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: 'Template created',
       slug,
-      file: path.relative(user.workspace, filePath),
+      file: toNFC(path.relative(user.workspace, filePath)),
     });
   } catch (error) {
     return handleApiError(error);

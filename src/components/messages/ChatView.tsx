@@ -29,8 +29,7 @@ function formatPrice(cents: number): string {
 function adImageUrl(url: string | null | undefined): string {
   if (!url) return '';
   const directUrl = url.replace(/rule=.*$/, 'rule=$_57.JPG');
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  return `/api/messages/image?url=${encodeURIComponent(directUrl)}&token=${token ?? ''}`;
+  return `/api/messages/image?url=${encodeURIComponent(directUrl)}`;
 }
 
 function PendingReplyBanner({ conversationId }: { conversationId: string }) {

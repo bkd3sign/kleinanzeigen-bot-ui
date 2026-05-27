@@ -70,8 +70,6 @@ function DuplicatePicker({ onClose }: { onClose: () => void }) {
     [onClose, router],
   );
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
   return (
     <Modal open onClose={onClose} title="Anzeige zum Duplizieren wählen">
       <div className={styles.dupPicker}>
@@ -87,8 +85,8 @@ function DuplicatePicker({ onClose }: { onClose: () => void }) {
           {filtered.slice(0, 30).map((ad) => {
             const isDraft = !ad.id;
             const imgUrl =
-              ad.first_image && ad.file && token
-                ? `/api/images/file?file=${encodeURIComponent(ad.file)}&name=${encodeURIComponent(ad.first_image)}&token=${encodeURIComponent(token)}`
+              ad.first_image && ad.file
+                ? `/api/images/file?file=${encodeURIComponent(ad.file)}&name=${encodeURIComponent(ad.first_image)}`
                 : null;
             return (
               <button

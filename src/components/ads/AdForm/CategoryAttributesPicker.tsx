@@ -36,6 +36,10 @@ interface AttributeData {
 
 type AttrValues = Record<string, string>;
 
+// Keys that store display text instead of API values (bot uses text-search input combobox).
+// Select options for these must use o.text as value to match what the YAML stores.
+const INPUT_COMBOBOX_KEYS = new Set(['brand_s', 'marke_s']);
+
 // Module-level cache to avoid re-fetching
 let attrDataCache: AttributeData | null = null;
 
@@ -114,6 +118,9 @@ export function CategoryAttributesPicker({ category, values, onChange }: Categor
       <div className={styles.attrGrid}>
         {nonBoolAttrs.map((attr) => {
           if (attr.type === 'select' && attr.options) {
+            // Text-search combobox fields (brand_s, marke_s) store display text in YAML.
+            // Use o.text as option value so the stored value matches the select option.
+            const useDisplayText = INPUT_COMBOBOX_KEYS.has(shortKey(attr.key));
             return (
               <Select
                 key={attr.key}
@@ -121,7 +128,7 @@ export function CategoryAttributesPicker({ category, values, onChange }: Categor
                 required
                 options={[
                   { value: '', label: 'Bitte wählen' },
-                  ...attr.options.map((o) => ({ value: o.value, label: o.text })),
+                  ...attr.options.map((o) => ({ value: useDisplayText ? o.text : o.value, label: o.text })),
                 ]}
                 value={String(getVal(attr.key) ?? '')}
                 onChange={(e) => handleChange(attr.key, e.target.value)}

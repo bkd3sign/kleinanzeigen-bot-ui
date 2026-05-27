@@ -1,35 +1,35 @@
 import { NextRequest } from 'next/server';
 import { loadUsers, ensureJwtSecret } from '@/lib/yaml/users';
 import { decodeJwt } from '@/lib/auth/jwt';
+import { ACCESS_COOKIE } from '@/lib/auth/cookies';
 import { existsSync, statSync, readdirSync, readFileSync, watch } from 'fs';
 import path from 'path';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
-  // Authenticate via JWT
-  const { searchParams } = new URL(request.url);
-  let jwtToken = searchParams.get('token');
-  if (!jwtToken) {
-    const auth = request.headers.get('authorization');
-    if (auth?.startsWith('Bearer ')) jwtToken = auth.slice(7);
-  }
+  // Authenticate via httpOnly access cookie or Authorization header
+  const jwtToken =
+    request.cookies.get(ACCESS_COOKIE)?.value ??
+    request.headers.get('authorization')?.slice(7) ??
+    null;
+
   if (!jwtToken) {
     return new Response(JSON.stringify({ detail: 'Authentication required' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const data = await loadUsers();
+  const data = loadUsers();
   if (!data) {
     return new Response(JSON.stringify({ detail: 'Setup required' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const secret = await ensureJwtSecret(data);
+  const secret = ensureJwtSecret(data);
   try {
-    await decodeJwt(jwtToken, secret);
+    decodeJwt(jwtToken, secret);
   } catch (error) {
     return new Response(JSON.stringify({ detail: 'Invalid token' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },

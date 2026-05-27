@@ -11,6 +11,8 @@ services:
       - BOT_CMD=/workspace/bot/kleinanzeigen-bot
       - BOT_DIR=/workspace
       - TZ=${TZ:-Europe/Berlin}
+      # Set to "true" only if running behind an HTTPS reverse proxy:
+      # - COOKIE_SECURE=true
     shm_size: "512m"
     deploy:
       resources:

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getCurrentPrice, projectReposts } from '../pricing';
+import { getCurrentPrice, getAprError, projectReposts } from '../pricing';
 import type { AdListItem } from '@/types/ad';
 
 describe('getCurrentPrice', () => {
@@ -91,6 +91,7 @@ function makeAd(overrides: Partial<AdListItem> = {}): AdListItem {
     has_description: true,
     is_changed: false,
     is_orphaned: false,
+    is_archived: false,
     repost_count: 0,
     price_reduction_count: 0,
     ...overrides,
@@ -359,5 +360,64 @@ describe('projectReposts', () => {
     expect(result[5].price).toBe(90);
     expect(result[5].isFinal).toBe(true);
     expect(result).toHaveLength(6);
+  });
+});
+
+// --- getAprError ---
+
+describe('getAprError', () => {
+  it('returns null when APR is disabled', () => {
+    expect(getAprError(39, { enabled: false, strategy: 'PERCENTAGE', amount: 1 })).toBeNull();
+  });
+
+  it('returns null when strategy or amount is missing', () => {
+    expect(getAprError(39, { enabled: true, strategy: null, amount: 1 })).toBeNull();
+    expect(getAprError(39, { enabled: true, strategy: 'PERCENTAGE', amount: null })).toBeNull();
+  });
+
+  it('returns null when price is 0 or negative', () => {
+    expect(getAprError(0, { enabled: true, strategy: 'PERCENTAGE', amount: 5 })).toBeNull();
+    expect(getAprError(-10, { enabled: true, strategy: 'PERCENTAGE', amount: 5 })).toBeNull();
+  });
+
+  it('detects ineffective: 1% of 39 € rounds back to 39 €', () => {
+    // 39 * 0.99 = 38.61 → round = 39 — no change
+    const err = getAprError(39, { enabled: true, strategy: 'PERCENTAGE', amount: 1, min_price: 20 });
+    expect(err?.type).toBe('ineffective');
+    expect(err?.stuckAt).toBe(39);
+  });
+
+  it('detects ineffective: price already at stuck threshold (16 €, 3%)', () => {
+    // 16 * 0.97 = 15.52 → round = 16 — no change
+    const err = getAprError(16, { enabled: true, strategy: 'PERCENTAGE', amount: 3, min_price: 10 });
+    expect(err?.type).toBe('ineffective');
+  });
+
+  it('detects stuck: price will eventually get stuck above min_price', () => {
+    // 30 € reduces fine until 17 € → 16 (stuck, since 16 * 0.97 = 15.52 → 16)
+    // min_price = 10 € is never reached
+    const err = getAprError(30, { enabled: true, strategy: 'PERCENTAGE', amount: 3, min_price: 10 });
+    expect(err?.type).toBe('stuck');
+    expect(err?.stuckAt).toBe(16); // floor(50/3)
+  });
+
+  it('returns null when reduction works all the way to min_price', () => {
+    // 3% reduction, min_price = 17 € — price never reaches the stuck threshold (16)
+    expect(getAprError(30, { enabled: true, strategy: 'PERCENTAGE', amount: 3, min_price: 17 })).toBeNull();
+  });
+
+  it('returns null for a healthy PERCENTAGE config', () => {
+    // 10% of 100 € = 10 € — clearly effective
+    expect(getAprError(100, { enabled: true, strategy: 'PERCENTAGE', amount: 10, min_price: 50 })).toBeNull();
+  });
+
+  it('detects ineffective FIXED: amount rounds to 0 change', () => {
+    // 50 - 0.3 = 49.7 → round = 50 — no change
+    const err = getAprError(50, { enabled: true, strategy: 'FIXED', amount: 0.3 });
+    expect(err?.type).toBe('ineffective');
+  });
+
+  it('returns null for a healthy FIXED config', () => {
+    expect(getAprError(100, { enabled: true, strategy: 'FIXED', amount: 5, min_price: 50 })).toBeNull();
   });
 });

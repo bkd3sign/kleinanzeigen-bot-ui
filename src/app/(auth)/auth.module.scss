@@ -79,6 +79,25 @@
   margin: 0;
 }
 
+.authCheckbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  user-select: none;
+  margin-top: calc(var(--space-1) * -1);
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+}
+
 .authLink {
   color: var(--accent);
   text-decoration: none;

@@ -21,6 +21,15 @@
 .cardSelected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+
+  // Keep accent border visible regardless of status-specific border overrides.
+  &.cardInactive,
+  &.cardExpired,
+  &.cardExpiring,
+  &.cardOrphaned,
+  &.cardChanged {
+    border-color: var(--accent);
+  }
 }
 
 .cardDraft {
@@ -89,11 +98,13 @@
   --red-muted: rgba(239, 68, 68, 0.85);
   --yellow-muted: rgba(245, 158, 11, 0.85);
   --bg-tertiary: rgba(100, 100, 100, 0.85);
+  --blue-muted: rgba(59, 130, 246, 0.85);
   --text-success: #fff;
   --text-danger: #fff;
   --text-warning: #fff;
   --text-muted: #fff;
   --text-secondary: #fff;
+  --text-info: #fff;
 }
 
 

@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { useDeleteAdByFile } from '@/hooks/useAds';
 import { Button, showConfirm, useToast } from '@/components/ui';
+import { AdBulkEditModal } from './AdBulkEditModal';
 import type { AdListItem } from '@/types/ad';
 import styles from './AdBulkActions.module.scss';
 
@@ -19,14 +20,35 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
   const deleteAd = useDeleteAdByFile();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [editModalOpen, setEditModalOpen] = useState(false);
+
+  // Local active/inactive override — survives query refetches and filter changes.
+  // Key: file path, Value: active state after a bulk operation.
+  const [knownStatus, setKnownStatus] = useState<Map<string, boolean>>(new Map());
+
+  // Reset overrides whenever the selection changes (new selection = fresh slate).
+  const selectedFilesKey = useMemo(() => [...selectedFiles].sort().join('|'), [selectedFiles]);
+  useEffect(() => { setKnownStatus(new Map()); }, [selectedFilesKey]);
 
   // Map selected file paths to ad objects
   const selectedAds = ads.filter((a) => selectedFiles.has(a.file));
   const publishedAds = selectedAds.filter((a) => !!a.id);
   const draftAds = selectedAds.filter((a) => !a.id);
-  const activeAds = selectedAds.filter((a) => a.active !== false);
-  const inactiveAds = selectedAds.filter((a) => a.active === false);
 
+  // Derive active/inactive from server data, but prefer local overrides.
+  const activeFiles = useMemo(
+    () =>
+      [...selectedFiles].filter((f) => {
+        if (knownStatus.has(f)) return knownStatus.get(f);
+        const ad = ads.find((a) => a.file === f);
+        return ad ? ad.active !== false : true;
+      }),
+    [selectedFiles, knownStatus, ads],
+  );
+  const inactiveFiles = useMemo(
+    () => [...selectedFiles].filter((f) => !activeFiles.includes(f)),
+    [selectedFiles, activeFiles],
+  );
   const handleBulkPublish = useCallback(async () => {
     if (draftAds.length > 0) {
       const ok = await showConfirm(
@@ -65,41 +87,52 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
     }
   }, [publishedAds, toast]);
 
-  const handleBulkDeactivate = useCallback(async () => {
-    if (activeAds.length === 0) {
-      toast('error', 'Keine aktiven Anzeigen in der Auswahl');
-      return;
-    }
+  const handleBulkToggleActive = useCallback(async () => {
+    // Majority wins: bring all selected to the majority's state.
+    // All-active is the exception — it toggles to inactive (no minority to align).
+    // Tie goes to inactive (deactivate).
+    const goActive = activeFiles.length > 0
+      ? inactiveFiles.length > 0 && activeFiles.length > inactiveFiles.length
+      : true;
+    const toDeactivate = goActive ? [] : activeFiles;
+    const toActivate = goActive ? inactiveFiles : [];
     try {
-      await Promise.all(
-        activeAds.map((a) =>
-          api.put(`/api/ads/by-file/${a.file.split('/').map(encodeURIComponent).join('/')}`, { active: false }),
+      await Promise.all([
+        ...toDeactivate.map((f) =>
+          api.put(`/api/ads/by-file/${f.split('/').map(encodeURIComponent).join('/')}`, { active: false }),
         ),
-      );
-      queryClient.invalidateQueries({ queryKey: ['ads'] });
-      toast('success', `${activeAds.length} Anzeige${activeAds.length > 1 ? 'n' : ''} deaktiviert`);
-    } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Fehler beim Deaktivieren');
-    }
-  }, [activeAds, queryClient, toast]);
-
-  const handleBulkActivate = useCallback(async () => {
-    if (inactiveAds.length === 0) {
-      toast('error', 'Keine inaktiven Anzeigen in der Auswahl');
-      return;
-    }
-    try {
-      await Promise.all(
-        inactiveAds.map((a) =>
-          api.put(`/api/ads/by-file/${a.file.split('/').map(encodeURIComponent).join('/')}`, { active: true }),
+        ...toActivate.map((f) =>
+          api.put(`/api/ads/by-file/${f.split('/').map(encodeURIComponent).join('/')}`, { active: true }),
         ),
-      );
+      ]);
+      setKnownStatus((prev) => {
+        const m = new Map(prev);
+        toDeactivate.forEach((f) => m.set(f, false));
+        toActivate.forEach((f) => m.set(f, true));
+        return m;
+      });
+      queryClient.setQueryData<{ ads: AdListItem[]; total: number }>(['ads'], (old) => {
+        if (!old) return old;
+        const deactivateSet = new Set(toDeactivate);
+        const activateSet = new Set(toActivate);
+        return {
+          ...old,
+          ads: old.ads.map((ad) => {
+            if (deactivateSet.has(ad.file)) return { ...ad, active: false };
+            if (activateSet.has(ad.file)) return { ...ad, active: true };
+            return ad;
+          }),
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['ads'] });
-      toast('success', `${inactiveAds.length} Anzeige${inactiveAds.length > 1 ? 'n' : ''} aktiviert`);
+      const msg = toDeactivate.length > 0
+        ? `${toDeactivate.length} Anzeige${toDeactivate.length > 1 ? 'n' : ''} deaktiviert`
+        : `${toActivate.length} Anzeige${toActivate.length > 1 ? 'n' : ''} aktiviert`;
+      toast('success', msg);
     } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Fehler beim Aktivieren');
+      toast('error', err instanceof Error ? err.message : 'Fehler beim Aktivieren/Deaktivieren');
     }
-  }, [inactiveAds, queryClient, toast]);
+  }, [activeFiles, inactiveFiles, queryClient, toast]);
 
   const handleBulkDelete = useCallback(async () => {
     const ok = await showConfirm(
@@ -114,67 +147,54 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
     onClear();
   }, [selectedFiles, deleteAd, onClear]);
 
-  const handleBulkDeleteLive = useCallback(async () => {
-    if (publishedAds.length === 0) {
-      toast('error', 'Keine veröffentlichten Anzeigen in der Auswahl');
-      return;
-    }
-    const confirmed = await showConfirm(
-      `${publishedAds.length} Anzeige(n) auf Kleinanzeigen löschen`,
-      `Möchtest du ${publishedAds.length} Anzeige(n) auch auf Kleinanzeigen löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
-      'Löschen (Live)',
-      'Abbrechen',
-    );
-    if (!confirmed) return;
-    const ids = publishedAds.map((a) => String(a.id)).join(',');
-    try {
-      await api.post('/api/bot/delete', { ads: ids });
-    } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Fehler beim Löschen');
-    }
-  }, [publishedAds, toast]);
 
   if (selectedFiles.size === 0) return null;
 
   const count = selectedFiles.size;
+  const toggleGoActive = activeFiles.length > 0
+    ? inactiveFiles.length > 0 && activeFiles.length > inactiveFiles.length
+    : true;
 
   // Portal to document.body so position:fixed works correctly.
   // The AppShell <main> has animPageEnter with transform which breaks fixed positioning.
   return createPortal(
-    <div className={styles.bar}>
-      <div className={styles.barInner}>
-        <span className={styles.count}>
-          {count} Anzeige{count > 1 ? 'n' : ''} ausgewählt
-        </span>
-        <div className={styles.actions}>
-          <Button variant="primary" size="sm" onClick={handleBulkPublish}>
-            Veröffentlichen
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleBulkUpdate}>
-            Aktualisieren
-          </Button>
-          {activeAds.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBulkDeactivate}>
-              Deaktivieren
+    <>
+      <div className={styles.bar}>
+        <div className={styles.barInner}>
+          <span className={styles.count}>
+            {count} Anzeige{count > 1 ? 'n' : ''} ausgewählt
+          </span>
+          <div className={styles.actions}>
+            <Button variant="primary" size="sm" onClick={handleBulkPublish}>
+              Veröffentlichen
             </Button>
-          )}
-          {inactiveAds.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBulkActivate}>
-              Aktivieren
+            <Button variant="outline" size="sm" onClick={handleBulkUpdate}>
+              Aktualisieren
             </Button>
-          )}
-          <Button variant="danger" size="sm" onClick={handleBulkDelete}>
-            Entfernen
-          </Button>
-          <Button variant="danger" size="sm" onClick={handleBulkDeleteLive}>
-            Löschen (Live)
-          </Button>
-          <Button variant="outline" size="sm" onClick={onClear}>
-            Auswahl aufheben
-          </Button>
+            {(activeFiles.length > 0 || inactiveFiles.length > 0) && (
+              <Button variant="outline" size="sm" onClick={handleBulkToggleActive}>
+                {toggleGoActive ? 'Aktivieren' : 'Deaktivieren'}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+              Bearbeiten
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleBulkDelete}>
+              Entfernen
+            </Button>
+            <Button variant="outline" size="sm" onClick={onClear}>
+              Auswahl aufheben
+            </Button>
+          </div>
         </div>
       </div>
-    </div>,
+      <AdBulkEditModal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onClear={onClear}
+        selectedAds={selectedAds}
+      />
+    </>,
     document.body,
   );
 }

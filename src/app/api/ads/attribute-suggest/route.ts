@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { title: string; categoryId: string; attrs?: Record<string, string> };
+    const body = await req.json() as { title: string; categoryId: string; categoryPath?: string; attrs?: Record<string, string> };
     if (!body.title || !body.categoryId) return NextResponse.json(null);
 
     const payload = {
@@ -35,6 +36,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (body.categoryPath) {
+      const catData = loadCatAttrsData();
+      if (catData) {
+        const translated = translateAttrValues(attrs, body.categoryPath, catData);
+        return NextResponse.json(Object.keys(translated).length > 0 ? translated : null);
+      }
+    }
     return NextResponse.json(Object.keys(attrs).length > 0 ? attrs : null);
   } catch {
     return NextResponse.json(null);

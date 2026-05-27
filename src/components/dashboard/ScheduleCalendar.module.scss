@@ -96,6 +96,17 @@
   }
 }
 
+.chipOverdue {
+  background: color-mix(in srgb, var(--orange) 15%, transparent);
+  color: var(--orange);
+  border: 1px solid color-mix(in srgb, var(--orange) 25%, transparent);
+
+  &:hover {
+    background: color-mix(in srgb, var(--orange) 25%, transparent);
+    color: var(--orange);
+  }
+}
+
 @media (max-width: 767px) {
   .section {
     padding: var(--space-3);

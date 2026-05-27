@@ -2,7 +2,8 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminUserUpdateSchema } from '@/validation/schemas';
 import { getCurrentUser, requireAdmin } from '@/lib/auth/middleware';
-import { loadUsers, saveUsers, getUserWorkspace } from '@/lib/yaml/users';
+import { loadUsers, saveUsers } from '@/lib/yaml/users';
+import path from 'path';
 import { rm } from 'fs/promises';
 
 interface RouteContext {
@@ -82,12 +83,15 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     data.users = data.users.filter((u) => u.id !== userId);
     await saveUsers(data);
 
-    // Remove workspace
-    const ws = getUserWorkspace(userId);
+    // Always delete users/<userId>/ directly — never use getUserWorkspace() here
+    // because after saveUsers() the user count may have dropped to 1, causing
+    // getUserWorkspace() to return BOT_DIR and wiping the entire data directory.
+    const botDir = process.env.BOT_DIR ?? process.cwd();
+    const ws = path.join(botDir, 'users', userId);
     try {
       await rm(ws, { recursive: true, force: true });
-    } catch (error) {
-      // Workspace may not exist
+    } catch {
+      // Workspace may not exist (single-user mode or never created)
     }
 
     return NextResponse.json({ status: 'ok', message: `User ${userId} deleted` });

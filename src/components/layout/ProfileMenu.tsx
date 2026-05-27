@@ -55,7 +55,7 @@ export function ProfileMenu() {
   const handleLogout = useCallback(() => {
     setIsOpen(false);
     logout();
-    router.push('/login');
+    router.replace('/login');
   }, [logout, router]);
 
   // Close on outside click

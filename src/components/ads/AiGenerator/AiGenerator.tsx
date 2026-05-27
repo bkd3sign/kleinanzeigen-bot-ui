@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/Toast/ToastProvider';
 import { Spinner } from '@/components/ui/Spinner/Spinner';
 import { ImagePreview } from '@/components/ui';
 import { resizeImageForAi } from '@/lib/images/resize-client';
+import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import { api } from '@/lib/api/client';
 import styles from './AiGenerator.module.scss';
 
@@ -61,9 +62,10 @@ export function AiGenerator() {
   // Pick up staged files from ads page drop
   useEffect(() => {
     const win = window as unknown as Record<string, unknown>;
-    const files = win.__aiStagedFiles as File[] | undefined;
-    if (files?.length) {
-      setStagedFiles(files);
+    const raw = win.__aiStagedFiles as File[] | undefined;
+    if (raw?.length) {
+      const { accepted } = filterImageFiles(raw);
+      setStagedFiles(accepted);
       delete win.__aiStagedFiles;
     }
   }, []);
@@ -175,7 +177,10 @@ export function AiGenerator() {
         for (const file of allFiles) {
           const formData = new FormData();
           formData.append('files', file);
-          try { await api.upload(url, formData); } catch { /* non-critical */ }
+          const res = await api.upload<{ rejected?: { name: string; reason: string }[] }>(url, formData).catch(() => null);
+          for (const r of res?.rejected ?? []) {
+            toast('error', `${r.name}: ${r.reason}`);
+          }
         }
       }
       toast('success', `„${currentAd.title}" gespeichert`);
@@ -213,11 +218,12 @@ export function AiGenerator() {
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      setStagedFiles((prev) => [...prev, ...Array.from(files)]);
+      const { accepted, rejected } = filterImageFiles(Array.from(files));
+      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+      if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
     }
-    // Force fresh input element for next upload
     setFileInputKey((k) => k + 1);
-  }, []);
+  }, [toast]);
 
   const handleRemoveFile = useCallback((index: number) => {
     setStagedFiles((prev) => {
@@ -230,14 +236,13 @@ export function AiGenerator() {
 
   // Paste images from clipboard
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const files = Array.from(e.clipboardData?.files || []).filter((f) =>
-      f.type.startsWith('image/'),
-    );
-    if (files.length) {
-      e.preventDefault();
-      setStagedFiles((prev) => [...prev, ...files]);
-    }
-  }, []);
+    const all = Array.from(e.clipboardData?.files || []);
+    if (!all.length) return;
+    e.preventDefault();
+    const { accepted, rejected } = filterImageFiles(all);
+    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
+  }, [toast]);
 
   // Drag & drop with fullscreen overlay
   const dragCounter = useRef(0);
@@ -246,11 +251,10 @@ export function AiGenerator() {
     e.preventDefault();
     dragCounter.current = 0;
     setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) =>
-      f.type.startsWith('image/'),
-    );
-    if (files.length) setStagedFiles((prev) => [...prev, ...files]);
-  }, []);
+    const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
+    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
+  }, [toast]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();

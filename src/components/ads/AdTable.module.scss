@@ -30,7 +30,7 @@
   .thApr { width: 88px; text-align: center; }
   .tdApr { text-align: center; white-space: nowrap; }
   .thCategory { width: 190px; }
-  .thShipping, .tdShipping { width: 90px; white-space: nowrap; }
+  .thShipping, .tdShipping { width: 110px; white-space: nowrap; }
   .thViews, .tdViews { width: 80px; text-align: center; white-space: nowrap; }
   .thWatchlist, .tdWatchlist { width: 80px; text-align: center; white-space: nowrap; }
   .thCreated, .tdCreated { width: 105px; white-space: nowrap; }
@@ -66,8 +66,19 @@
   background-color: var(--accent-muted);
 
   .tdTitle::before { background-color: var(--accent); }
+
+  // Restore full opacity so selection highlight is clearly visible regardless of status.
+  &.rowInactive,
+  &.rowExpired,
+  &.rowDraft,
+  &.rowOrphaned {
+    opacity: 1;
+  }
 }
 .rowDraft { opacity: 0.6; }
+.rowChanged { }
+.rowExpiring { }
+.rowReserved { }
 
 .rowExpired {
   opacity: 0.7;
@@ -259,14 +270,16 @@
 
   .table { min-width: 0; }
   .tdTitle { position: relative; background-color: transparent; }
-  .tdTitle::before { width: 2px; background-color: var(--green); }
-  .rowDraft .tdTitle::before { background-color: var(--text-muted); }
-  .rowChanged .tdTitle::before { background-color: var(--yellow); }
-  .rowReserved .tdTitle::before { background-color: #8b5cf6; }
-  .rowExpiring .tdTitle::before { background-color: var(--yellow); }
-  .rowExpired .tdTitle::before { background-color: var(--red); }
-  .rowInactive .tdTitle::before { background-color: var(--red); }
-  .rowOrphaned .tdTitle::before { background-color: var(--yellow); }
+  /* Order matches badge display priority (lowest first, highest last) so the
+     correct color wins when multiple status classes are present on one row. */
+  .tdTitle::before { width: 2px; background-color: var(--green); }       /* Active (default) */
+  .rowChanged .tdTitle::before { background-color: var(--blue); }         /* priority 7 */
+  .rowOrphaned .tdTitle::before { background-color: var(--yellow); }      /* priority 6 */
+  .rowExpiring .tdTitle::before { background-color: var(--yellow); }      /* priority 5 */
+  .rowExpired .tdTitle::before { background-color: var(--red); }          /* priority 4 */
+  .rowInactive .tdTitle::before { background-color: var(--red); }         /* priority 3 */
+  .rowReserved .tdTitle::before { background-color: #8b5cf6; }            /* priority 2 */
+  .rowDraft .tdTitle::before { background-color: var(--text-muted); }     /* priority 1 */
   .tdActions { position: static; background-color: transparent; }
   .shadowLeftOverlay, .shadowRightOverlay { display: none; }
 
@@ -291,4 +304,16 @@
     svg { width: 9px; height: 9px; }
   }
   .td, .th { padding: var(--space-2); font-size: var(--font-size-xs); }
+}
+
+/* Shipping cell */
+.shippingWrap { display: inline-flex; align-items: center; gap: 3px; }
+.shippingEmpty { color: var(--text-muted); }
+.sizeHint {
+  font-size: 9px;
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  letter-spacing: 0;
+  line-height: 1;
+  margin-top: 3px;
 }

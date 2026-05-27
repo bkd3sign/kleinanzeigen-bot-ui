@@ -3,10 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { loginSchema } from '@/validation/schemas';
 import { loadUsers, ensureJwtSecret } from '@/lib/yaml/users';
 import { verifyPassword } from '@/lib/auth/password';
-import { createJwt } from '@/lib/auth/jwt';
-import { RateLimiter } from '@/lib/auth/rate-limiter';
-
-const loginLimiter = new RateLimiter(10, 300);
+import { createJwt, createRefreshToken } from '@/lib/auth/jwt';
+import { REFRESH_COOKIE, REFRESH_COOKIE_OPTIONS, REFRESH_MAX_AGE_SECONDS, ACCESS_COOKIE, ACCESS_COOKIE_OPTIONS } from '@/lib/auth/cookies';
+import { loginLimiter } from '@/lib/auth/rate-limiter';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,13 +18,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, password } = parsed.data;
+    const { email, password, rememberMe } = parsed.data;
 
-    // Rate limit by IP + email
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] ?? 'unknown';
     loginLimiter.check(`${clientIp}:${email}`);
 
-    const data = await loadUsers();
+    const data = loadUsers();
     if (!data || !data.users?.length) {
       return NextResponse.json(
         { detail: 'Multi-user mode not enabled' },
@@ -33,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const secret = await ensureJwtSecret(data);
+    const secret = ensureJwtSecret(data);
     const user = data.users.find((u) => u.email === email);
     if (!user || !(await verifyPassword(password, user.password_hash))) {
       return NextResponse.json(
@@ -42,8 +40,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = await createJwt(user, secret);
-    return NextResponse.json({
+    const token = createJwt(user, secret);
+    const refreshToken = createRefreshToken(user, secret, !!rememberMe);
+
+    const response = NextResponse.json({
       token,
       user: {
         id: user.id,
@@ -52,6 +52,14 @@ export async function POST(request: NextRequest) {
         display_name: user.display_name ?? '',
       },
     });
+
+    response.cookies.set(REFRESH_COOKIE, refreshToken, {
+      ...REFRESH_COOKIE_OPTIONS,
+      ...(rememberMe ? { maxAge: REFRESH_MAX_AGE_SECONDS } : {}),
+    });
+    response.cookies.set(ACCESS_COOKIE, token, ACCESS_COOKIE_OPTIONS);
+
+    return response;
   } catch (error) {
     return handleApiError(error);
   }

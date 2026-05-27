@@ -43,7 +43,8 @@ export async function getCurrentUser(request: NextRequest): Promise<AuthUser> {
     throw new ApiError(401, 'User not found');
   }
 
-  if (payload.tv !== (user.token_version ?? 0)) {
+  // payload.tv may be absent on tokens issued before token_version was introduced
+  if ((payload.tv ?? 0) !== (user.token_version ?? 0)) {
     throw new ApiError(401, 'Token invalidated');
   }
 

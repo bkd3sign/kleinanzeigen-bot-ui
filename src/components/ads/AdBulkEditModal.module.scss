@@ -1,0 +1,319 @@
+// Bulk-edit modal — panel/option pattern matches BotCommandsModal
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+// Collapsible panels
+.panel {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.panelOpen {
+  border-color: var(--accent);
+
+  .panelHeader:hover {
+    background: transparent;
+  }
+}
+
+.panelDanger {
+  border-color: rgba(239, 68, 68, 0.3);
+
+  &:hover {
+    border-color: var(--text-danger);
+  }
+}
+
+.panelDanger.panelOpen {
+  border-color: var(--text-danger);
+}
+
+.panelDanger .panelHeader:hover {
+  background: var(--red-muted);
+}
+
+.panelDanger.panelOpen .panelHeader:hover {
+  background: transparent;
+}
+
+.panelDanger .panelIcon {
+  color: var(--text-danger);
+  background: var(--red-muted);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+  color: var(--text-primary);
+
+  &:hover {
+    background: var(--accent-muted);
+  }
+}
+
+.panelIcon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+.panelOpen .panelIcon {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.panelText {
+  flex: 1;
+  min-width: 0;
+}
+
+.panelTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.panelDesc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-0-5);
+}
+
+// Selection summary badge — right-aligned, stable position next to chevron
+.panelBadge {
+  flex-shrink: 0;
+  padding: 2px var(--space-2);
+  background: var(--accent-muted);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--accent);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panelChevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 200ms var(--ease-out);
+}
+
+.panelOpen .panelChevron {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 480px) {
+  .panelHeader {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    grid-template-areas:
+      "icon text chevron"
+      ". badge .";
+    column-gap: var(--space-4);
+    row-gap: var(--space-1);
+  }
+
+  .panelIcon { grid-area: icon; }
+  .panelText { grid-area: text; }
+  .panelChevron { grid-area: chevron; }
+  .panelBadge { grid-area: badge; justify-self: start; }
+}
+
+.panelBody {
+  border-top: 1px solid var(--border-color);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+// Option list (radio-style rows)
+.optList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.optItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+  color: var(--text-primary);
+
+  &:hover {
+    border-color: var(--accent);
+    background: var(--accent-muted);
+  }
+}
+
+.optItemActive {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.optItemIcon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+
+  svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.optItem:hover .optItemIcon,
+.optItemActive .optItemIcon {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.optItemText {
+  flex: 1;
+  min-width: 0;
+}
+
+.optItemTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.optItemDesc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-relaxed);
+}
+
+// Horizontal button row (price adjustments)
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 100%;
+
+  > * { flex: 1 1 0; }
+}
+
+
+// APR strategy button row — two buttons side by side, full width
+.aprStrategyRow {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+
+  > * { flex: 1; }
+}
+
+// APR amount + min_price side by side
+.aprAmountRow {
+  display: flex;
+  gap: var(--space-3);
+
+  > * { flex: 1; min-width: 0; }
+}
+
+// Section divider label
+.sectionLabel {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+// Custom input (shipping cost, custom interval)
+.inputWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.inputLabel {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.customInput {
+  width: 100%;
+  height: 36px;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+
+  &:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  &::placeholder {
+    color: var(--text-muted);
+  }
+}
+
+
+.dangerZoneDesc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-relaxed);
+  margin-bottom: var(--space-3);
+}
+
+@media (max-width: 480px) {
+  .pillRow > * {
+    flex: 1 1 calc(33.333% - var(--space-2));
+    min-width: 0;
+  }
+}

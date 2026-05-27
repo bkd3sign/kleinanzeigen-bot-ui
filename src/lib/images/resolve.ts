@@ -1,12 +1,8 @@
-import fs from 'fs';
 import path from 'path';
 import { globSync } from 'glob';
 import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/images/upload';
+import { toNFC } from '@/lib/images/normalize';
 
-/**
- * Resolve image glob patterns to actual filenames within an ad directory.
- * Deduplicates results by filename.
- */
 export function resolveImageFiles(
   adDir: string,
   imagePatterns: string[],
@@ -20,11 +16,12 @@ export function resolveImageFiles(
 
     for (const match of matches) {
       const ext = path.extname(match).toLowerCase();
-      const name = path.basename(match);
+      // globSync returns NFD on macOS HFS+/APFS — normalize to NFC for Linux compat
+      const rel = toNFC(path.relative(adDir, match));
 
-      if (ALLOWED_IMAGE_EXTENSIONS.has(ext) && !seen.has(name)) {
-        resolved.push(name);
-        seen.add(name);
+      if (ALLOWED_IMAGE_EXTENSIONS.has(ext) && !rel.startsWith('..') && !seen.has(rel)) {
+        resolved.push(rel);
+        seen.add(rel);
       }
     }
   }
@@ -32,9 +29,6 @@ export function resolveImageFiles(
   return resolved;
 }
 
-/**
- * Get the first resolved image filename for list preview, or null if none found.
- */
 export function getFirstImage(
   adDir: string,
   imagePatterns: string[],
@@ -45,8 +39,9 @@ export function getFirstImage(
 
     for (const match of matches) {
       const ext = path.extname(match).toLowerCase();
-      if (ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
-        return path.basename(match);
+      const rel = toNFC(path.relative(adDir, match));
+      if (ALLOWED_IMAGE_EXTENSIONS.has(ext) && !rel.startsWith('..')) {
+        return rel;
       }
     }
   }

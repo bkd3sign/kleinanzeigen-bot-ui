@@ -13,7 +13,7 @@ set -euo pipefail
 #   bash install.sh --update     — update existing install (no system deps, ~5-15 min)
 #
 # Env overrides (skip prompts):
-#   INSTALL_DIR, WORKSPACE_DIR, PORT, SERVICE_USER, BOT_RELEASE
+#   INSTALL_DIR, WORKSPACE_DIR, PORT, SERVICE_USER, BOT_RELEASE, COOKIE_SECURE
 # ─────────────────────────────────────────────────────────────────────────────
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -391,12 +391,23 @@ fi
 ask "Release tag" "${BOT_RELEASE:-latest}" BOT_RELEASE
 
 echo ""
+if [[ "$NON_INTERACTIVE" == "false" ]]; then
+  echo -e "  HTTPS / secure cookies:"
+  echo -e "    ${BOLD}false${RESET} — local / LAN without HTTPS ${GREEN}(default, recommended for home servers)${RESET}"
+  echo -e "    ${BOLD}true${RESET}  — behind an HTTPS reverse proxy (nginx, Caddy, Traefik…)"
+  echo ""
+fi
+ask "COOKIE_SECURE (true/false)" "${COOKIE_SECURE:-false}" COOKIE_SECURE
+[[ "$COOKIE_SECURE" == "true" || "$COOKIE_SECURE" == "false" ]] || { warn "Invalid value '$COOKIE_SECURE' — defaulting to false"; COOKIE_SECURE="false"; }
+
+echo ""
 echo -e "${BOLD}  Installation summary:${RESET}"
-echo -e "    Install dir:  $INSTALL_DIR"
-echo -e "    Workspace:    $WORKSPACE_DIR"
-echo -e "    Port:         $PORT"
-echo -e "    Service user: $SERVICE_USER"
-echo -e "    Bot release:  $BOT_RELEASE"
+echo -e "    Install dir:    $INSTALL_DIR"
+echo -e "    Workspace:      $WORKSPACE_DIR"
+echo -e "    Port:           $PORT"
+echo -e "    Service user:   $SERVICE_USER"
+echo -e "    Bot release:    $BOT_RELEASE"
+echo -e "    Secure cookies: $COOKIE_SECURE"
 echo ""
 
 if [[ "$NON_INTERACTIVE" == "false" ]] && [[ "$IS_REINSTALL" == "false" ]]; then
@@ -726,6 +737,7 @@ Environment=HOSTNAME=0.0.0.0
 Environment=NODE_ENV=production
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=TZ=${TZ:-Europe/Berlin}
+$([[ "$COOKIE_SECURE" == "true" ]] && echo "Environment=COOKIE_SECURE=true")
 ExecStart=${NODE_BIN} server.js
 Restart=on-failure
 RestartSec=5
@@ -777,3 +789,7 @@ echo -e "    journalctl -u kleinanzeigen-bot-ui -f   # live logs"
 echo -e "    systemctl status kleinanzeigen-bot-ui   # status"
 echo -e "    systemctl restart kleinanzeigen-bot-ui  # restart"
 echo ""
+if [[ "$COOKIE_SECURE" == "true" ]]; then
+  echo -e "  ${GREEN}Secure cookies enabled${RESET} — HTTPS mode active."
+  echo ""
+fi

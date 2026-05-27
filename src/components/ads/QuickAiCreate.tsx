@@ -6,6 +6,7 @@ import { useGenerateAd, useCreateAd } from '@/hooks/useAds';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
 import { Button, ImagePreview, useToast } from '@/components/ui';
 import { resizeImageForAi } from '@/lib/images/resize-client';
+import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import { api } from '@/lib/api/client';
 import styles from './QuickAiCreate.module.scss';
 
@@ -56,7 +57,9 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
 
   useImperativeHandle(ref, () => ({
     addFiles: (files: File[]) => {
-      setStagedFiles((prev) => [...prev, ...files]);
+      const { accepted, rejected } = filterImageFiles(files);
+      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+      if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
       textareaRef.current?.focus();
     },
   }));
@@ -140,7 +143,10 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
         for (const file of allFilesRef.current) {
           const formData = new FormData();
           formData.append('files', file);
-          try { await api.upload(url, formData); } catch { /* non-critical */ }
+          const res = await api.upload<{ rejected?: { name: string; reason: string }[] }>(url, formData).catch(() => null);
+          for (const r of res?.rejected ?? []) {
+            toast('error', `${r.name}: ${r.reason}`);
+          }
         }
       }
       toast('success', `„${editTitle}" gespeichert`);
@@ -187,20 +193,21 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files?.length) {
-      setStagedFiles((prev) => [...prev, ...Array.from(files)]);
+      const { accepted, rejected } = filterImageFiles(Array.from(files));
+      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+      if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
     }
     setFileInputKey((k) => k + 1);
-  }, []);
+  }, [toast]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.clipboardData?.files || []).filter((f) =>
-      f.type.startsWith('image/'),
-    );
-    if (files.length) {
-      e.preventDefault();
-      setStagedFiles((prev) => [...prev, ...files]);
-    }
-  }, []);
+    const all = Array.from(e.clipboardData?.files || []);
+    if (!all.length) return;
+    e.preventDefault();
+    const { accepted, rejected } = filterImageFiles(all);
+    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
+  }, [toast]);
 
   const removeFile = useCallback((index: number) => {
     setStagedFiles((prev) => {
@@ -229,9 +236,10 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
-    if (files.length) setStagedFiles((prev) => [...prev, ...files]);
-  }, []);
+    const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
+    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
+  }, [toast]);
 
   // Auto-resize desc textarea on render
   const descRef = useCallback((el: HTMLTextAreaElement | null) => {

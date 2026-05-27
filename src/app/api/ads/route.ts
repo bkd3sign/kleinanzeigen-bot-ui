@@ -4,13 +4,17 @@ import { adCreateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdFiles, readAd, writeAd } from '@/lib/yaml/ads';
 import { readMergedConfig } from '@/lib/yaml/config';
-import { readLastDownloadAll, resolveDownloadDir, archiveInactiveAdFolders } from '@/lib/bot/hooks';
+import { readLastDownloadAll, resolveDownloadDir, archiveInactiveAdFolders, mergeDraftPairs } from '@/lib/bot/hooks';
+import { resolveArchiveDir } from '@/lib/bot/archive';
 import { getFirstImage } from '@/lib/images/resolve';
+import { toNFC } from '@/lib/images/normalize';
 import { computeContentHash } from '@/lib/ads/content-hash';
 import { getTemplatesDir } from '@/lib/yaml/templates';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
 import path from 'path';
 
 const backfilledWorkspaces = new Set<string>();
+const attrNormalizedWorkspaces = new Set<string>();
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,23 +26,42 @@ export async function GET(request: NextRequest) {
     const ws = user.workspace;
     if (!backfilledWorkspaces.has(ws)) {
       backfilledWorkspaces.add(ws);
-      archiveInactiveAdFolders(resolveDownloadDir(ws));
+      archiveInactiveAdFolders(ws);
     }
+    mergeDraftPairs(ws);
+    const archiveDir = resolveArchiveDir(ws);
     const files = await findAdFiles(ws);
     const lastDownload = readLastDownloadAll(ws);
     const onlineIds = lastDownload ? new Set(lastDownload.ids) : null;
     const ads = [];
 
+    const needsAttrBackfill = !attrNormalizedWorkspaces.has(ws);
+    // Mark immediately to prevent concurrent requests from running duplicate backfills
+    if (needsAttrBackfill) attrNormalizedWorkspaces.add(ws);
+    const catDataForBackfill = needsAttrBackfill ? loadCatAttrsData() : null;
+    const attrNormalizeQueue: Array<{ filePath: string; ad: Record<string, unknown> }> = [];
+
     for (const filePath of files) {
       const ad = await readAd(filePath);
-      const adDir = path.dirname(filePath);
-      const images = (ad.images as string[]) ?? [];
-      // Detect changed status: has content_hash but current content differs
-      // Compare stored content_hash with freshly computed one
-      // Only flag as changed if stored hash exists (bot has published/hashed this ad before)
+
+      // Compute hash from original data BEFORE any mutation to avoid false "changed" flags
       const storedHash = (ad.content_hash as string) ?? null;
       const currentHash = storedHash ? computeContentHash(ad) : null;
       const isChanged = storedHash ? currentHash !== storedHash : false;
+
+      // One-time backfill: translate downloaded API values to display text for text-search comboboxes
+      if (needsAttrBackfill && catDataForBackfill && ad.special_attributes && ad.category) {
+        const original = ad.special_attributes as Record<string, string>;
+        const translated = translateAttrValues(original, String(ad.category), catDataForBackfill);
+        if (Object.keys(translated).some(k => translated[k] !== original[k])) {
+          ad.special_attributes = translated;
+          // Keep hash in sync so the ad doesn't appear "changed" after normalization
+          if (ad.content_hash) ad.content_hash = computeContentHash(ad);
+          attrNormalizeQueue.push({ filePath, ad: { ...ad } });
+        }
+      }
+      const adDir = path.dirname(filePath);
+      const images = (ad.images as string[]) ?? [];
 
       ads.push({
         id: ad.id ?? null,
@@ -55,13 +78,22 @@ export async function GET(request: NextRequest) {
         repost_count: ad.repost_count ?? 0,
         republication_interval: ad.republication_interval ?? null,
         shipping_type: ad.shipping_type ?? null,
+        shipping_options: (ad.shipping_options as string[] | undefined) ?? null,
         auto_price_reduction: ad.auto_price_reduction ?? null,
         price_reduction_count: ad.price_reduction_count ?? 0,
         has_description: Boolean(ad.description),
         is_changed: isChanged,
         is_orphaned: onlineIds !== null && ad.id != null && !onlineIds.has(ad.id as number),
-        file: path.relative(ws, filePath),
+        is_archived: filePath.startsWith(archiveDir + path.sep),
+        file: toNFC(path.relative(ws, filePath)),
       });
+    }
+
+    // Write back all attribute-normalized files (one-time per workspace session)
+    if (attrNormalizeQueue.length > 0) {
+      for (const { filePath, ad } of attrNormalizeQueue) {
+        try { writeAd(filePath, ad); } catch { /* skip unwritable files */ }
+      }
     }
 
     // Deduplicate by ID: during download --ads=all the bot creates files in
@@ -178,9 +210,12 @@ export async function POST(request: NextRequest) {
     if (ad.description_suffix) data.description_suffix = ad.description_suffix;
     if (ad.special_attributes && Object.keys(ad.special_attributes).length > 0) {
       // Strip category prefix from keys (e.g. "kleidung_herren.art_s" → "art_s")
-      data.special_attributes = Object.fromEntries(
-        Object.entries(ad.special_attributes).map(([k, v]) => [k.includes('.') ? k.split('.').pop()! : k, v]),
+      let attrs = Object.fromEntries(
+        Object.entries(ad.special_attributes).map(([k, v]) => [k.includes('.') ? k.split('.').pop()! : k, String(v)]),
       );
+      const catData = loadCatAttrsData();
+      if (catData && ad.category) attrs = translateAttrValues(attrs, String(ad.category), catData);
+      data.special_attributes = attrs;
     }
     if (ad.auto_price_reduction) {
       data.auto_price_reduction = ad.auto_price_reduction;
@@ -210,7 +245,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       message: 'Ad created',
-      file: path.relative(ws, filePath),
+      file: toNFC(path.relative(ws, filePath)),
       data,
     });
   } catch (error) {

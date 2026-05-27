@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
 
 export async function GET(req: NextRequest) {
   const title = req.nextUrl.searchParams.get('title')?.trim();
@@ -25,7 +26,9 @@ export async function GET(req: NextRequest) {
       if (key && val) attrs[key] = val;
     }
 
-    return NextResponse.json({ id, attrs });
+    const catData = loadCatAttrsData();
+    const translatedAttrs = catData ? translateAttrValues(attrs, id, catData) : attrs;
+    return NextResponse.json({ id, attrs: translatedAttrs });
   } catch {
     return NextResponse.json(null);
   }

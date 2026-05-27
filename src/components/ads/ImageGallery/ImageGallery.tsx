@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api/client';
-import { ImagePreview } from '@/components/ui';
+import { ImagePreview, useToast } from '@/components/ui';
+import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import styles from './ImageGallery.module.scss';
 
 interface ImageGalleryProps {
@@ -16,9 +17,10 @@ interface ImageGalleryProps {
 }
 
 export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pendingFilesRef, onChange, onDropHandlerReady }: ImageGalleryProps) {
+  const { toast } = useToast();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -63,9 +65,7 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
       const blobUrl = blobUrlsRef.current.get(name);
       if (blobUrl) return blobUrl;
       if (!adFile) return null;
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      if (!token) return null;
-      return `/api/images/file?file=${encodeURIComponent(adFile)}&name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}`;
+      return `/api/images/file?file=${encodeURIComponent(adFile)}&name=${encodeURIComponent(name)}`;
     },
     [adFile],
   );
@@ -123,7 +123,15 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
   const handleUploadFiles = useCallback(
     async (files: File[]) => {
       if (!files.length) return;
-      const uniqueFiles = deduplicateFiles(files);
+
+      const { accepted, rejected: clientRejected } = filterImageFiles(files);
+
+      if (clientRejected.length > 0) {
+        toast('error', `Format nicht unterstützt: ${clientRejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+      }
+
+      if (!accepted.length) return;
+      const uniqueFiles = deduplicateFiles(accepted);
 
       if (isEdit && adFile) {
         setUploading(true);
@@ -133,7 +141,10 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
           for (const file of uniqueFiles) {
             const formData = new FormData();
             formData.append('files', file);
-            const result = await api.upload<{ uploaded: string[]; images: string[] }>(url, formData);
+            const result = await api.upload<{ uploaded: string[]; rejected: { name: string; reason: string }[]; images: string[] }>(url, formData);
+            for (const r of result.rejected ?? []) {
+              toast('error', `${r.name}: ${r.reason}`);
+            }
             latestImages = result.images;
           }
           updateImages(latestImages);
@@ -158,7 +169,7 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
         updateImages([...imagesRef.current, ...uniqueFiles.map((f) => f.name)]);
       }
     },
-    [isEdit, adFile, createBlobUrl, deduplicateFiles, pendingFilesRef, updateImages],
+    [isEdit, adFile, createBlobUrl, deduplicateFiles, pendingFilesRef, updateImages, toast],
   );
 
   useEffect(() => {
@@ -198,8 +209,7 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
   const handleUploadDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
-      handleUploadFiles(files);
+      handleUploadFiles(Array.from(e.dataTransfer.files));
     },
     [handleUploadFiles],
   );
@@ -219,6 +229,12 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
     (e: React.DragEvent, targetIndex: number) => {
       e.preventDefault();
       setDragOverIndex(null);
+      // External file drop on an existing image slot — route to upload handler
+      if (e.dataTransfer.files.length > 0) {
+        e.stopPropagation();
+        handleUploadFiles(Array.from(e.dataTransfer.files));
+        return;
+      }
       if (dragIndex === null || dragIndex === targetIndex) return;
       const next = [...imagesRef.current];
       const [moved] = next.splice(dragIndex, 1);
@@ -226,13 +242,21 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
       updateImages(next);
       setDragIndex(null);
     },
-    [dragIndex, updateImages],
+    [dragIndex, updateImages, handleUploadFiles],
   );
+
+  const imageUrls = images
+    .map(name => getImageUrl(name))
+    .filter((u): u is string => u !== null);
 
   return (
     <div className={styles.gallery}>
       <label className="formLabel">Bilder</label>
-      <div className={styles.grid}>
+      <div
+        className={styles.grid}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+        onDrop={handleUploadDrop}
+      >
         {images.map((name, index) => {
           const url = getImageUrl(name);
           const isDragging = dragIndex === index;
@@ -255,7 +279,7 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
                   alt={name}
                   className={styles.thumb}
                   loading="lazy"
-                  onClick={() => setPreviewSrc(url)}
+                  onClick={() => setPreviewIndex(imageUrls.indexOf(url))}
                 />
               ) : (
                 <div className={styles.placeholder}>{name}</div>
@@ -287,14 +311,19 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="*"
         multiple
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
 
-      {previewSrc && (
-        <ImagePreview src={previewSrc} onClose={() => setPreviewSrc(null)} />
+      {previewIndex !== null && imageUrls[previewIndex] && (
+        <ImagePreview
+          src={imageUrls[previewIndex]}
+          images={imageUrls}
+          initialIndex={previewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
       )}
     </div>
   );

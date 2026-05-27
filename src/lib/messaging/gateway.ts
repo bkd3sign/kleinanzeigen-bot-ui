@@ -195,9 +195,9 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
     }
   }
 
-  // Clean up old session
+  // Clean up old session — SIGKILL for immediate death, same reason as stopForBot
   if (existing?.proc) {
-    try { existing.proc.kill('SIGTERM'); } catch { /* fine */ }
+    try { existing.proc.kill('SIGKILL'); } catch { /* fine */ }
   }
 
   // Shared profile directory (used by both bot CLI and messaging)

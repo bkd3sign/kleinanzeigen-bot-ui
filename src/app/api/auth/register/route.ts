@@ -1,14 +1,13 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { registerSchema } from '@/validation/schemas';
-import { loadUsers, saveUsers, ensureJwtSecret, generateUserId, createUserWorkspace, isSingleUser, migrateOwnerToMultiUser } from '@/lib/yaml/users';
+import { loadUsers, saveUsers, ensureJwtSecret, generateUserId, createUserWorkspace, migrateOwnerToMultiUser } from '@/lib/yaml/users';
 import { hashPassword } from '@/lib/auth/password';
-import { createJwt } from '@/lib/auth/jwt';
-import { RateLimiter } from '@/lib/auth/rate-limiter';
+import { createJwt, createRefreshToken } from '@/lib/auth/jwt';
+import { REFRESH_COOKIE, REFRESH_COOKIE_OPTIONS, ACCESS_COOKIE, ACCESS_COOKIE_OPTIONS } from '@/lib/auth/cookies';
+import { registerLimiter } from '@/lib/auth/rate-limiter';
 import { loadBotDefaults, writeConfig } from '@/lib/yaml/config';
 import crypto from 'crypto';
-
-const registerLimiter = new RateLimiter(5, 600);
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +26,7 @@ export async function POST(request: NextRequest) {
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] ?? 'unknown';
     registerLimiter.check(clientIp);
 
-    const data = (await loadUsers()) ?? { users: [], invites: [] };
+    const data = loadUsers() ?? { users: [], invites: [] };
     const users = data.users ?? [];
     const invites = data.invites ?? [];
 
@@ -71,8 +70,8 @@ export async function POST(request: NextRequest) {
     const wasOwnerAlone = users.length === 2; // just added the 2nd user
     const ownerId = users[0]?.id;
 
-    const secret = await ensureJwtSecret(data);
-    await saveUsers(data);
+    const secret = ensureJwtSecret(data);
+    saveUsers(data);
 
     // Migrate owner data from root to users/<owner>/ if this is the first additional user
     if (wasOwnerAlone && ownerId) {
@@ -103,8 +102,9 @@ export async function POST(request: NextRequest) {
     };
     writeConfig(ws, userConfig);
 
-    const token = await createJwt(newUser, secret);
-    return NextResponse.json({
+    const token = createJwt(newUser, secret);
+    const refreshToken = createRefreshToken(newUser, secret, false);
+    const response = NextResponse.json({
       token,
       user: {
         id: newUser.id,
@@ -113,6 +113,9 @@ export async function POST(request: NextRequest) {
         display_name: newUser.display_name,
       },
     });
+    response.cookies.set(REFRESH_COOKIE, refreshToken, REFRESH_COOKIE_OPTIONS);
+    response.cookies.set(ACCESS_COOKIE, token, ACCESS_COOKIE_OPTIONS);
+    return response;
   } catch (error) {
     return handleApiError(error);
   }

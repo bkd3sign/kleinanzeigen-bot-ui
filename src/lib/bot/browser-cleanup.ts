@@ -110,11 +110,17 @@ export function killOrphanedChromium(workspace: string): void {
   }
 }
 
-// Files that block browser startup after unclean shutdown
+// Files that block browser startup or trigger crash-recovery mode after unclean shutdown.
+// Session files (Current/Last Session+Tabs) prevent Chromium from entering headless-unsafe
+// restore mode when it detects a previous crash.
 const STALE_FILES = [
   'SingletonLock', 'SingletonCookie', 'SingletonSocket',
   'DevToolsActivePort',
   'CrashpadMetrics-active.pma',
+  path.join('Default', 'Current Session'),
+  path.join('Default', 'Current Tabs'),
+  path.join('Default', 'Last Session'),
+  path.join('Default', 'Last Tabs'),
 ];
 
 // Cache directories that corrupt easily and regenerate automatically
@@ -123,14 +129,24 @@ const STALE_CACHE_DIRS = [
 ];
 
 /**
- * Remove stale files that block browser startup after crashes,
- * but preserve cookies/session to avoid triggering MFA on every run.
+ * Remove only lock files and session-restore files — safe before every run.
+ * Does not wipe caches so Chromium can reuse V8 bytecode and GPU shaders.
  */
-export function cleanBrowserProfile(workspace: string, profileName: string = 'browser-profile'): void {
+export function cleanStaleLocks(workspace: string, profileName: string = 'browser-profile'): void {
   const profileDir = path.join(workspace, '.temp', profileName);
   for (const f of STALE_FILES) {
     try { fs.unlinkSync(path.join(profileDir, f)); } catch { /* fine */ }
   }
+}
+
+/**
+ * Full cleanup: remove lock files, session files, and cache dirs.
+ * Only call on crash recovery — cache wipe forces Chromium to rebuild
+ * V8 bytecode and GPU shaders on the next startup.
+ */
+export function cleanBrowserProfile(workspace: string, profileName: string = 'browser-profile'): void {
+  cleanStaleLocks(workspace, profileName);
+  const profileDir = path.join(workspace, '.temp', profileName);
   for (const dir of STALE_CACHE_DIRS) {
     try { fs.rmSync(path.join(profileDir, dir), { recursive: true, force: true }); } catch { /* fine */ }
   }
@@ -150,7 +166,7 @@ export function prepareCleanBrowserState(workspace: string): void {
  * or the timeout expires. More robust than a fixed sleep because the OS
  * process exit + file-handle release timing varies across systems.
  */
-export async function waitForProfileFree(workspace: string, timeoutMs = 2000): Promise<void> {
+export async function waitForProfileFree(workspace: string, timeoutMs = 5000): Promise<void> {
   const profileDir = path.join(workspace, '.temp', 'browser-profile');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -159,7 +175,10 @@ export async function waitForProfileFree(workspace: string, timeoutMs = 2000): P
       // pgrep exited 0 → processes still alive, wait a bit
       await new Promise(resolve => setTimeout(resolve, 100));
     } catch {
-      // pgrep exits 1 when no matches → profile is free
+      // pgrep exits 1 when no matches → profile is free.
+      // Short grace period: OS releases file handles asynchronously after process exit,
+      // so a new Chromium starting immediately may still find locked files.
+      await new Promise(resolve => setTimeout(resolve, 300));
       return;
     }
   }

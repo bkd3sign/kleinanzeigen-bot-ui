@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { getTemplatesDir, findTemplateFile } from '@/lib/yaml/templates';
 import { readAd } from '@/lib/yaml/ads';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
 import path from 'path';
+import { toNFC } from '@/lib/images/normalize';
 
 interface RouteContext {
   params: Promise<{ slug: string }>;
@@ -44,8 +46,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const tplDir = path.join(templatesDir, `tpl_${slug}`);
     const isDirBased = filePath === path.join(tplDir, `tpl_${slug}.yaml`);
     const sourceAdFile = isDirBased
-      ? path.relative(user.workspace, filePath)
+      ? toNFC(path.relative(user.workspace, filePath))
       : ((data._source_ad_file as string) ?? null);
+
+    // Translate legacy API values → display text (templates saved before normalization)
+    const catData = loadCatAttrsData();
+    const templateCategory = adData.category ? String(adData.category) : '';
+    if (catData && templateCategory && adData.special_attributes) {
+      adData.special_attributes = translateAttrValues(
+        adData.special_attributes as Record<string, string>,
+        templateCategory,
+        catData,
+      );
+    }
 
     return NextResponse.json({
       ad_data: adData,

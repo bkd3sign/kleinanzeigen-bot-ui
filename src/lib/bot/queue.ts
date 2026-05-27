@@ -2,7 +2,7 @@ import { jobs, cancelJob } from '@/lib/bot/jobs';
 import { runBotCommand } from '@/lib/bot/runner';
 import { onJobStarting, onJobCompleted } from '@/lib/bot/hooks';
 import { stopForBot, restartAllBrowserless } from '@/lib/messaging/gateway';
-import { waitForProfileFree, prepareCleanBrowserState } from '@/lib/bot/browser-cleanup';
+import { waitForProfileFree, prepareCleanBrowserState, cleanStaleLocks } from '@/lib/bot/browser-cleanup';
 
 // Auto-cancel jobs with no output for this many milliseconds
 const STALE_JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -116,9 +116,17 @@ async function executeAndAdvance(jobId: string, command: string, workspace: stri
   // Bot has absolute priority — stop messaging browser on the shared profile
   stopForBot(workspace);
 
-  // Poll until no Chromium process holds the profile lock (up to 2s).
+  // Poll until no Chromium process holds the profile lock (up to 5s).
   // A fixed sleep is not reliable — OS process exit timing varies.
   await waitForProfileFree(workspace);
+
+  // Remove stale lock and session-restore files before the first attempt.
+  // When Chromium crashes mid-run (e.g. OOM after many ads), it leaves
+  // Current/Last Session files that send the next Chromium into headless-unsafe
+  // restore mode, causing it to crash on startup with ConnectionRefusedError.
+  // Cache dirs are intentionally preserved here — only wiped on crash recovery
+  // (prepareCleanBrowserState) to avoid forcing Chromium to rebuild V8/GPU caches.
+  cleanStaleLocks(workspace);
 
   const job = jobs.get(jobId);
   if (job) job.last_output_at = new Date().toISOString();

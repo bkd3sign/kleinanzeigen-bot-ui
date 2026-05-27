@@ -3,14 +3,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adUpdateSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdByFile, readAd, writeAd, applyAdUpdates } from '@/lib/yaml/ads';
+import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
+import { computeContentHash } from '@/lib/ads/content-hash';
+import { toNFC } from '@/lib/images/normalize';
 import path from 'path';
 import { unlink, rm } from 'fs/promises';
 import { existsSync, readdirSync } from 'fs';
 import { globSync } from 'glob';
-import { archiveAdFolder, unarchiveAdFolder, resolveArchiveDir } from '@/lib/bot/archive';
-import { resolveDownloadDir } from '@/lib/bot/hooks';
-
-const ALLOWED_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
+import {
+  archiveAdFolder,
+  unarchiveAdFolder,
+  resolveArchiveDir,
+  resolveArchiveSubDir,
+  ARCHIVE_SUBDIR_ADS,
+  ARCHIVE_SUBDIR_DOWNLOADS,
+  type ArchiveOrigin,
+} from '@/lib/bot/archive';
+import { resolveDownloadDir, resolveAdsDir } from '@/lib/bot/hooks';
+import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/images/upload';
 
 interface RouteContext {
   params: Promise<{ filename: string[] }>;
@@ -32,7 +42,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const { path: resolvedPath, ad } = result;
-    ad.file = path.relative(user.workspace, resolvedPath);
+
+    // Normalize text-based attributes on read and write back if changed
+    const catData = loadCatAttrsData();
+    const category = String(ad.category ?? '');
+    if (catData && category && ad.special_attributes) {
+      const original = ad.special_attributes as Record<string, string>;
+      const translated = translateAttrValues(original, category, catData);
+      const changed = Object.keys(translated).some(k => translated[k] !== original[k]);
+      if (changed) {
+        ad.special_attributes = translated;
+        if (ad.content_hash) ad.content_hash = computeContentHash(ad);
+        writeAd(resolvedPath, ad);
+      }
+    }
+
+    ad.file = toNFC(path.relative(user.workspace, resolvedPath));
     return NextResponse.json(ad);
   } catch (error) {
     return handleApiError(error);
@@ -70,29 +95,52 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       Object.entries(parsed.data).filter(([, v]) => v !== undefined),
     );
     applyAdUpdates(ad, updateData);
+
+    // Translate API values → display text for text-based attributes
+    const catData = loadCatAttrsData();
+    const category = String(ad.category ?? '');
+    if (catData && category && ad.special_attributes) {
+      ad.special_attributes = translateAttrValues(
+        ad.special_attributes as Record<string, string>,
+        category,
+        catData,
+      );
+    }
+
     await writeAd(resolvedPath, ad);
 
     const isNowActive = ad.active !== false;
-    if (typeof ad.id === 'number' && wasActive !== isNowActive) {
+    let newResolvedPath = resolvedPath;
+
+    if (wasActive !== isNowActive) {
       const downloadDir = resolveDownloadDir(user.workspace);
-      const archiveDir = resolveArchiveDir(downloadDir);
+      const adsDir = resolveAdsDir(user.workspace);
+      const archiveDir = resolveArchiveDir(user.workspace);
       const adFolder = path.dirname(resolvedPath);
+      const folderBaseName = path.basename(adFolder);
+      const yamlBaseName = path.basename(resolvedPath);
+
       if (isNowActive) {
-        // Folder is inside archive/ → move back to downloadDir
-        if (adFolder.startsWith(archiveDir + path.sep) || adFolder === archiveDir) {
-          unarchiveAdFolder(adFolder, downloadDir);
+        if (adFolder.startsWith(archiveDir + path.sep)) {
+          const adsArchiveDir = resolveArchiveSubDir(user.workspace, ARCHIVE_SUBDIR_ADS);
+          const destDir = adFolder.startsWith(adsArchiveDir + path.sep) ? adsDir : downloadDir;
+          unarchiveAdFolder(adFolder, user.workspace, adsDir, downloadDir);
+          newResolvedPath = path.join(destDir, folderBaseName, yamlBaseName);
         }
       } else {
-        // Folder is inside downloadDir but NOT in archive/ → move to archive
-        if (adFolder.startsWith(downloadDir + path.sep) && !adFolder.startsWith(archiveDir + path.sep)) {
-          archiveAdFolder(adFolder, downloadDir);
+        if (!adFolder.startsWith(archiveDir + path.sep)) {
+          const origin: ArchiveOrigin = adFolder.startsWith(adsDir + path.sep)
+            ? ARCHIVE_SUBDIR_ADS
+            : ARCHIVE_SUBDIR_DOWNLOADS;
+          archiveAdFolder(adFolder, user.workspace, origin);
+          newResolvedPath = path.join(resolveArchiveSubDir(user.workspace, origin), folderBaseName, yamlBaseName);
         }
       }
     }
 
     return NextResponse.json({
       message: 'Ad updated',
-      file: path.relative(user.workspace, resolvedPath),
+      file: toNFC(path.relative(user.workspace, newResolvedPath)),
       data: ad,
     });
   } catch (error) {
@@ -143,7 +191,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       message: 'Ad deleted',
-      file: path.relative(user.workspace, resolvedPath),
+      file: toNFC(path.relative(user.workspace, resolvedPath)),
     });
   } catch (error) {
     return handleApiError(error);

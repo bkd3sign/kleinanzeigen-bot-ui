@@ -1,137 +1,199 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLogStream } from '@/hooks/useLogStream';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { useToast } from '@/components/ui';
-import { Input, Button } from '@/components/ui';
+import { Input } from '@/components/ui';
 import styles from './LogViewer.module.scss';
 
+const POLL_INTERVAL_MS = 1000;
+
 export function LogViewer() {
-  const { lines: liveLines, isConnected, connect, disconnect } = useLogStream();
   const { toast } = useToast();
-  const [staticLines, setStaticLines] = useState<string[]>([]);
+  const [lines, setLines] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [isLive, setIsLive] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const fullBodyRef = useRef<HTMLDivElement>(null);
 
-  // Merge: static logs + any new live lines appended
-  const allLines = useMemo(() => {
-    if (!isConnected || liveLines.length === 0) return staticLines;
-    return [...staticLines, ...liveLines];
-  }, [staticLines, liveLines, isConnected]);
-
-  // Load initial logs
-  useEffect(() => {
-    const loadLogs = async () => {
-      try {
-        const data = await api.get<{ output?: string; logs?: string }>('/api/logs?lines=200');
-        const logText = data.output ?? data.logs ?? '';
-        const parsed = typeof logText === 'string' ? logText.split('\n') : [];
-        setStaticLines(parsed);
-      } catch {
-        // Ignore
-      }
-    };
-    loadLogs();
-  }, []);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (autoScroll && bodyRef.current) {
-      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }
-  }, [allLines, autoScroll]);
-
-  const handleScroll = useCallback(() => {
-    if (!bodyRef.current) return;
-    const { scrollHeight, scrollTop, clientHeight } = bodyRef.current;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-    if (!isAtBottom && autoScroll) {
-      setAutoScroll(false);
-    }
-  }, [autoScroll]);
-
-  const filteredLines = useMemo(() => {
-    if (!search) return allLines;
-    const q = search.toLowerCase().normalize('NFC');
-    return allLines.filter((l) => l.toLowerCase().normalize('NFC').includes(q));
-  }, [allLines, search]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
+  const fetchLogs = useCallback(async (silent = false): Promise<void> => {
     try {
       const data = await api.get<{ output?: string; logs?: string }>('/api/logs?lines=200');
       const logText = data.output ?? data.logs ?? '';
       const parsed = typeof logText === 'string' ? logText.split('\n').filter(Boolean) : [];
-      setStaticLines(parsed);
-      if (parsed.length === 0) {
+      setLines(parsed);
+      if (!silent && parsed.length === 0) {
         toast('info', 'Keine Logdateien gefunden');
       }
     } catch {
-      toast('error', 'Logs konnten nicht geladen werden');
-    } finally {
-      setTimeout(() => setRefreshing(false), 600);
+      if (!silent) toast('error', 'Logs konnten nicht geladen werden');
     }
   }, [toast]);
 
-  return (
-    <div className={styles.wrapper}>
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarLeft}>
-          <Input
-            placeholder="Logs suchen…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+  // Initial load
+  useEffect(() => {
+    fetchLogs(true);
+  }, [fetchLogs]);
+
+  // Live polling
+  useEffect(() => {
+    if (!isLive) return;
+    const id = setInterval(() => fetchLogs(true), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isLive, fetchLogs]);
+
+  // Auto-scroll — both inline and fullscreen body
+  useEffect(() => {
+    if (!autoScroll) return;
+    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    if (fullBodyRef.current) fullBodyRef.current.scrollTop = fullBodyRef.current.scrollHeight;
+  }, [lines, autoScroll]);
+
+  // Scroll to bottom when fullscreen opens
+  useEffect(() => {
+    if (isFullscreen && fullBodyRef.current) {
+      fullBodyRef.current.scrollTop = fullBodyRef.current.scrollHeight;
+    }
+  }, [isFullscreen]);
+
+  // ESC closes fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsFullscreen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isFullscreen]);
+
+  const handleScroll = useCallback((ref: React.RefObject<HTMLDivElement | null>) => {
+    if (!ref.current) return;
+    const { scrollHeight, scrollTop, clientHeight } = ref.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+    if (!isAtBottom && autoScroll) setAutoScroll(false);
+  }, [autoScroll]);
+
+  const filteredLines = useMemo(() => {
+    if (!search) return lines;
+    const q = search.toLowerCase().normalize('NFC');
+    return lines.filter((l) => l.toLowerCase().normalize('NFC').includes(q));
+  }, [lines, search]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchLogs(false);
+    setTimeout(() => setRefreshing(false), 600);
+  }, [fetchLogs]);
+
+  const handleToggleLive = useCallback(() => {
+    const next = !isLive;
+    setIsLive(next);
+    if (next) fetchLogs(true);
+  }, [isLive, fetchLogs]);
+
+  const handleToggleAutoScroll = useCallback((ref: React.RefObject<HTMLDivElement | null>) => {
+    const next = !autoScroll;
+    setAutoScroll(next);
+    if (next && ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [autoScroll]);
+
+  const logContent = (ref: React.RefObject<HTMLDivElement | null>, extraClass?: string) => (
+    <div
+      className={`${styles.terminalBody} ${extraClass ?? ''}`}
+      ref={ref}
+      onScroll={() => handleScroll(ref)}
+    >
+      {filteredLines.length === 0 ? (
+        <div className={styles.empty}>
+          {search ? 'Keine Treffer gefunden' : 'Keine Logs vorhanden'}
         </div>
-        <div className={styles.toolbarRight}>
+      ) : (
+        filteredLines.map((line, i) => (
+          <div key={i} className={styles.line}>
+            {search ? <HighlightedLine text={line} query={search} /> : line}
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  const toolbar = (ref: React.RefObject<HTMLDivElement | null>, fullscreen: boolean) => (
+    <div className={`${styles.toolbar} ${fullscreen ? styles.toolbarFullscreen : ''}`}>
+      <div className={styles.toolbarLeft}>
+        <Input
+          placeholder="Logs suchen…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      <div className={styles.toolbarRight}>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${autoScroll ? styles.toggleBtnActive : ''}`}
+          onClick={() => handleToggleAutoScroll(ref)}
+        >
+          ↓ Auto-Scroll
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${isLive ? styles.toggleBtnActive : ''}`}
+          onClick={handleToggleLive}
+        >
+          ● Live
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${refreshing ? styles.toggleBtnActive : ''}`}
+          onClick={handleRefresh}
+        >
+          ↻ Refresh
+        </button>
+        {fullscreen ? (
           <button
             type="button"
-            className={`${styles.toggleBtn} ${autoScroll ? styles.toggleBtnActive : ''}`}
-            onClick={() => {
-              setAutoScroll(!autoScroll);
-              if (!autoScroll && bodyRef.current) {
-                bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-              }
-            }}
+            className={`${styles.toggleBtn} ${styles.toggleBtnClose}`}
+            onClick={() => setIsFullscreen(false)}
           >
-            ↓ Auto-Scroll
+            ✕ Schließen
           </button>
+        ) : (
           <button
             type="button"
-            className={`${styles.toggleBtn} ${isConnected ? styles.toggleBtnActive : ''}`}
-            onClick={isConnected ? disconnect : connect}
+            className={styles.toggleBtn}
+            onClick={() => setIsFullscreen(true)}
+            title="Vollbild"
           >
-            ● Live
+            ⛶
           </button>
-          <button
-            type="button"
-            className={`${styles.toggleBtn} ${refreshing ? styles.toggleBtnActive : ''}`}
-            onClick={handleRefresh}
-          >
-            ↻ Refresh
-          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className={styles.wrapper}>
+        {toolbar(bodyRef, false)}
+        <div className={styles.terminal}>
+          {logContent(bodyRef)}
         </div>
       </div>
 
-      <div className={styles.terminal}>
-        <div className={styles.terminalBody} ref={bodyRef} onScroll={handleScroll}>
-          {filteredLines.length === 0 ? (
-            <div className={styles.empty}>
-              {search ? 'Keine Treffer gefunden' : 'Keine Logs vorhanden'}
+      {isFullscreen && typeof document !== 'undefined' && createPortal(
+        <div className={styles.overlay} role="dialog" aria-modal="true">
+          <div className={styles.overlayInner}>
+            {toolbar(fullBodyRef, true)}
+            <div className={styles.overlayBody}>
+              {logContent(fullBodyRef)}
             </div>
-          ) : (
-            filteredLines.map((line, i) => (
-              <div key={i} className={styles.line}>
-                {search ? <HighlightedLine text={line} query={search} /> : line}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
+            <div className={styles.overlayEsc}>ESC zum Schließen</div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 

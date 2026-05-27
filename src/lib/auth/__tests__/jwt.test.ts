@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { createJwt, decodeJwt } from '../jwt';
+import { createJwt, decodeJwt, createRefreshToken, verifyRefreshToken } from '../jwt';
 import { ApiError } from '@/lib/security/validation';
 
 const TEST_SECRET = 'test-secret-key-for-jwt-testing';
@@ -30,14 +30,135 @@ describe('createJwt', () => {
     expect(decoded.tv).toBe(0);
   });
 
-  it('sets expiry 4 hours from now', () => {
+  it('sets expiry 15 minutes from now', () => {
     const user = { id: 'user-1', email: 'test@example.com', role: 'user' };
     const token = createJwt(user, TEST_SECRET);
 
     const decoded = jwt.decode(token) as Record<string, unknown>;
     const exp = decoded.exp as number;
     const iat = decoded.iat as number;
-    expect(exp - iat).toBe(4 * 3600);
+    expect(exp - iat).toBe(15 * 60);
+  });
+});
+
+describe('createRefreshToken', () => {
+  it('creates a valid refresh token with type marker', () => {
+    const user = { id: 'user-1', token_version: 2 };
+    const token = createRefreshToken(user, TEST_SECRET, false);
+
+    expect(typeof token).toBe('string');
+    const decoded = jwt.decode(token) as Record<string, unknown>;
+    expect(decoded.sub).toBe('user-1');
+    expect(decoded.tv).toBe(2);
+    expect(decoded.type).toBe('refresh');
+  });
+
+  it('sets 1-day expiry when rememberMe is false', () => {
+    const user = { id: 'user-1' };
+    const token = createRefreshToken(user, TEST_SECRET, false);
+    const decoded = jwt.decode(token) as Record<string, unknown>;
+    const exp = decoded.exp as number;
+    const iat = decoded.iat as number;
+    expect(exp - iat).toBe(1 * 24 * 3600);
+  });
+
+  it('sets 30-day expiry when rememberMe is true', () => {
+    const user = { id: 'user-1' };
+    const token = createRefreshToken(user, TEST_SECRET, true);
+    const decoded = jwt.decode(token) as Record<string, unknown>;
+    const exp = decoded.exp as number;
+    const iat = decoded.iat as number;
+    expect(exp - iat).toBe(30 * 24 * 3600);
+  });
+
+  it('defaults token_version to 0', () => {
+    const user = { id: 'user-1' };
+    const token = createRefreshToken(user, TEST_SECRET, false);
+    const decoded = jwt.decode(token) as Record<string, unknown>;
+    expect(decoded.tv).toBe(0);
+  });
+});
+
+describe('verifyRefreshToken', () => {
+  it('verifies a valid refresh token', () => {
+    const user = { id: 'user-1', token_version: 3 };
+    const token = createRefreshToken(user, TEST_SECRET, true);
+    const payload = verifyRefreshToken(token, TEST_SECRET);
+    expect(payload.sub).toBe('user-1');
+    expect(payload.tv).toBe(3);
+    expect(payload.type).toBe('refresh');
+  });
+
+  it('roundtrips with tv=0 (default token_version)', () => {
+    const user = { id: 'user-1' };
+    const token = createRefreshToken(user, TEST_SECRET, false);
+    const payload = verifyRefreshToken(token, TEST_SECRET);
+    expect(payload.sub).toBe('user-1');
+    expect(payload.tv).toBe(0);
+    expect(payload.type).toBe('refresh');
+  });
+
+  it('throws on access token passed as refresh token', () => {
+    const user = { id: 'user-1', email: 'test@example.com', role: 'user' };
+    const accessToken = createJwt(user, TEST_SECRET);
+    expect(() => verifyRefreshToken(accessToken, TEST_SECRET)).toThrow(ApiError);
+    try {
+      verifyRefreshToken(accessToken, TEST_SECRET);
+    } catch (err) {
+      expect((err as ApiError).statusCode).toBe(401);
+    }
+  });
+
+  it('throws on self-crafted token with type: "access"', () => {
+    // Token has a type field, but its value is wrong
+    const now = Math.floor(Date.now() / 1000);
+    const payload = { sub: 'user-1', tv: 0, type: 'access', iat: now, exp: now + 3600 };
+    const token = jwt.sign(payload, TEST_SECRET, { algorithm: 'HS256' });
+    expect(() => verifyRefreshToken(token, TEST_SECRET)).toThrow(ApiError);
+    try {
+      verifyRefreshToken(token, TEST_SECRET);
+    } catch (err) {
+      expect((err as ApiError).statusCode).toBe(401);
+      expect((err as ApiError).message).toBe('Invalid token type');
+    }
+  });
+
+  it('throws on token without type field (legacy access-style payload)', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      sub: 'user-1',
+      email: 'attacker@example.com',
+      role: 'admin',
+      tv: 0,
+      iat: now,
+      exp: now + 3600,
+    };
+    const token = jwt.sign(payload, TEST_SECRET, { algorithm: 'HS256' });
+    expect(() => verifyRefreshToken(token, TEST_SECRET)).toThrow(ApiError);
+    try {
+      verifyRefreshToken(token, TEST_SECRET);
+    } catch (err) {
+      expect((err as ApiError).statusCode).toBe(401);
+      expect((err as ApiError).message).toBe('Invalid token type');
+    }
+  });
+
+  it('throws on wrong secret', () => {
+    const user = { id: 'user-1' };
+    const token = createRefreshToken(user, TEST_SECRET, false);
+    expect(() => verifyRefreshToken(token, 'wrong-secret')).toThrow(ApiError);
+  });
+
+  it('throws on expired refresh token', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = { sub: 'user-1', tv: 0, type: 'refresh', iat: now - 7200, exp: now - 3600 };
+    const token = jwt.sign(payload, TEST_SECRET, { algorithm: 'HS256' });
+    expect(() => verifyRefreshToken(token, TEST_SECRET)).toThrow(ApiError);
+    try {
+      verifyRefreshToken(token, TEST_SECRET);
+    } catch (err) {
+      expect((err as ApiError).message).toBe('Refresh token expired');
+    }
   });
 });
 
@@ -103,5 +224,11 @@ describe('decodeJwt', () => {
     const token = createJwt(user, TEST_SECRET);
     const payload = decodeJwt(token, TEST_SECRET);
     expect(payload.tv).toBe(42);
+  });
+
+  it('rejects a refresh token with Invalid token type', () => {
+    const user = { id: 'user-1', token_version: 7 };
+    const token = createRefreshToken(user, TEST_SECRET, false);
+    expect(() => decodeJwt(token, TEST_SECRET)).toThrow('Invalid token type');
   });
 });
