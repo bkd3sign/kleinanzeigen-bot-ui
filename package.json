@@ -52,7 +52,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.0.2",
     "eslint": "^9.15.0",
     "eslint-config-next": "^15.1.0",
     "jsdom": "^25.0.1",
