@@ -1,7 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { jobs } from '@/lib/bot/jobs';
+import { jobs, withUserLabels } from '@/lib/bot/jobs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     allJobs.sort((a, b) => (b.started_at > a.started_at ? 1 : -1));
 
     return NextResponse.json({
-      jobs: allJobs.slice(0, limit),
+      jobs: withUserLabels(allJobs.slice(0, limit)),
       total: allJobs.length,
     });
   } catch (error) {

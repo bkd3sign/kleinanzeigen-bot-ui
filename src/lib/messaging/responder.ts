@@ -20,6 +20,10 @@ interface StatsData {
   aiSentMessages: AiSentEntry[];
   adGenerations: number;
   adImageAnalyses: number;
+  oooSentCount: number;
+  // Start of the current out-of-office period (epoch ms). Anchors the per-conversation dedup so
+  // it survives a server restart; reset to "now" each time the user newly switches OOO on.
+  oooActivatedAt: number;
 }
 
 export function readAiStats(workspace: string): StatsData {
@@ -30,8 +34,34 @@ export function readAiStats(workspace: string): StatsData {
       aiSentMessages: data.aiSentMessages ?? [],
       adGenerations: data.adGenerations ?? 0,
       adImageAnalyses: data.adImageAnalyses ?? data.imageAnalyses ?? 0,
+      oooSentCount: data.oooSentCount ?? 0,
+      oooActivatedAt: data.oooActivatedAt ?? 0,
     };
-  } catch { return { aiSentCount: 0, aiSentMessages: [], adGenerations: 0, adImageAnalyses: 0 }; }
+  } catch { return { aiSentCount: 0, aiSentMessages: [], adGenerations: 0, adImageAnalyses: 0, oooSentCount: 0, oooActivatedAt: 0 }; }
+}
+
+/**
+ * Conversations already notified at/after `since`, derived from the persisted send log.
+ * Used to rebuild the out-of-office dedup set after a restart so each buyer still gets the note
+ * only once per period. Pure — unit-tested.
+ *
+ * Note: the log is capped at MAX_AI_SENT_LOG entries, so a single period sending more than that
+ * could re-notify the very oldest buyers after a restart. Not a concern for the private-seller
+ * use case (hundreds of distinct buyers in one vacation is unrealistic).
+ */
+export function repliedConversationsSince(entries: AiSentEntry[], since: number): Set<string> {
+  return new Set(entries.filter(m => m.sentAt >= since).map(m => m.conversationId));
+}
+
+/**
+ * Mark the start of a new out-of-office period (a "new vacation"). Called when the user newly
+ * switches into out-of-office mode. Persisted so the period — and the per-conversation dedup
+ * anchored to it — survives a server restart, while a brand-new period re-notifies returning buyers.
+ */
+export function markOooActivated(workspace: string): void {
+  const stats = readAiStats(workspace);
+  stats.oooActivatedAt = Date.now();
+  persistStats(workspace, stats);
 }
 
 function readSentCount(workspace: string): number {
@@ -49,6 +79,19 @@ function trackAiSentMessage(workspace: string, state: ResponderState, conversati
   state.sentCount++;
   const stats = readAiStats(workspace);
   stats.aiSentCount = state.sentCount;
+  stats.aiSentMessages.push({ conversationId, text, sentAt: Date.now() });
+  persistStats(workspace, stats);
+}
+
+/**
+ * Track an out-of-office note. Counted in its own counter (NOT aiSentCount),
+ * but logged into the shared automated-message list so the chat renders it with
+ * the same "automated" bubble as KI replies.
+ */
+function trackOooSentMessage(workspace: string, state: ResponderState, conversationId: string, text: string): void {
+  state.oooSentCount++;
+  const stats = readAiStats(workspace);
+  stats.oooSentCount = state.oooSentCount;
   stats.aiSentMessages.push({ conversationId, text, sentAt: Date.now() });
   persistStats(workspace, stats);
 }
@@ -83,6 +126,38 @@ const REVIEW_POLL_INTERVAL = 5_000; // 5s base
 const REVIEW_POLL_JITTER = 3_000; // +0-3s → effective 5-8s
 const MAX_HANDLED_MESSAGES = 1000;
 
+// Out-of-office mode: short randomized delay to avoid burst-sending identical notes
+const OOO_MIN_DELAY = 5_000; // 5s minimum before sending
+const OOO_MAX_JITTER = 15_000; // +0-15s → effective 5-20s
+
+type ResponderMode = 'auto' | 'review' | 'off' | 'out_of_office';
+
+/**
+ * Decide whether the out-of-office note should be sent to a conversation.
+ * Pure: depends on conversation/message shape, whether we already replied, and
+ * whether the message arrived after the responder was activated.
+ *
+ * The activation-time check is critical: it prevents blasting the note to old,
+ * unanswered threads the moment out-of-office is switched on — only messages
+ * received after activation get a reply.
+ */
+export function shouldSendOoo(
+  conv: { boundness: string; role: string; adStatus: string },
+  lastMsg: { boundness: string; type: string },
+  alreadyReplied: boolean,
+  messageReceivedAt: number,
+  activatedAt: number,
+): boolean {
+  if (alreadyReplied) return false;
+  if (conv.boundness !== 'INBOUND') return false;
+  if (conv.role !== 'Seller') return false;
+  if (conv.adStatus !== 'ACTIVE') return false;
+  if (lastMsg.boundness !== 'INBOUND' || lastMsg.type !== 'MESSAGE') return false;
+  // Only reply to messages received after activation (NaN-safe: skip on unparseable date)
+  if (!(messageReceivedAt >= activatedAt)) return false;
+  return true;
+}
+
 interface PendingReply {
   conversationId: string;
   conversation: ConversationDetail;
@@ -93,13 +168,16 @@ interface PendingReply {
 }
 
 interface ResponderState {
-  mode: 'auto' | 'review' | 'off';
+  mode: ResponderMode;
   running: boolean;
   startedAt: number;
   lastPoll: number;
   sentCount: number;
+  oooSentCount: number;
   handledMessages: Set<string>;
   pendingReplies: Map<string, PendingReply>;
+  // Conversations that already received the out-of-office note this period
+  oooRepliedConversations: Set<string>;
   timeoutId?: ReturnType<typeof setTimeout>;
 }
 
@@ -116,8 +194,10 @@ function getState(workspace: string): ResponderState {
       startedAt: state?.startedAt ?? 0,
       lastPoll: state?.lastPoll ?? 0,
       sentCount: state?.sentCount ?? readSentCount(workspace),
+      oooSentCount: state?.oooSentCount ?? readAiStats(workspace).oooSentCount,
       handledMessages: new Set(),
       pendingReplies: state?.pendingReplies ?? new Map(),
+      oooRepliedConversations: state?.oooRepliedConversations ?? new Set(),
     };
     g.__responderStates!.set(workspace, state);
   }
@@ -125,13 +205,12 @@ function getState(workspace: string): ResponderState {
 }
 
 /**
- * Prune handledMessages to prevent unbounded growth.
+ * Prune a tracking set to its newest `max` entries, preventing unbounded growth.
  */
-function pruneHandledMessages(state: ResponderState): void {
-  if (state.handledMessages.size <= MAX_HANDLED_MESSAGES) return;
-  const entries = Array.from(state.handledMessages);
-  const toRemove = entries.slice(0, entries.length - MAX_HANDLED_MESSAGES);
-  for (const id of toRemove) state.handledMessages.delete(id);
+function pruneSet(set: Set<string>, max: number): void {
+  if (set.size <= max) return;
+  const entries = Array.from(set);
+  for (const id of entries.slice(0, entries.length - max)) set.delete(id);
 }
 
 /**
@@ -194,7 +273,15 @@ async function pollAndRespond(workspace: string): Promise<void> {
   if (state.mode === 'off') return;
 
   state.lastPoll = Date.now();
-  pruneHandledMessages(state);
+  pruneSet(state.handledMessages, MAX_HANDLED_MESSAGES);
+  pruneSet(state.oooRepliedConversations, MAX_HANDLED_MESSAGES);
+
+  // Out-of-office mode sends a fixed note once per conversation — no LLM, no API key needed.
+  // Coerce defensively: a hand-edited rules file may hold a non-string here, and .trim() on a
+  // non-string would throw before the try-block below and silently abort every poll.
+  const rawOoo = state.mode === 'out_of_office' ? loadMessagingRules(workspace).out_of_office_message : '';
+  const oooMessage = typeof rawOoo === 'string' ? rawOoo.trim() : '';
+  if (state.mode === 'out_of_office' && !oooMessage) return;
 
   try {
     const data = await listConversations(workspace, 0, 25);
@@ -211,6 +298,25 @@ async function pollAndRespond(workspace: string): Promise<void> {
 
       const lastMsg = fullConv.messages[fullConv.messages.length - 1];
       if (lastMsg.boundness !== 'INBOUND' || lastMsg.type !== 'MESSAGE') continue;
+
+      // Out-of-office: send the fixed note once per conversation, then skip AI logic
+      if (state.mode === 'out_of_office') {
+        const receivedAt = new Date(lastMsg.receivedDate).getTime();
+        if (!shouldSendOoo(conv, lastMsg, state.oooRepliedConversations.has(conv.id), receivedAt, state.startedAt)) continue;
+        // Mark BEFORE the delay/send so an overlapping poll can't double-send to the same buyer
+        state.oooRepliedConversations.add(conv.id);
+        await sleep(OOO_MIN_DELAY + Math.random() * OOO_MAX_JITTER);
+        try {
+          await sendMessage(workspace, conv.id, oooMessage);
+          trackOooSentMessage(workspace, state, conv.id, oooMessage);
+        } catch (err) {
+          // Send failed → un-mark so the next poll retries instead of silently dropping the buyer
+          state.oooRepliedConversations.delete(conv.id);
+          console.warn(`[responder] OOO send failed: ${(err as Error).message}`);
+        }
+        continue;
+      }
+
       if (state.handledMessages.has(lastMsg.messageId)) continue;
 
       // Mark ALL inbound messages as handled
@@ -220,7 +326,8 @@ async function pollAndRespond(workspace: string): Promise<void> {
 
       // Escalation check
       const rules = loadMessagingRules(workspace);
-      const escalateStr = (rules.escalate_keywords as string) ?? '';
+      // Defensive: a hand-edited rules file may hold a non-string here (Config = Source of Truth)
+      const escalateStr = typeof rules.escalate_keywords === 'string' ? rules.escalate_keywords : '';
       const userKeywords = escalateStr.split(/[,\n]/).map(k => k.trim().toLowerCase()).filter(Boolean);
       const msgText = lastMsg.textShort.toLowerCase();
 
@@ -303,18 +410,45 @@ function scheduleNextPoll(workspace: string): void {
 /**
  * Start the auto-responder for a workspace.
  */
-export function startResponder(workspace: string, mode: 'auto' | 'review'): void {
+export function startResponder(workspace: string, mode: 'auto' | 'review' | 'out_of_office'): void {
   const oldState = g.__responderStates!.get(workspace);
   if (oldState?.timeoutId) clearTimeout(oldState.timeoutId);
+
+  const isOoo = mode === 'out_of_office';
+  const stats = readAiStats(workspace);
+  const continuingOoo = isOoo && oldState?.running === true && oldState.mode === mode;
+
+  // Lazy-init the period anchor if missing (OOO enabled before this field shipped). Persisting it
+  // now keeps the period start stable across later restarts instead of drifting to "now" each boot.
+  if (isOoo && !stats.oooActivatedAt) {
+    stats.oooActivatedAt = Date.now();
+    persistStats(workspace, stats);
+  }
+
+  // Out-of-office runs in "periods": a period starts when the user switches OOO on (the config
+  // route stamps oooActivatedAt) and only messages received at/after it get the note. Anchoring
+  // startedAt to the persisted stamp makes the period — and its one-note-per-conversation dedup —
+  // survive a server restart, while a brand-new period (new vacation) re-notifies returning buyers.
+  const startedAt = isOoo ? stats.oooActivatedAt : Date.now();
+
+  // Rebuild the per-period dedup set from the persisted send log. On a live re-save keep the richer
+  // in-memory set (the log is capped); a fresh process/boot reconstructs it from disk.
+  const oooRepliedConversations = !isOoo
+    ? new Set<string>()
+    : continuingOoo
+      ? oldState!.oooRepliedConversations
+      : repliedConversationsSince(stats.aiSentMessages, startedAt);
 
   const state: ResponderState = {
     mode,
     running: true,
-    startedAt: Date.now(),
+    startedAt,
     lastPoll: 0,
-    sentCount: oldState?.sentCount ?? readSentCount(workspace),
+    sentCount: oldState?.sentCount ?? stats.aiSentCount,
+    oooSentCount: oldState?.oooSentCount ?? stats.oooSentCount,
     handledMessages: oldState?.handledMessages ?? new Set(),
     pendingReplies: new Map(),
+    oooRepliedConversations,
   };
   g.__responderStates!.set(workspace, state);
 
@@ -340,10 +474,11 @@ export function stopResponder(workspace: string): void {
  * Get current responder status.
  */
 export function getResponderStatus(workspace: string): {
-  mode: 'auto' | 'review' | 'off';
+  mode: ResponderMode;
   running: boolean;
   lastPoll: number;
   sentCount: number;
+  oooSentCount: number;
   pendingCount: number;
   pendingReplies: Array<{
     conversationId: string;
@@ -369,6 +504,7 @@ export function getResponderStatus(workspace: string): {
     running: state.running,
     lastPoll: state.lastPoll,
     sentCount: state.sentCount,
+    oooSentCount: state.oooSentCount,
     pendingCount: pending.filter(p => p.status === 'pending').length,
     pendingReplies: pending,
   };

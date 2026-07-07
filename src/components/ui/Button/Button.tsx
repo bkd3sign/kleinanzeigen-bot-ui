@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import styles from './Button.module.scss';
 
-export type ButtonVariant = 'default' | 'primary' | 'secondary' | 'danger' | 'warning' | 'ghost' | 'outline';
+export type ButtonVariant = 'default' | 'primary' | 'secondary' | 'danger' | 'dangerSolid' | 'warning' | 'ghost' | 'outline';
 export type ButtonSize = 'default' | 'sm' | 'lg' | 'icon';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -16,6 +16,7 @@ const variantClass: Record<ButtonVariant, string | undefined> = {
   primary: styles.btnPrimary,
   secondary: styles.btnOutline,
   danger: styles.btnDanger,
+  dangerSolid: styles.btnDangerSolid,
   warning: styles.btnWarning,
   ghost: styles.btnGhost,
   outline: styles.btnOutline,

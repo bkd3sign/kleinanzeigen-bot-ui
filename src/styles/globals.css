@@ -22,15 +22,15 @@
 
 .sortIconActive {
   display: inline-block;
-  margin-left: 4px;
+  margin-left: var(--space-1);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-size-xs-plus);
 }
 
 /* Stagger entrance animation for table rows.
    Set --anim-delay via inline style on the <tr>. */
 .animRow {
-  animation: slideUp 200ms var(--ease-out) both;
+  animation: slideUp var(--duration-medium) var(--ease-out) both;
   animation-delay: var(--anim-delay, 0ms);
 }
 
@@ -41,6 +41,75 @@
   color: var(--text-primary);
   display: block;
   margin-bottom: var(--space-1-5);
+}
+
+/* Toolbar toggle button — shared by the logs fullscreen toolbar (LogViewer) and the
+   VNC login modal. Keep both in sync: identical styles + tokens, no per-page copies. */
+.toggleBtn {
+  padding: var(--space-1-5) var(--space-3);
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+}
+.toggleBtn:hover {
+  border-color: var(--border-color-hover);
+  color: var(--text-primary);
+}
+/* Destructive close variant (red), used in the fullscreen toolbars */
+.toggleBtnClose {
+  border-color: var(--red-500);
+  color: var(--text-danger);
+}
+.toggleBtnClose:hover {
+  background-color: var(--red-500-muted);
+  border-color: var(--red-500);
+  color: var(--text-danger);
+}
+@media (max-width: 767px) {
+  .toggleBtn {
+    font-size: var(--font-size-xs-plus);
+    padding: var(--space-1) var(--space-2);
+  }
+}
+
+/* Horizontal scroll row — switch a flex row from wrapping to scrolling once it overflows.
+   Shared by the jobs filter bar and the VNC control bar; direct children should set
+   flex-shrink: 0 so they don't squish. */
+.scrollRowX {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Modal close button (×) — shared by the shared Modal and the custom VNC login portal,
+   so the close affordance looks identical everywhere. */
+.modalCloseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.modalCloseBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+.modalCloseBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-accent);
 }
 
 /* AI page: lock viewport height so chat scrolls and input stays sticky at bottom */
@@ -79,15 +148,15 @@
 }
 .shippingIconSize {
   position: absolute;
-  bottom: -2px;
-  right: -3px;
+  bottom: calc(-1 * var(--space-0-5));
+  right: calc(-1 * var(--space-0-75));
   width: 9px;
   text-align: center;
-  font-size: 7px;
-  font-weight: 700;
-  line-height: 1;
+  font-size: var(--font-size-5xs);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-none);
   color: var(--text-muted);
   letter-spacing: 0;
   background: var(--bg-primary);
-  border-radius: 2px;
+  border-radius: var(--space-0-5);
 }

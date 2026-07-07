@@ -1,9 +1,10 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { ensureSession, getMessagingStatus, listConversations } from '@/lib/messaging/gateway';
+import { ensureSession, getMessagingStatus, listConversations, stopSession } from '@/lib/messaging/gateway';
 import { isQueueBusy, getRunningJobId } from '@/lib/bot/queue';
 import { jobs } from '@/lib/bot/jobs';
+import { getVncSession } from '@/lib/vnc/lifecycle';
 
 /**
  * GET: Check messaging session status + unread count.
@@ -19,15 +20,20 @@ export async function GET(request: NextRequest) {
 
     let status = await getMessagingStatus(user.workspace);
 
-    // Try session recovery: race with 3s timeout so cookie validation (fast) resolves
-    // quickly, while browser launch (slow) runs in the background without hanging this request.
-    if ((status.status === 'not_started' || status.status === 'error') && !isQueueBusy()) {
+    // Try cookie-only session recovery: restore a session from valid disk cookies
+    // but NEVER launch a browser here. A real browser + login only happens on the
+    // explicit "Anmelden" action (POST), so merely opening the tab stays passive.
+    // Race with 3s timeout so cookie validation (a quick network call) can't hang.
+    // cookieOnly never launches a browser (it reads disk/VNC cookies or bails), so it is
+    // always safe to attempt — even while the bot is busy. In visible mode this auto-connects
+    // messaging from the warm VNC browser on page load.
+    if (status.status === 'not_started' || status.status === 'error') {
       try {
         await Promise.race([
-          ensureSession(user.workspace),
+          ensureSession(user.workspace, { cookieOnly: true }),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
         ]);
-      } catch { /* no cookies, expired, or browser launching in background */ }
+      } catch { /* no valid cookies — stay not_started until user logs in */ }
       status = await getMessagingStatus(user.workspace);
     }
 
@@ -73,12 +79,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ detail: 'Authentication required' }, { status: 401 });
     }
 
-    if (isQueueBusy()) {
+    // Block only when the bot is busy AND there is no VNC browser to read cookies from.
+    // In visible mode the warm VNC browser is present, so messaging reads its cookies (HTTP
+    // mode) without launching a second Chromium — no collision with the running bot.
+    if (isQueueBusy() && !getVncSession(user.workspace)) {
       return NextResponse.json({ detail: 'Bot läuft — bitte warten.' }, { status: 409 });
     }
 
     ensureSession(user.workspace).catch(() => {});
     return NextResponse.json({ status: 'starting' });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+/**
+ * DELETE: Cancel a running messaging session (e.g. a stuck login).
+ * Kills the browser, drops the in-memory session, resets to 'not_started'.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ detail: 'Authentication required' }, { status: 401 });
+    }
+
+    stopSession(user.workspace);
+    return NextResponse.json({ status: 'not_started' });
   } catch (error) {
     return handleApiError(error);
   }

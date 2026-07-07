@@ -7,13 +7,8 @@ import { Modal, Button, useToast } from '@/components/ui';
 import { JobOutputModal } from '@/components/bot/JobOutputModal';
 import type { Job } from '@/types/bot';
 import type { CompatibilityResult } from '@/lib/bot/compatibility';
+import type { GuiUpdateResult } from '@/lib/update-check/pill-state';
 import styles from './AboutModal.module.scss';
-
-interface GuiUpdateResult {
-  upToDate: boolean;
-  latestVersion: string;
-  releaseUrl: string;
-}
 
 interface Props {
   open: boolean;

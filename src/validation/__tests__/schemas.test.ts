@@ -62,7 +62,7 @@ describe('adCreateSchema', () => {
       title: 'Deuter Trail 24L Wanderrucksack',
       description: 'Ein toller Rucksack für Wanderungen.',
       shipping_type: 'SHIPPING',
-      shipping_costs: 5.49,
+      shipping_options: ['DHL_2'],
       price: 45,
       contact_name: 'Test',
       contact_zipcode: '10115',
@@ -122,7 +122,7 @@ describe('adCreateSchema', () => {
         title: 'Valid Title Here 123',
         description: 'Valid description text here',
         shipping_type: 'SHIPPING',
-        shipping_costs: 4.99,
+        shipping_options: ['DHL_2'],
         price: 10,
         contact_name: 'Test',
         contact_zipcode: '12345',
@@ -141,6 +141,38 @@ describe('adCreateSchema', () => {
       price_type: 'INVALID',
     });
     expect(result.success).toBe(false);
+  });
+
+  it('rejects SHIPPING without predefined shipping_options', () => {
+    const result = adCreateSchema.safeParse({
+      type: 'OFFER',
+      title: 'Valid Title Here 123',
+      description: 'Valid description text here',
+      shipping_type: 'SHIPPING',
+      shipping_costs: 4.5,
+      price: 10,
+      contact_name: 'Test',
+      contact_zipcode: '12345',
+      contact_location: 'Berlin',
+      category: '161',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts SHIPPING with predefined shipping_options', () => {
+    const result = adCreateSchema.safeParse({
+      type: 'OFFER',
+      title: 'Valid Title Here 123',
+      description: 'Valid description text here',
+      shipping_type: 'SHIPPING',
+      shipping_options: ['DHL_2'],
+      price: 10,
+      contact_name: 'Test',
+      contact_zipcode: '12345',
+      contact_location: 'Berlin',
+      category: '161',
+    });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -208,5 +240,15 @@ describe('configUpdateSchema', () => {
   it('accepts empty object', () => {
     const result = configUpdateSchema.safeParse({});
     expect(result.success).toBe(true);
+  });
+
+  it('accepts a diagnostics capture_on update', () => {
+    const result = configUpdateSchema.safeParse({
+      diagnostics: { capture_on: { login_detection: true, publish: false } },
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && (result.data as Record<string, unknown>).diagnostics).toEqual({
+      capture_on: { login_detection: true, publish: false },
+    });
   });
 });

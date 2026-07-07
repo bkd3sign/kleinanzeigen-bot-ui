@@ -67,7 +67,7 @@ export function mergeDraftPairs(workspace: string): number {
   const archiveDirPrefix = archiveDir + path.sep;
 
   // Single workspace scan (respects template exclusion and archive exclusion)
-  const allFiles = findAdFiles(workspace, [archiveDir]);
+  const allFiles = findAdFiles(workspace, { excludeDirs: [archiveDir] });
 
   // Fast bail-out: no files outside download/archive dir → nothing to merge
   if (!allFiles.some(f => !f.startsWith(dlDirPrefix))) return 0;
@@ -226,7 +226,7 @@ export function onJobStarting(jobId: string, command: string, workspace: string)
   const archiveDir = resolveArchiveDir(workspace);
   const entries: SnapshotEntry[] = [];
 
-  for (const filePath of findAdFiles(workspace, [archiveDir])) {
+  for (const filePath of findAdFiles(workspace, { excludeDirs: [archiveDir] })) {
     const ad = readAd(filePath);
     if (typeof ad.id !== 'number') continue;
 
@@ -261,7 +261,7 @@ function refreshOnlineIds(workspace: string, job: Job): void {
   const currentIds = new Set<number>();
 
   const archiveDir = resolveArchiveDir(workspace);
-  for (const filePath of findAdFiles(workspace, [archiveDir])) {
+  for (const filePath of findAdFiles(workspace, { excludeDirs: [archiveDir] })) {
     const ad = readAd(filePath);
     if (typeof ad.id === 'number') {
       currentIds.add(ad.id);
@@ -297,7 +297,7 @@ export function archiveInactiveAdFolders(workspace: string): void {
 
   migrateArchiveIfNeeded(workspace, downloadedDir);
 
-  for (const filePath of findAdFiles(downloadedDir, [archiveDir])) {
+  for (const filePath of findAdFiles(workspace, { scanDir: downloadedDir, excludeDirs: [archiveDir] })) {
     const ad = readAd(filePath);
     if (ad.active !== false) continue;
     const folderPath = path.dirname(filePath);
@@ -307,7 +307,7 @@ export function archiveInactiveAdFolders(workspace: string): void {
   }
 
   if (fs.existsSync(adsDir)) {
-    for (const filePath of findAdFiles(adsDir, [archiveDir])) {
+    for (const filePath of findAdFiles(workspace, { scanDir: adsDir, excludeDirs: [archiveDir] })) {
       const ad = readAd(filePath);
       if (ad.active !== false) continue;
       const folderPath = path.dirname(filePath);
@@ -362,7 +362,7 @@ export function syncOnlineIdsFromApi(workspace: string, ads: KaManageAd[]): void
   const adsDir = resolveAdsDir(workspace);
   const archiveDir = resolveArchiveDir(workspace);
 
-  for (const filePath of findAdFiles(workspace, [archiveDir])) {
+  for (const filePath of findAdFiles(workspace, { excludeDirs: [archiveDir] })) {
     const ad = readAd(filePath);
     if (typeof ad.id !== 'number') continue;
 
@@ -377,7 +377,7 @@ export function syncOnlineIdsFromApi(workspace: string, ads: KaManageAd[]): void
 
   // Also check archive: ads that were archived because paused/inactive but are now online again
   if (fs.existsSync(archiveDir)) {
-    for (const filePath of findAdFiles(archiveDir)) {
+    for (const filePath of findAdFiles(workspace, { scanDir: archiveDir })) {
       const ad = readAd(filePath);
       if (typeof ad.id !== 'number') continue;
       if (!onlineIds.has(ad.id) || pausedIds.has(ad.id)) continue;
@@ -423,7 +423,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
 
     // For partial downloads (new, specific IDs): merge new IDs into existing list
     if (!isDownloadAll) {
-      const downloadedFiles = findAdFiles(downloadedDir, [archiveDir]);
+      const downloadedFiles = findAdFiles(workspace, { scanDir: downloadedDir, excludeDirs: [archiveDir] });
       const existing = readLastDownloadAll(workspace);
       const existingIds = existing ? new Set(existing.ids) : new Set<number>();
       let added = 0;
@@ -477,7 +477,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     }
 
     // Collect all current downloaded files
-    const downloadedFiles = findAdFiles(downloadedDir, [archiveDir]);
+    const downloadedFiles = findAdFiles(workspace, { scanDir: downloadedDir, excludeDirs: [archiveDir] });
     const onlineIds = new Set<number>();
     let mergedCount = 0;
     let newCount = 0;
@@ -575,7 +575,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
         const archivedFolder = path.join(subDirPath, dirEntry.name);
         try {
           const yamlFile = fs.readdirSync(archivedFolder)
-            .find(f => f.startsWith('ad_') && /\.(ya?ml|json)$/i.test(f));
+            .find(f => !f.startsWith('.') && /\.(ya?ml|json)$/i.test(f));
           if (!yamlFile) continue;
           const archivedAd = readAd(path.join(archivedFolder, yamlFile));
           if (typeof archivedAd.id === 'number' && onlineIds.has(archivedAd.id)) {
@@ -603,7 +603,7 @@ export function onJobCompleted(jobId: string, command: string, workspace: string
     // folder for the same id exists. Catches duplicates that survived due to missing snapshots
     // (e.g. server restart mid-job) or in-place bot updates without folder rename.
     const byId = new Map<number, string[]>();
-    for (const fp of findAdFiles(downloadedDir, [archiveDir])) {
+    for (const fp of findAdFiles(workspace, { scanDir: downloadedDir, excludeDirs: [archiveDir] })) {
       let stalead: Record<string, unknown>;
       try { stalead = readAd(fp); } catch { continue; }
       if (typeof stalead.id !== 'number') continue;

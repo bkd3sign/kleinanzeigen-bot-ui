@@ -6,6 +6,8 @@ import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { useDeleteAdByFile } from '@/hooks/useAds';
 import { Button, showConfirm, useToast } from '@/components/ui';
+import { confirmRemoveAds } from '@/lib/ads/confirmations';
+import { encodeAdFilePath } from '@/lib/ads/paths';
 import { AdBulkEditModal } from './AdBulkEditModal';
 import type { AdListItem } from '@/types/ad';
 import styles from './AdBulkActions.module.scss';
@@ -50,6 +52,7 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
     [selectedFiles, activeFiles],
   );
   const handleBulkPublish = useCallback(async () => {
+    let started = false;
     if (draftAds.length > 0) {
       const ok = await showConfirm(
         'Alle neuen Anzeigen veröffentlichen',
@@ -60,6 +63,7 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
       if (!ok) return;
       try {
         await api.post('/api/bot/publish', { ads: 'new' });
+        started = true;
       } catch (err) {
         toast('error', err instanceof Error ? err.message : 'Fehler beim Veröffentlichen');
       }
@@ -68,11 +72,16 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
       const ids = publishedAds.map((a) => String(a.id)).join(',');
       try {
         await api.post('/api/bot/publish', { ads: ids });
+        started = true;
       } catch (err) {
         toast('error', err instanceof Error ? err.message : 'Fehler beim Veröffentlichen');
       }
     }
-  }, [draftAds, publishedAds, toast]);
+    if (started) {
+      toast('success', 'Veröffentlichung gestartet');
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    }
+  }, [draftAds, publishedAds, toast, queryClient]);
 
   const handleBulkUpdate = useCallback(async () => {
     if (publishedAds.length === 0) {
@@ -82,10 +91,12 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
     const ids = publishedAds.map((a) => String(a.id)).join(',');
     try {
       await api.post('/api/bot/update', { ads: ids });
+      toast('success', 'Aktualisierung gestartet');
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Fehler beim Aktualisieren');
     }
-  }, [publishedAds, toast]);
+  }, [publishedAds, toast, queryClient]);
 
   const handleBulkToggleActive = useCallback(async () => {
     // Majority wins: bring all selected to the majority's state.
@@ -99,10 +110,10 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
     try {
       await Promise.all([
         ...toDeactivate.map((f) =>
-          api.put(`/api/ads/by-file/${f.split('/').map(encodeURIComponent).join('/')}`, { active: false }),
+          api.put(`/api/ads/by-file/${encodeAdFilePath(f)}`, { active: false }),
         ),
         ...toActivate.map((f) =>
-          api.put(`/api/ads/by-file/${f.split('/').map(encodeURIComponent).join('/')}`, { active: true }),
+          api.put(`/api/ads/by-file/${encodeAdFilePath(f)}`, { active: true }),
         ),
       ]);
       setKnownStatus((prev) => {
@@ -135,12 +146,7 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
   }, [activeFiles, inactiveFiles, queryClient, toast]);
 
   const handleBulkDelete = useCallback(async () => {
-    const ok = await showConfirm(
-      `${selectedFiles.size} Anzeige(n) entfernen`,
-      `Möchtest du ${selectedFiles.size} Anzeige(n) lokal entfernen? Die Dateien werden gelöscht. Bereits veröffentlichte Anzeigen bleiben auf Kleinanzeigen online.`,
-      'Entfernen',
-      'Abbrechen',
-    );
+    const ok = await confirmRemoveAds(selectedFiles.size);
     if (!ok) return;
     const files = Array.from(selectedFiles);
     await Promise.all(files.map((file) => deleteAd.mutateAsync(file)));
@@ -179,8 +185,8 @@ export function AdBulkActions({ selectedFiles, ads, onClear }: AdBulkActionsProp
             <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
               Bearbeiten
             </Button>
-            <Button variant="danger" size="sm" onClick={handleBulkDelete}>
-              Entfernen
+            <Button variant="outline" size="sm" onClick={handleBulkDelete}>
+              Aus Liste entfernen
             </Button>
             <Button variant="outline" size="sm" onClick={onClear}>
               Auswahl aufheben

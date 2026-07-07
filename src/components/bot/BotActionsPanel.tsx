@@ -65,6 +65,7 @@ const COMMAND_GROUPS: CommandGroup[] = [
       { id: 'verify', title: 'Verify', description: 'Konfiguration und Anzeigen auf Fehler prüfen.', endpoint: '/api/bot/verify', options: [
         { type: 'checkbox', name: 'verbose', label: 'Verbose' },
       ] },
+      { id: 'status', title: 'Status', description: 'Anzeigenstatus und Preisreduktions-Vorschau anzeigen.', endpoint: '/api/bot/status', options: [] },
       { id: 'diagnose', title: 'Diagnose', description: 'Browser- und System-Diagnose ausführen.', endpoint: '/api/bot/diagnose', options: [] },
       { id: 'version', title: 'Version', description: 'Installierte Bot-Version anzeigen.', endpoint: '/api/bot/version', method: 'GET', options: [] },
     ],

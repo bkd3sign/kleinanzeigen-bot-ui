@@ -4,10 +4,12 @@ import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from '
 import { useRouter } from 'next/navigation';
 import { useGenerateAd, useCreateAd } from '@/hooks/useAds';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
+import { useCategoryName } from '@/hooks/useCategories';
+import { useStagedImages } from '@/hooks/useStagedImages';
 import { Button, ImagePreview, useToast } from '@/components/ui';
-import { resizeImageForAi } from '@/lib/images/resize-client';
-import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import { api } from '@/lib/api/client';
+import { AttributeChips } from '@/components/ads/AttributeChips';
+import { buildEnumChipLabels } from '@/lib/ads/chip-attrs';
 import styles from './QuickAiCreate.module.scss';
 
 export interface QuickAiCreateHandle {
@@ -39,39 +41,27 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
   const router = useRouter();
   const generateAd = useGenerateAd();
   const createAd = useCreateAd();
+  const resolveCategoryName = useCategoryName('full');
   const { toast } = useToast();
+  const { staged, stagedFiles, sentFiles, fileInputKey, addFiles, removeAt, markSent, reset, resizeForAi } = useStagedImages();
   const [prompt, setPrompt] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAd, setGeneratedAd] = useState<GeneratedAd | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [fileInputKey, setFileInputKey] = useState(0);
-  const blobUrlsRef = useRef<Map<File, string>>(new Map());
-  const allFilesRef = useRef<File[]>([]);
 
   useImperativeHandle(ref, () => ({
     addFiles: (files: File[]) => {
-      const { accepted, rejected } = filterImageFiles(files);
-      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-      if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
+      addFiles(files);
       textareaRef.current?.focus();
     },
   }));
-
-  const getBlobUrl = useCallback((file: File): string => {
-    let url = blobUrlsRef.current.get(file);
-    if (!url) {
-      url = URL.createObjectURL(file);
-      blobUrlsRef.current.set(file, url);
-    }
-    return url;
-  }, []);
 
   const handleSubmit = useCallback(async () => {
     if (!prompt.trim() && stagedFiles.length === 0) return;
@@ -79,20 +69,28 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
     setIsGenerating(true);
 
     // Only send files that haven't been sent before
-    const alreadySent = new Set(allFilesRef.current);
-    const sentFiles = stagedFiles.filter((f) => !alreadySent.has(f));
+    const toSend = stagedFiles.filter((f) => !sentFiles.includes(f));
 
     try {
       let images: string[] = [];
-      if (sentFiles.length > 0) {
-        images = await Promise.all(sentFiles.map(resizeImageForAi));
+      if (toSend.length > 0) {
+        images = await resizeForAi(toSend);
+        // Abort only if nothing usable remains (no readable image and no text)
+        if (images.length === 0 && !prompt.trim()) {
+          setError('Keine der ausgewählten Bilder konnte verarbeitet werden.');
+          return;
+        }
       }
 
-      // For refinement: pass current ad as JSON + change request
+      // For refinement: pass current ad as JSON + change request.
+      // Image-only refinement (no text) keeps the current ad as context — identical to the KI-Chat.
       let finalPrompt = prompt.trim();
-      if (generatedAd && finalPrompt) {
-        const current = { ...generatedAd, title: editTitle, description: editDesc };
-        finalPrompt = `${JSON.stringify(current)}\n\nÄnderungswunsch: ${finalPrompt}`;
+      if (generatedAd) {
+        const change = finalPrompt || (toSend.length > 0 ? 'Analysiere die neuen Bilder und verbessere die Anzeige.' : '');
+        if (change) {
+          const current = { ...generatedAd, title: editTitle, description: editDesc };
+          finalPrompt = `${JSON.stringify(current)}\n\nÄnderungswunsch: ${change}`;
+        }
       }
 
       const result = await generateAd.mutateAsync({ prompt: finalPrompt, images });
@@ -101,30 +99,25 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
       setEditTitle(ad.title ?? '');
       setEditDesc(ad.description ?? '');
       setPrompt('');
-      if (sentFiles.length > 0) {
-        allFilesRef.current = [...allFilesRef.current, ...sentFiles];
-        setFileInputKey((k) => k + 1);
-      }
+      if (toSend.length > 0) markSent(toSend);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setIsGenerating(false);
     }
-  }, [prompt, stagedFiles, generatedAd, editTitle, editDesc, generateAd]);
+  }, [prompt, stagedFiles, sentFiles, generatedAd, editTitle, editDesc, generateAd, markSent, resizeForAi]);
 
   const handleEditAndSave = useCallback(() => {
     if (!generatedAd) return;
     const { images: _imgs, ...rest } = generatedAd;
     const ad = { ...rest, title: editTitle, description: editDesc };
     sessionStorage.setItem('ai_ad_data', JSON.stringify(ad));
-    // Use allFilesRef as single source of truth for collected files
-    if (allFilesRef.current.length) {
-      (window as unknown as Record<string, unknown>).__aiStagedFiles = [...allFilesRef.current];
+    // Hand the collected files to the new-ad form
+    if (sentFiles.length) {
+      (window as unknown as Record<string, unknown>).__aiStagedFiles = [...sentFiles];
     }
     router.push('/ads/new?from=ai');
-  }, [generatedAd, editTitle, editDesc, router]);
-
-  const [isSaving, setIsSaving] = useState(false);
+  }, [generatedAd, editTitle, editDesc, sentFiles, router]);
 
   const handleQuickSave = useCallback(async () => {
     if (!generatedAd) return;
@@ -138,9 +131,9 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
       } as Parameters<typeof createAd.mutateAsync>[0]) as { file: string };
 
       // Upload images
-      if (allFilesRef.current.length > 0) {
+      if (sentFiles.length > 0) {
         const url = '/api/images/upload?file=' + encodeURIComponent(result.file);
-        for (const file of allFilesRef.current) {
+        for (const file of sentFiles) {
           const formData = new FormData();
           formData.append('files', file);
           const res = await api.upload<{ rejected?: { name: string; reason: string }[] }>(url, formData).catch(() => null);
@@ -154,24 +147,22 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
       setError(null);
       setEditTitle('');
       setEditDesc('');
-      setStagedFiles([]);
-      allFilesRef.current = [];
+      reset();
       textareaRef.current?.focus();
     } catch (err) {
       toast('error', (err as Error).message);
     } finally {
       setIsSaving(false);
     }
-  }, [generatedAd, editTitle, editDesc, createAd, toast]);
+  }, [generatedAd, editTitle, editDesc, createAd, toast, sentFiles, reset]);
 
   const handleReset = useCallback(() => {
     setGeneratedAd(null);
     setError(null);
     setEditTitle('');
     setEditDesc('');
-    setStagedFiles([]);
-    allFilesRef.current = [];
-  }, []);
+    reset();
+  }, [reset]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -191,35 +182,15 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
   }, []);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files?.length) {
-      const { accepted, rejected } = filterImageFiles(Array.from(files));
-      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-      if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
-    }
-    setFileInputKey((k) => k + 1);
-  }, [toast]);
+    if (e.target.files?.length) addFiles(Array.from(e.target.files));
+  }, [addFiles]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const all = Array.from(e.clipboardData?.files || []);
     if (!all.length) return;
     e.preventDefault();
-    const { accepted, rejected } = filterImageFiles(all);
-    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
-  }, [toast]);
-
-  const removeFile = useCallback((index: number) => {
-    setStagedFiles((prev) => {
-      const file = prev[index];
-      const url = blobUrlsRef.current.get(file);
-      if (url) {
-        URL.revokeObjectURL(url);
-        blobUrlsRef.current.delete(file);
-      }
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
+    addFiles(all);
+  }, [addFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -236,13 +207,10 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
-    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
-  }, [toast]);
+    addFiles(Array.from(e.dataTransfer.files));
+  }, [addFiles]);
 
-  // Auto-resize desc textarea on render
-  const descRef = useCallback((el: HTMLTextAreaElement | null) => {
+  const autoResize = useCallback((el: HTMLTextAreaElement | null) => {
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 'px';
@@ -279,25 +247,22 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
       onDrop={handleDrop}
     >
       {/* Image strip */}
-      {stagedFiles.length > 0 && (
+      {staged.length > 0 && (
         <div className={styles.imageStrip}>
-          {stagedFiles.map((file, i) => {
-            const url = getBlobUrl(file);
-            return (
-              <div key={`${file.name}-${i}`} className={styles.thumb}>
-                <img
-                  src={url}
-                  alt={file.name}
-                  className={styles.thumbImg}
-                  onClick={() => setPreviewSrc(url)}
-                  style={{ cursor: 'pointer' }}
-                />
-                <button className={styles.thumbRemove} onClick={() => removeFile(i)} type="button">
-                  ×
-                </button>
-              </div>
-            );
-          })}
+          {staged.map(({ file, url }, i) => (
+            <div key={`${file.name}-${i}`} className={styles.thumb}>
+              <img
+                src={url}
+                alt={file.name}
+                className={styles.thumbImg}
+                onClick={() => setPreviewSrc(url)}
+                style={{ cursor: 'pointer' }}
+              />
+              <button className={styles.thumbRemove} onClick={() => removeAt(i)} type="button">
+                ×
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -330,7 +295,7 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
           <textarea
             ref={textareaRef}
             className={styles.input}
-            placeholder={generatedAd ? 'Nachbesserung, z.B. \u201EPreis auf 350\u20AC senken\u201C oder \u201EBeschreibung kürzer\u201C' : 'KI-Anzeige erstellen, z.B. \u201EiPhone 14, 128GB, guter Zustand, 400\u20AC\u201C oder \u201EIKEA Regal weiß, Abholung Düsseldorf\u201C'}
+            placeholder={generatedAd ? 'Nachbesserung, z.B. „Preis auf 350€ senken“ oder „Beschreibung kürzer“' : 'KI-Anzeige erstellen, z.B. „iPhone 14, 128GB, guter Zustand, 400€“ oder „IKEA Regal weiß, Abholung Düsseldorf“'}
             rows={1}
             value={prompt}
             maxLength={500}
@@ -366,19 +331,26 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
       {/* Generated preview */}
       {generatedAd && (
         <div className={styles.preview}>
-          <input
+          <textarea
+            ref={autoResize}
             className={styles.previewTitleInput}
             value={editTitle}
-            onChange={(e) => setEditTitle(e.target.value)}
+            rows={1}
+            onChange={(e) => {
+              setEditTitle(e.target.value);
+              const el = e.target;
+              el.style.height = 'auto';
+              el.style.height = el.scrollHeight + 'px';
+            }}
           />
           <div className={styles.previewMeta}>
             {[
               generatedAd.price != null
-                ? `${generatedAd.price} €`
+                ? `${generatedAd.price} €${generatedAd.price_type === 'NEGOTIABLE' ? ' VB' : ''}`
                 : generatedAd.price_hint?.suggestion != null
                   ? `ca. ${generatedAd.price_hint.suggestion} € (Vorschlag)`
                   : null,
-              generatedAd.category as string | null,
+              resolveCategoryName(generatedAd.category as string) || null,
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -388,8 +360,13 @@ export const QuickAiCreate = forwardRef<QuickAiCreateHandle>(function QuickAiCre
               {generatedAd.price_hint.condition_note}
             </div>
           )}
+          <AttributeChips
+            attrs={(generatedAd.special_attributes as Record<string, unknown>) ?? {}}
+            categoryId={generatedAd.category as string | undefined}
+            plainAttrs={buildEnumChipLabels(generatedAd)}
+          />
           <textarea
-            ref={descRef}
+            ref={autoResize}
             className={styles.previewDescEdit}
             value={editDesc}
             onChange={(e) => {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api/client';
 import { ImagePreview, useToast } from '@/components/ui';
-import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
+import { applyImageLimits, adImageCapMessage, formatRejectMessage } from '@/lib/images/formats';
 import styles from './ImageGallery.module.scss';
 
 interface ImageGalleryProps {
@@ -124,14 +124,11 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
     async (files: File[]) => {
       if (!files.length) return;
 
-      const { accepted, rejected: clientRejected } = filterImageFiles(files);
-
-      if (clientRejected.length > 0) {
-        toast('error', `Format nicht unterstützt: ${clientRejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-      }
-
-      if (!accepted.length) return;
-      const uniqueFiles = deduplicateFiles(accepted);
+      const { toAdd, rejectedFormat, capExceeded } = applyImageLimits(files, imagesRef.current.length);
+      if (rejectedFormat.length > 0) toast('error', formatRejectMessage(rejectedFormat));
+      if (capExceeded) toast('error', adImageCapMessage());
+      if (!toAdd.length) return;
+      const uniqueFiles = deduplicateFiles(toAdd);
 
       if (isEdit && adFile) {
         setUploading(true);
@@ -178,11 +175,14 @@ export function ImageGallery({ images, adFile, isEdit = false, initialFiles, pen
 
   useEffect(() => {
     if (!initialFiles?.length) return;
+    // Apply the same per-ad cap as manual uploads (handoff files can push an existing ad over the limit)
+    const { toAdd, capExceeded } = applyImageLimits(initialFiles, imagesRef.current.length);
+    if (capExceeded) toast('error', adImageCapMessage());
     // Create blob URLs and add filenames (skips deduplicateFiles to avoid
     // Strict Mode renaming files that already exist in imagesRef)
     const existing = new Set(imagesRef.current);
     const newFiles: File[] = [];
-    for (const file of initialFiles) {
+    for (const file of toAdd) {
       createBlobUrl(file);
       if (!existing.has(file.name)) newFiles.push(file);
     }

@@ -1,7 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { jobs } from '@/lib/bot/jobs';
+import { jobs, withUserLabel } from '@/lib/bot/jobs';
 
 interface RouteContext {
   params: Promise<{ jobId: string }>;
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ detail: `Job ${jobId} not found` }, { status: 404 });
     }
 
-    return NextResponse.json(job);
+    return NextResponse.json(withUserLabel(job));
   } catch (error) {
     return handleApiError(error);
   }

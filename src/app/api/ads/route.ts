@@ -220,7 +220,9 @@ export async function POST(request: NextRequest) {
     if (ad.auto_price_reduction) {
       data.auto_price_reduction = ad.auto_price_reduction;
     }
-    if (ad.shipping_costs !== undefined) data.shipping_costs = ad.shipping_costs;
+    // Legacy field: only persisted if a non-null value is present (downloaded
+    // legacy ads). New/edited ads strip it (migration to shipping_options).
+    if (ad.shipping_costs != null) data.shipping_costs = ad.shipping_costs;
     if (ad.shipping_options && ad.shipping_options.length > 0) data.shipping_options = ad.shipping_options;
     if (ad.republication_interval !== undefined) {
       data.republication_interval = ad.republication_interval;

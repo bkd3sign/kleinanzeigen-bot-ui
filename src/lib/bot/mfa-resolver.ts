@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import WebSocket from 'ws';
 import { readMergedConfig } from '@/lib/yaml/config';
-import { prepareCleanBrowserState, detectBrowserBin } from '@/lib/bot/browser-cleanup';
+import { ensureProfileFreeForLaunch, detectBrowserBin } from '@/lib/bot/browser-cleanup';
 import { isQueueBusy } from '@/lib/bot/queue';
 import { jobs } from '@/lib/bot/jobs';
 import { jobStdins } from '@/lib/bot/runner';
@@ -81,8 +81,10 @@ export async function prepareMfaSession(
 
   const profileDir = path.join(workspace, '.temp', 'browser-profile');
 
-  // Kill orphaned chromium + clean stale profile files
-  prepareCleanBrowserState(workspace);
+  // Kill any Chromium holding the shared profile and POLL until the SingletonLock is released
+  // before spawning. isQueueBusy() above rules out the bot, but a live messaging browser can
+  // still hold the same profile — without this wait the MFA browser races the lock and fails.
+  await ensureProfileFreeForLaunch(workspace, { fullWipe: true });
 
   const browserBin = detectBrowserBin();
 

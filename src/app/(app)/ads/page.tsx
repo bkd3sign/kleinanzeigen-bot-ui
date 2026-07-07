@@ -12,8 +12,8 @@ import { AdListToolbar } from '@/components/ads/AdListToolbar';
 import type { StatusCounts } from '@/components/ads/AdListToolbar';
 import { AdBulkActions } from '@/components/ads/AdBulkActions';
 import { QuickAiCreate, type QuickAiCreateHandle } from '@/components/ads/QuickAiCreate';
-import { Confetti, Spinner, useToast } from '@/components/ui';
-import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
+import { Confetti, PageLoader, useToast } from '@/components/ui';
+import { filterImageFiles, formatRejectMessage } from '@/lib/images/formats';
 import { api } from '@/lib/api/client';
 import type { AdListItem } from '@/types/ad';
 import type { Job } from '@/types/bot';
@@ -212,7 +212,7 @@ export default function AdsPage() {
     const insideQuickAi = !!(e.target as HTMLElement).closest('[data-quickai]');
     if (!insideQuickAi) {
       const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
-      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+      if (rejected.length > 0) toast('error', formatRejectMessage(rejected));
       if (accepted.length > 0 && quickAiRef.current) {
         quickAiRef.current.addFiles(accepted);
       }
@@ -231,11 +231,7 @@ export default function AdsPage() {
   }, []);
 
   if (isLoading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
-        <Spinner size="lg" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (

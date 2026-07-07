@@ -29,6 +29,7 @@ const conditionOpts: AttrOption[] = [
 const catData: CatAttrsData = {
   categories: {
     '153/160/hemden': {
+      category_name: 'Herren > Hemden',
       shared: ['kleidung_herren.brand_s'],
       attributes: [
         { attribute_key: 'kleidung_herren.art_s', options: artOpts },
@@ -36,6 +37,7 @@ const catData: CatAttrsData = {
       ],
     },
     '153/160/hosen': {
+      category_name: 'Herren > Hosen',
       shared: [],
       attributes: [
         { attribute_key: 'kleidung_herren.art_s', options: artOpts },

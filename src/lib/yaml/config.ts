@@ -11,9 +11,21 @@ export const AI_DEFAULTS = {
   base_url: 'https://openrouter.ai/api/v1',
   model: 'openai/gpt-4.1-nano',
   model_vision: 'openai/gpt-4.1-mini',
-  prompt: 'Du bist ein Kleinanzeigen-Texter. Erstelle eine Anzeige mit Titel, Beschreibung, Highlights und technischen Daten. Antworte NUR mit einem JSON-Objekt: { "title", "description", "category", "price", "price_type", "type", "shipping_type", "shipping_size", "shipping_costs", "shipping_options", "special_attributes", "price_hint": { "uvp", "market_low", "market_high", "suggestion", "condition_note" } }. Pflicht-Enum-Werte (nur Englisch): type=OFFER|WANTED, price_type=FIXED|NEGOTIABLE|GIVE_AWAY, shipping_type=PICKUP|SHIPPING|NOT_APPLICABLE. Keine deutschen Werte wie Angebot, Gesuch, VHB, Versand, Abholung.',
-  prompt_vision: 'Du bist ein Kleinanzeigen-Texter. Analysiere die Fotos und erstelle eine Anzeige. Beschreibe Artikel, Zustand, Highlights und technische Daten. Antworte NUR mit einem JSON-Objekt: { "title", "description", "category", "price", "price_type", "type", "shipping_type", "shipping_size", "shipping_costs", "shipping_options", "special_attributes", "price_hint": { "uvp", "market_low", "market_high", "suggestion", "condition_note" } }. Pflicht-Enum-Werte (nur Englisch): type=OFFER|WANTED, price_type=FIXED|NEGOTIABLE|GIVE_AWAY, shipping_type=PICKUP|SHIPPING|NOT_APPLICABLE. Keine deutschen Werte wie Angebot, Gesuch, VHB, Versand, Abholung.',
+  prompt: 'Du bist ein Kleinanzeigen-Texter. Erstelle eine Anzeige mit Titel, Beschreibung, Highlights und technischen Daten. Antworte NUR mit einem JSON-Objekt: { "title", "description", "category", "price", "price_type", "type", "shipping_type", "shipping_size", "shipping_options", "special_attributes", "price_hint": { "uvp", "market_low", "market_high", "suggestion", "condition_note" } }. Pflicht-Enum-Werte (nur Englisch): type=OFFER|WANTED, price_type=FIXED|NEGOTIABLE|GIVE_AWAY, shipping_type=PICKUP|SHIPPING|NOT_APPLICABLE. Keine deutschen Werte wie Angebot, Gesuch, VHB, Versand, Abholung.',
+  prompt_vision: 'Du bist ein Kleinanzeigen-Texter. Analysiere die Fotos und erstelle eine Anzeige. Beschreibe Artikel, Zustand, Highlights und technische Daten. Antworte NUR mit einem JSON-Objekt: { "title", "description", "category", "price", "price_type", "type", "shipping_type", "shipping_size", "shipping_options", "special_attributes", "price_hint": { "uvp", "market_low", "market_high", "suggestion", "condition_note" } }. Pflicht-Enum-Werte (nur Englisch): type=OFFER|WANTED, price_type=FIXED|NEGOTIABLE|GIVE_AWAY, shipping_type=PICKUP|SHIPPING|NOT_APPLICABLE. Keine deutschen Werte wie Angebot, Gesuch, VHB, Versand, Abholung.',
 };
+
+/**
+ * Whether a login value is an environment-variable placeholder that the bot
+ * resolves at runtime, e.g. `${KLEINANZEIGEN_BOT_USERNAME}` or
+ * `${VAR:-default}`. Such values are managed outside the GUI: they are left
+ * untouched in config.yaml and never synced to / validated against the app
+ * login (users.yaml). Mirrors the bot's `${VAR}` / `${VAR:-default}` syntax.
+ */
+export function isEnvPlaceholder(value: string | undefined | null): boolean {
+  if (!value) return false;
+  return /^\$\{[A-Za-z_][A-Za-z0-9_]*(:-.*)?\}$/.test(value.trim());
+}
 
 /**
  * Detect browser binary location based on platform.
@@ -42,10 +54,14 @@ export const BROWSER_DEFAULTS: Record<string, unknown> = {
     '--password-store=basic',
   ],
   binary_location: detectBrowserBinary(),
-  use_private_window: true,
+  // Must stay false: the warm-login session lives on a PERSISTENT profile; a private/incognito
+  // window discards cookies on close. buildBrowserConfig also enforces false at runtime.
+  use_private_window: false,
   extensions: [],
   user_data_dir: '',
   profile_name: '',
+  // Default browser mode — overridden per workspace via config.yaml browser.mode
+  mode: 'auto',
 };
 
 /**
@@ -79,7 +95,7 @@ export function writeConfig(
 // User-specific config keys written to users/<id>/config.yaml in multi-user mode.
 // Everything else (browser, captcha, timeouts, update_check, publishing, download,
 // diagnostics, ad_files, categories) is server config and stays in the root config.yaml.
-const USER_CONFIG_KEYS = new Set(['login', 'ad_defaults']);
+export const USER_CONFIG_KEYS = new Set(['login', 'ad_defaults']);
 
 /**
  * Read merged config: root config (source of truth for server settings) + user
@@ -207,6 +223,32 @@ export const CONFIG_DEFAULTS: Record<string, unknown> = {
 let botDefaultsCache: Record<string, unknown> | null = null;
 
 /**
+ * Apply product-level default overrides on top of the bot's own defaults.
+ *
+ * Applying these in the defaults layer makes them the effective default for both
+ * the GUI (GET /api/system/config) and the bot (the merged .bot-config.yaml),
+ * regardless of bot version — while an explicit user value still wins via
+ * fillMissingDefaults (target beats defaults). Non-mutating.
+ *
+ * Overrides:
+ * - `publishing.local_path_renaming.mode` OFF → TEMPLATE_MATCH, so local
+ *   folder/file IDs stay in sync with the Kleinanzeigen ID after a republish.
+ * - `deleting.after_delete` NONE → DISABLE, so a deleted ad is marked inactive
+ *   locally instead of lingering as falsely "online" until the next full
+ *   download — keeps the GUI status honest (and lets "activate & delete" of a
+ *   reserved ad settle to "Inaktiv").
+ */
+export function applyProductDefaults(defaults: Record<string, unknown>): Record<string, unknown> {
+  const publishing = { ...((defaults.publishing as Record<string, unknown>) ?? {}) };
+  const localPathRenaming = { ...((publishing.local_path_renaming as Record<string, unknown>) ?? {}) };
+  localPathRenaming.mode = 'TEMPLATE_MATCH';
+  publishing.local_path_renaming = localPathRenaming;
+  const deleting = { ...((defaults.deleting as Record<string, unknown>) ?? {}) };
+  deleting.after_delete = 'DISABLE';
+  return { ...defaults, publishing, deleting };
+}
+
+/**
  * Ask the bot itself for its current defaults by running `create-config` into a
  * temporary directory.  This way our defaults automatically stay in sync when
  * the bot binary is updated — no manual maintenance required.
@@ -232,12 +274,12 @@ export function loadBotDefaults(): Record<string, unknown> {
     const parsed = (yaml.load(content) as Record<string, unknown>) ?? {};
     fs.rmSync(tmpDir, { recursive: true, force: true });
 
-    botDefaultsCache = parsed;
+    botDefaultsCache = applyProductDefaults(parsed);
     return botDefaultsCache;
   } catch {
     // Bot not installed or create-config failed — use hardcoded fallback
-    botDefaultsCache = CONFIG_DEFAULTS;
-    return CONFIG_DEFAULTS;
+    botDefaultsCache = applyProductDefaults(CONFIG_DEFAULTS);
+    return botDefaultsCache;
   }
 }
 

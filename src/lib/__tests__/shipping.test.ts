@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allCarriersOf, cheapestPriceOf, detectSizeGroup, SHIPPING_SIZES } from '../shipping';
+import { allCarriersOf, detectSizeGroup, SHIPPING_SIZES } from '../shipping';
 
 describe('allCarriersOf', () => {
   it('returns S carriers', () => {
@@ -16,24 +16,6 @@ describe('allCarriersOf', () => {
 
   it('returns empty array for unknown size', () => {
     expect(allCarriersOf('XL' as never)).toEqual([]);
-  });
-});
-
-describe('cheapestPriceOf', () => {
-  it('returns cheapest S price (Hermes Päckchen)', () => {
-    expect(cheapestPriceOf('S')).toBe(5.19);
-  });
-
-  it('returns cheapest M price (Hermes M)', () => {
-    expect(cheapestPriceOf('M')).toBe(6.99);
-  });
-
-  it('returns cheapest L price (DHL 10kg)', () => {
-    expect(cheapestPriceOf('L')).toBe(10.49);
-  });
-
-  it('returns 0 for unknown size', () => {
-    expect(cheapestPriceOf('XL' as never)).toBe(0);
   });
 });
 

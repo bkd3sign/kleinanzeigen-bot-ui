@@ -76,16 +76,16 @@
 .lockedFieldBadge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10px;
+  gap: var(--space-0-75);
+  font-size: var(--font-size-2xs);
   font-weight: var(--font-semibold);
   color: var(--yellow);
   background: var(--yellow-muted);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-px) var(--space-1-5);
   border-radius: var(--radius-sm);
   vertical-align: middle;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-tight);
   color: var(--accent);
   border-radius: var(--radius-full);
   font-weight: var(--font-medium);
@@ -95,7 +95,7 @@
 .stickyHeader {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-elevated);
   background: var(--bg-primary);
   padding-bottom: var(--space-4);
   display: flex;
@@ -127,7 +127,7 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast) ease;
 
   &:hover {
     background: var(--bg-hover);
@@ -160,7 +160,7 @@
   color: var(--text-primary);
   font-family: inherit;
   text-align: left;
-  transition: color 0.15s ease;
+  transition: color var(--transition-fast) ease;
 }
 
 .sectionHeader:hover {
@@ -195,6 +195,32 @@
   font-weight: normal;
 }
 
+.sellDirectlyRow {
+  margin-top: var(--space-4);
+}
+
+.shippingOptionsError {
+  font-size: var(--font-size-xs);
+  color: var(--text-danger);
+  margin-top: var(--space-1-5);
+}
+
+.migrationBanner {
+  font-size: var(--font-size-sm);
+  color: var(--yellow);
+  background: var(--yellow-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-2);
+  line-height: var(--leading-snug);
+}
+
+.sellDirectlyHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1-5);
+}
+
 .sectionDesc {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
@@ -206,7 +232,7 @@
   display: flex;
   align-items: center;
   color: var(--text-muted);
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-medium) ease;
   flex-shrink: 0;
 }
 
@@ -217,7 +243,7 @@
 .sectionBodyWrap {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 300ms var(--ease-out);
+  transition: grid-template-rows var(--duration-slower) var(--ease-out);
 }
 
 .sectionBodyWrapCollapsed {
@@ -238,15 +264,15 @@
 
 /* Badge for section status (e.g. APR active/off) */
 .sectionBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: var(--font-semibold);
-  padding: 1px var(--space-2);
+  padding: var(--space-px) var(--space-2);
   border-radius: var(--radius-full);
-  letter-spacing: 0.3px;
+  letter-spacing: var(--tracking-small-px);
 }
 
 .sectionBadgeOn {
-  background-color: rgba(34, 197, 94, 0.15);
+  background-color: var(--green-500-muted);
   color: var(--green);
 }
 
@@ -302,7 +328,7 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-medium);
   color: var(--text-muted);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast) ease;
 }
 
 .toggleBtnBorder {
@@ -366,7 +392,7 @@
   padding: var(--space-3) var(--space-4);
   margin-top: var(--space-2);
   margin-bottom: var(--space-4);
-  transition: border-color 0.15s ease;
+  transition: border-color var(--transition-fast) ease;
   cursor: pointer;
 
   &:hover {
@@ -379,7 +405,7 @@
   font-weight: var(--font-semibold);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-normal);
   margin-bottom: var(--space-2);
 }
 
@@ -425,52 +451,6 @@
   font-style: italic;
 }
 
-/* Shipping size cards */
-.shippingSizeCards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.shippingSizeCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-4) var(--space-3);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  background: transparent;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  text-align: center;
-  font-family: inherit;
-  color: var(--text-primary);
-
-  &:hover {
-    border-color: var(--border-color-hover);
-    background-color: var(--bg-hover);
-  }
-}
-
-.shippingSizeCardActive {
-  border-color: var(--accent);
-  background-color: var(--accent-muted);
-  color: var(--text-primary);
-}
-
-.shippingSizeCardLabel {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-semibold);
-  color: inherit;
-}
-
-.shippingSizeCardExample {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
 /* Carrier cards */
 .carrierPanel {
   display: flex;
@@ -482,86 +462,6 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-semibold);
   color: var(--text-primary);
-}
-
-.carrierCard {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-
-  &:hover {
-    border-color: var(--border-color-hover);
-    background-color: var(--bg-hover);
-  }
-}
-
-.carrierCardSelected {
-  border-color: var(--accent);
-  background-color: var(--accent-muted);
-}
-
-.carrierCheckbox {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.carrierCheck {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--transition-fast);
-  margin-top: 1px;
-}
-
-.carrierCheckActive {
-  background-color: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-size: 11px;
-  font-weight: var(--font-bold);
-}
-
-.carrierInfo {
-  flex: 1;
-  min-width: 0;
-}
-
-.carrierName {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  margin-bottom: var(--space-1);
-}
-
-.carrierDetail {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  margin-bottom: var(--space-1);
-}
-
-.carrierTracking {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.carrierPrice {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 /* Price preview wrapper */
@@ -589,7 +489,7 @@
   gap: var(--space-1);
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
-  padding: 2px;
+  padding: var(--space-0-5);
   border: 1px solid var(--border-color);
 }
 
@@ -680,7 +580,7 @@
 
   svg {
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
     color: var(--yellow);
   }
 
@@ -692,7 +592,7 @@
   p {
     margin: 0;
     color: var(--text-secondary);
-    line-height: 1.5;
+    line-height: var(--leading-normal);
   }
 }
 
@@ -710,7 +610,7 @@
 
   svg {
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
     color: var(--blue);
   }
 
@@ -722,7 +622,7 @@
   p {
     margin: 0;
     color: var(--text-secondary);
-    line-height: 1.5;
+    line-height: var(--leading-normal);
   }
 }
 
@@ -760,7 +660,7 @@
   border: 2px solid var(--bg-tertiary);
   box-shadow: 0 0 0 1px var(--border-color-hover);
   flex-shrink: 0;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .timelineDotFinal {
@@ -783,7 +683,7 @@
 .timelineContent {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-px);
   padding-bottom: var(--space-3);
   flex: 1;
   min-width: 0;
@@ -845,7 +745,7 @@
   font-family: var(--font-sans);
   color: var(--green);
   background: var(--green-muted);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-px) var(--space-1-5);
   border-radius: var(--radius-sm);
 }
 
@@ -855,7 +755,7 @@
   font-family: var(--font-sans);
   color: var(--yellow);
   background: var(--yellow-muted);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-px) var(--space-1-5);
   border-radius: var(--radius-sm);
 }
 
@@ -864,8 +764,8 @@
   font-weight: var(--font-normal);
   font-family: var(--font-sans);
   color: var(--green);
-  background: rgba(34, 197, 94, 0.15);
-  padding: 1px var(--space-1-5);
+  background: var(--green-500-muted);
+  padding: var(--space-px) var(--space-1-5);
   border-radius: var(--radius-sm);
 }
 
@@ -875,7 +775,7 @@
   font-family: var(--font-sans);
   color: var(--orange);
   background: color-mix(in srgb, var(--orange) 10%, transparent);
-  padding: 1px var(--space-1-5);
+  padding: var(--space-px) var(--space-1-5);
   border-radius: var(--radius-sm);
 }
 
@@ -998,7 +898,7 @@
   width: 100%;
   min-width: 0;
   height: 36px;
-  padding: 4px 12px;
+  padding: var(--space-1) var(--space-3);
   background-color: transparent;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -1121,14 +1021,6 @@
     font-size: var(--font-size-xl);
   }
 
-  .shippingSizeCards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .shippingSizeCard {
-    padding: var(--space-3) var(--space-2);
-  }
-
   .formActions {
     flex-direction: column;
   }
@@ -1172,11 +1064,11 @@
   box-shadow: var(--shadow-lg);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  white-space: normal;
+  white-space: pre-line; // honor explicit line breaks in tooltip text (multi-line hints)
   width: max-content;
   max-width: 260px;
   line-height: var(--leading-relaxed);
   z-index: var(--z-tooltip);
   pointer-events: none;
-  animation: fadeIn 150ms var(--ease-out);
+  animation: fadeIn var(--duration-fast) var(--ease-out);
 }

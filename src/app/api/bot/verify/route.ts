@@ -1,7 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { startJob } from '@/lib/bot/jobs';
+import { startJob, withUserLabel } from '@/lib/bot/jobs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const verbose = Boolean(body?.verbose);
     const flags = verbose ? '--verbose' : '';
     const job = startJob(`verify ${flags}`.trim(), user.workspace, user.id);
-    return NextResponse.json(job);
+    return NextResponse.json(withUserLabel(job));
   } catch (error) {
     return handleApiError(error);
   }

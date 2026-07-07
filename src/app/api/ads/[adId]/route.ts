@@ -6,7 +6,7 @@ import { findAdById, readAd, writeAd, applyAdUpdates } from '@/lib/yaml/ads';
 import { loadCatAttrsData, translateAttrValues } from '@/lib/ads/normalize-attributes';
 import { computeContentHash } from '@/lib/ads/content-hash';
 import { toNFC } from '@/lib/images/normalize';
-import { startJob } from '@/lib/bot/jobs';
+import { startJob, withUserLabel } from '@/lib/bot/jobs';
 import path from 'path';
 import { unlink, rm } from 'fs/promises';
 import { existsSync, readdirSync } from 'fs';
@@ -145,30 +145,28 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (remote) {
       const job = startJob(`delete --ads=${numId}`, user.workspace, user.id);
       response.message = 'Ad deleted locally, remote deletion started';
-      response.job = job;
+      response.job = withUserLabel(job);
     }
 
-    // Delete ad with images
+    // Delete the ad's own referenced images, then its YAML.
     const adDir = path.dirname(filePath);
     const ad = await readAd(filePath);
     const adsRoot = path.join(user.workspace, 'ads');
-    const otherYamls = readdirSync(adDir).filter(
-      (f) => f.startsWith('ad_') && f.endsWith('.yaml') && path.join(adDir, f) !== filePath,
-    );
 
-    if (otherYamls.length === 0 && path.basename(adDir).startsWith('ad_') && adDir !== adsRoot) {
-      await rm(adDir, { recursive: true, force: true });
-    } else {
-      // Delete referenced images
-      for (const pattern of (ad.images as string[]) ?? []) {
-        const matches = globSync(path.join(adDir, pattern));
-        for (const match of matches) {
-          if (ALLOWED_IMAGE_EXTENSIONS.has(path.extname(match).toLowerCase()) && existsSync(match)) {
-            await unlink(match);
-          }
+    for (const pattern of (ad.images as string[]) ?? []) {
+      const matches = globSync(path.join(adDir, pattern));
+      for (const match of matches) {
+        if (ALLOWED_IMAGE_EXTENSIONS.has(path.extname(match).toLowerCase()) && existsSync(match)) {
+          await unlink(match);
         }
       }
-      await unlink(filePath);
+    }
+    await unlink(filePath);
+
+    // Remove the per-ad folder only once it is empty — template-agnostic (honors
+    // any folder_name_template), never deletes unrecognized files or the ads root.
+    if (adDir !== adsRoot && existsSync(adDir) && readdirSync(adDir).length === 0) {
+      await rm(adDir, { recursive: true, force: true });
     }
 
     return NextResponse.json(response);

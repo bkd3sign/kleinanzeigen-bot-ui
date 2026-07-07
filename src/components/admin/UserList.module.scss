@@ -69,11 +69,11 @@
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   cursor: pointer;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-  line-height: 1;
+  line-height: var(--leading-none);
   transition: all var(--transition-fast);
 
   &:hover {
@@ -120,7 +120,7 @@
 .resetInput {
   flex: 1;
   height: 36px;
-  padding: 4px 12px;
+  padding: var(--space-1) var(--space-3);
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);

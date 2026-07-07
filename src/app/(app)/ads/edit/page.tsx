@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdByFile, useUpdateAdByFile, useDeleteAdByFile, useDuplicateAd } from '@/hooks/useAds';
 import { AdForm, type AdFormData } from '@/components/ads/AdForm/AdForm';
 import { SaveAsTemplateModal } from '@/components/ads/SaveAsTemplateModal';
-import { Spinner, showConfirm, useToast } from '@/components/ui';
+import { PageLoader, useToast } from '@/components/ui';
+import { confirmRemoveAds } from '@/lib/ads/confirmations';
 import type { AdCreateInput } from '@/validation/schemas';
 import type { Job } from '@/types/bot';
 import { api } from '@/lib/api/client';
@@ -81,12 +82,7 @@ export default function EditAdPage() {
   );
 
   const handleDelete = useCallback(async () => {
-    const confirmed = await showConfirm(
-      'Anzeige löschen',
-      `Soll die Anzeige "${ad?.title || file}" wirklich gelöscht werden?\n\nHinweis: Die Anzeige wird nur lokal gelöscht. Eine bereits veröffentlichte Anzeige bleibt auf Kleinanzeigen online.`,
-      'Lokal löschen',
-      'Abbrechen',
-    );
+    const confirmed = await confirmRemoveAds(1, ad?.title);
     if (!confirmed) return;
     try {
       await deleteAd.mutateAsync(file);
@@ -95,7 +91,7 @@ export default function EditAdPage() {
     } catch (err) {
       toast('error', (err as Error).message);
     }
-  }, [ad, file, deleteAd, toast, router]);
+  }, [file, ad?.title, deleteAd, toast, router]);
 
   const handleDuplicate = useCallback(async () => {
     try {
@@ -114,11 +110,7 @@ export default function EditAdPage() {
   // Wait for both the ad and its resolved image list before mounting the form —
   // useForm reads defaultValues only once at mount, so resolvedImages must be ready first.
   if (isLoading || (!isError && resolvedImages === null)) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
-        <Spinner size="lg" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (isError || !ad) {
@@ -150,7 +142,6 @@ export default function EditAdPage() {
     price: ad.price,
     price_type: ad.price_type,
     shipping_type: ad.shipping_type,
-    shipping_costs: ad.shipping_costs,
     shipping_options: ad.shipping_options ?? [],
     sell_directly: ad.sell_directly,
     images: resolvedImages ?? ad.images ?? [],
@@ -192,6 +183,7 @@ export default function EditAdPage() {
     <>
       <AdForm
         defaultValues={defaults}
+        legacyShippingCosts={ad.shipping_costs ?? null}
         onSubmit={handleSubmit}
         onPublishAndSave={handlePublish}
         onUpdateAndSave={ad.id ? handleUpdate : undefined}

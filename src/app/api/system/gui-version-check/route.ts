@@ -1,8 +1,9 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-const currentVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
-import { isVersionUpToDate } from './version-compare';
+import { isVersionUpToDate, FALLBACK_VERSION } from '@/lib/update-check/pill-state';
+
+const currentVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? FALLBACK_VERSION;
 
 export async function GET(request: NextRequest) {
   try {

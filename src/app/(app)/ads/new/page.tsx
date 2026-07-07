@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCreateAd } from '@/hooks/useAds';
 import { useConfigDefaults } from '@/lib/api/queries/system';
 import { AdForm, type AdFormData } from '@/components/ads/AdForm/AdForm';
-import { Spinner, useToast, showConfirm } from '@/components/ui';
+import { PageLoader, useToast, showConfirm } from '@/components/ui';
 import type { AdCreateInput } from '@/validation/schemas';
 import type { Job } from '@/types/bot';
 import { api } from '@/lib/api/client';
@@ -142,11 +142,7 @@ export default function NewAdPage() {
 
   // Wait for sessionStorage check and config defaults
   if (!checked || configLoading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
-        <Spinner size="lg" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const configDefaults = configData?.ad_defaults ?? {};

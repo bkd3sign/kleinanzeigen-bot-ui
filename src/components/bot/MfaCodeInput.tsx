@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useToast } from '@/components/ui';
+import { BotBanner } from './BotBanner';
 import styles from './MfaBanner.module.scss';
 
 interface MfaCodeInputProps {
@@ -12,6 +13,14 @@ interface MfaCodeInputProps {
   submitPending: boolean;
   preparePending: boolean;
 }
+
+// Lock icon — signals MFA / authentication required
+const LockIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0110 0v4" />
+  </svg>
+);
 
 /**
  * Shared MFA code input — same UI for bot MFA, messaging MFA modal, and /messages inline.
@@ -34,49 +43,39 @@ export function MfaCodeInput({ title, description, onSubmit, onPrepare, submitPe
   }, [onPrepare]);
 
   return (
-    <div className={styles.banner}>
-      <div className={styles.icon}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-          <path d="M7 11V7a5 5 0 0110 0v4" />
-        </svg>
+    <BotBanner icon={<LockIcon />} title={title} description={description}>
+      <div className={styles.form}>
+        <input
+          className={styles.input}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={8}
+          placeholder="000000"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          disabled={submitPending || preparePending}
+          autoFocus
+        />
+        <button
+          className={styles.btn}
+          onClick={handleSubmit}
+          disabled={submitPending || preparePending || code.length < 4}
+        >
+          {submitPending ? 'Wird geprüft…' : 'Code bestätigen'}
+        </button>
       </div>
-      <div className={styles.content}>
-        <div className={styles.title}>{title}</div>
-        <div className={styles.desc}>{description}</div>
-        <div className={styles.form}>
-          <input
-            className={styles.input}
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={8}
-            placeholder="000000"
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            disabled={submitPending || preparePending}
-            autoFocus
-          />
-          <button
-            className={styles.btn}
-            onClick={handleSubmit}
-            disabled={submitPending || preparePending || code.length < 4}
-          >
-            {submitPending ? 'Wird geprüft…' : 'Code bestätigen'}
-          </button>
-        </div>
-        <div className={styles.desc} style={{ marginTop: 'var(--space-2)' }}>
-          Code abgelaufen?{' '}
-          <button
-            onClick={handlePrepare}
-            disabled={preparePending}
-            style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' }}
-          >
-            {preparePending ? 'Wird neu gestartet…' : 'Neuen Code anfordern'}
-          </button>
-        </div>
+      <div className={styles.desc} style={{ marginTop: 'var(--space-2)' }}>
+        Code abgelaufen?{' '}
+        <button
+          onClick={handlePrepare}
+          disabled={preparePending}
+          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' }}
+        >
+          {preparePending ? 'Wird neu gestartet…' : 'Neuen Code anfordern'}
+        </button>
       </div>
-    </div>
+    </BotBanner>
   );
 }

@@ -1,0 +1,47 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-loose);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.chipLabel {
+  color: var(--text-muted);
+}
+
+.chipMissing {
+  border-color: var(--yellow-muted);
+  background: var(--yellow-muted);
+  color: var(--text-warning);
+}
+
+.chipLabelMissing {
+  color: var(--text-warning);
+  opacity: 0.8;
+}
+
+.chipBoolTrue {
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.chipBoolFalse {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

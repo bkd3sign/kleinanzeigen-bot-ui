@@ -1,16 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Input, Select, Textarea } from '@/components/ui';
 import { useToast } from '@/components/ui';
 import { CategoryPicker } from '../CategoryPicker/CategoryPicker';
 import { CategoryAttributesPicker } from './CategoryAttributesPicker';
 import { ImageGallery } from '../ImageGallery/ImageGallery';
-import { ShippingPicker, detectInitialMode, type ShippingMode } from './ShippingPicker';
+import { MAX_AD_IMAGES } from '@/lib/images/formats';
+import { detectSizeGroup } from '@/lib/shipping';
+import { ShippingPicker, type ShippingMode } from './ShippingPicker';
 import { CollapsibleSection, type AiPriceHint } from './AdForm';
 import { LockedBadge, withLocked } from './InfoTip';
 import type { AdCreateInput } from '@/validation/schemas';
+import { checkSellDirectly } from '@/lib/ads/sellDirectly';
 import styles from './AdForm.module.scss';
 
 const PRICE_TYPE_OPTIONS = [
@@ -33,9 +36,10 @@ interface DetailsSectionProps {
   onDropHandlerReady?: (handler: (files: File[]) => void) => void;
   lockedFields?: string[];
   defaultSizeGroup?: string;
+  legacyShippingCosts?: number | null;
 }
 
-export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFilesRef, priceHint, onDropHandlerReady, lockedFields, defaultSizeGroup }: DetailsSectionProps) {
+export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFilesRef, priceHint, onDropHandlerReady, lockedFields, defaultSizeGroup, legacyShippingCosts }: DetailsSectionProps) {
   const isLocked = useCallback((field: string) => lockedFields?.includes(field) ?? false, [lockedFields]);
   const hasLockedFields = ['type', 'category', 'price_type', 'shipping_type']
     .some((f) => isLocked(f));
@@ -43,6 +47,7 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
     register,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useFormContext<AdCreateInput>();
   const { toast } = useToast();
@@ -53,65 +58,69 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
   const category = watch('category') ?? '';
   const description = watch('description') ?? '';
   const images = watch('images') ?? [];
-  const shippingOptions = watch('shipping_options') ?? [];
+  const shippingOptionsRaw = watch('shipping_options');
+  const shippingOptions = useMemo(() => shippingOptionsRaw ?? [], [shippingOptionsRaw]);
   const attrs = watch('special_attributes') ?? {};
 
-  const shippingCosts = watch('shipping_costs');
   const [shippingMode, setShippingMode] = useState<ShippingMode>(
-    () => detectInitialMode(shippingOptions, shippingCosts),
+    () => detectSizeGroup(shippingOptions),
   );
   const [klaPriceHint, setKlaPriceHint] = useState<AiPriceHint | null>(null);
 
+  const sellDirectly = watch('sell_directly') ?? false;
+  const sellDirectlyCheck = useMemo(
+    () => checkSellDirectly({ type: adType, shipping_type: shippingType, shipping_options: shippingOptions, price_type: priceType }),
+    [adType, shippingType, shippingOptions, priceType],
+  );
+
+  // Reset an invalid direct-buy flag so the form never submits a combination the
+  // bot would reject (e.g. after switching price_type to GIVE_AWAY).
+  useEffect(() => {
+    if (sellDirectly && !sellDirectlyCheck.ok) {
+      setValue('sell_directly', false, { shouldDirty: true });
+    }
+  }, [sellDirectly, sellDirectlyCheck.ok, setValue]);
+
   const handleTitleBlur = useCallback(async (title: string) => {
     if (!title.trim() || isLocked('category')) return;
+    // Only autosuggest when category AND attributes are empty — same trigger condition as a
+    // fresh AI generation, so editing an already-filled ad never overwrites existing data.
+    const currentAttrs = getValues('special_attributes');
+    if (getValues('category') || (currentAttrs && Object.keys(currentAttrs).length > 0)) return;
     try {
-      const res = await fetch(`/api/ads/category-suggest?title=${encodeURIComponent(title)}`);
+      // Identical SoT pipeline as the AI generator — same article yields the same result
+      const res = await fetch('/api/ads/resolve-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description: getValues('description') ?? '' }),
+      });
       if (!res.ok) return;
-      const data = await res.json() as { id: string; attrs: Record<string, string> } | null;
-      if (!data?.id) return;
+      const data = await res.json() as { category: string | null; special_attributes: Record<string, string> } | null;
+      if (!data?.category) return;
 
-      if (Object.keys(data.attrs).length > 0) {
-        pendingSuggestedAttrs.current = data.attrs;
+      if (Object.keys(data.special_attributes).length > 0) {
+        pendingSuggestedAttrs.current = data.special_attributes;
       }
-      setValue('category', data.id, { shouldDirty: true });
+      setValue('category', data.category, { shouldDirty: true });
 
-      // Extract numeric category ID (e.g. "161/173/sonstige" → "173")
-      const categoryId = data.id.split('/')[1];
+      // Price suggestion based on the resolved category + first attribute
+      const categoryId = data.category.split('/')[1];
       if (!categoryId) return;
-
       const priceParams = new URLSearchParams({ title, categoryId });
-      const firstAttrKey = Object.keys(data.attrs)[0];
+      const firstAttrKey = Object.keys(data.special_attributes)[0];
       if (firstAttrKey) {
         priceParams.set('attrKey', firstAttrKey);
-        priceParams.set('attrValue', data.attrs[firstAttrKey]);
+        priceParams.set('attrValue', data.special_attributes[firstAttrKey]);
       }
-
-      // Run price + attribute suggestion in parallel
-      const [priceRes, attrRes] = await Promise.all([
-        fetch(`/api/ads/price-suggest?${priceParams}`),
-        fetch('/api/ads/attribute-suggest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, categoryId, categoryPath: data.id, attrs: data.attrs }),
-        }),
-      ]);
-
+      const priceRes = await fetch(`/api/ads/price-suggest?${priceParams}`);
       if (priceRes.ok) {
         const priceData = await priceRes.json() as { market_low: number; market_high: number } | null;
         if (priceData) setKlaPriceHint(priceData);
       }
-
-      if (attrRes.ok) {
-        const extraAttrs = await attrRes.json() as Record<string, string> | null;
-        if (extraAttrs) {
-          // Merge: attribute-suggest enriches what category-suggest already found
-          pendingSuggestedAttrs.current = { ...data.attrs, ...extraAttrs };
-        }
-      }
     } catch {
       // API unavailable — silently ignore
     }
-  }, [isLocked, setValue]);
+  }, [isLocked, setValue, getValues]);
 
   // When category changes, clear attributes — but apply any pending suggestion attrs instead of empty.
   // Track previous category to detect real user-driven changes (survives React Strict Mode double-invoke).
@@ -209,46 +218,41 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
         onChange={(newAttrs) => setValue('special_attributes', newAttrs, { shouldDirty: true })}
       />
 
-      {/* Shipping type + individual costs row */}
-      <div className={styles.row}>
-        <Select
-          label={withLocked('Versandart', isLocked('shipping_type'))}
-          options={SHIPPING_TYPE_OPTIONS}
-          error={errors.shipping_type?.message}
-          disabled={isLocked('shipping_type')}
-          required
-          {...register('shipping_type')}
-        />
-        {showShipping && shippingMode === 'INDIVIDUAL' && (
-          <Input
-            label="Versandkosten (EUR)"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="z.B. 5.49"
-            error={errors.shipping_costs?.message}
-            value={shippingCosts ?? ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              setValue('shipping_costs', val === '' ? null : parseFloat(val), { shouldDirty: true });
-            }}
-          />
-        )}
-      </div>
+      {/* Shipping type */}
+      <Select
+        label={withLocked('Versandart', isLocked('shipping_type'))}
+        options={SHIPPING_TYPE_OPTIONS}
+        error={errors.shipping_type?.message}
+        disabled={isLocked('shipping_type')}
+        required
+        {...register('shipping_type')}
+      />
 
       {/* Shipping size picker / carrier options */}
       {showShipping && (
-        <ShippingPicker
-          selectedOptions={shippingOptions}
-          onChange={(opts) => setValue('shipping_options', opts, { shouldDirty: true })}
-          sellDirectly={watch('sell_directly') ?? false}
-          onSellDirectlyChange={(val) => setValue('sell_directly', val, { shouldDirty: true })}
-          shippingCosts={shippingCosts}
-          onShippingCostsChange={(price) => setValue('shipping_costs', price, { shouldDirty: true })}
-          activeMode={shippingMode}
-          onModeChange={setShippingMode}
-          defaultSizeGroup={defaultSizeGroup}
-        />
+        <>
+          {shippingOptions.length === 0 && legacyShippingCosts != null && (
+            <p className={styles.migrationBanner} role="alert">
+              Individueller Versand ({legacyShippingCosts.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €) wird von Kleinanzeigen nicht mehr unterstützt. Bitte wähle eine Paketgröße — der alte Versandpreis wird beim Speichern entfernt.
+            </p>
+          )}
+          <ShippingPicker
+            selectedOptions={shippingOptions}
+            onChange={(opts) => setValue('shipping_options', opts, { shouldDirty: true })}
+            sellDirectly={sellDirectly}
+            onSellDirectlyChange={(val) => setValue('sell_directly', val, { shouldDirty: true })}
+            sellDirectlyDisabled={!sellDirectlyCheck.ok}
+            sellDirectlyHint={sellDirectlyCheck.reason}
+            activeMode={shippingMode}
+            onModeChange={setShippingMode}
+            defaultSizeGroup={defaultSizeGroup}
+          />
+          {errors.shipping_options?.message && (
+            <p className={styles.shippingOptionsError} role="alert">
+              {errors.shipping_options.message}
+            </p>
+          )}
+        </>
       )}
 
       {/* Price + Price type row */}
@@ -318,7 +322,7 @@ export function DetailsSection({ adFile, isEdit = false, initialFiles, pendingFi
         onDropHandlerReady={onDropHandlerReady}
       />
       <div className={styles.tipImages}>
-        Tipp: Bis zu 20 Bilder. Drag & Drop zum Sortieren. Klick für Vorschau.
+        Tipp: Bis zu {MAX_AD_IMAGES} Bilder. Drag & Drop zum Sortieren. Klick für Vorschau.
       </div>
     </CollapsibleSection>
   );

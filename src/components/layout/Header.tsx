@@ -9,6 +9,7 @@ import { CreateAdModal } from '@/components/ads/CreateAdModal';
 import { Badge } from '@/components/ui/Badge/Badge';
 import { useUnreadCount, useResponderStatus } from '@/hooks/useMessages';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
+import { getResponderBadge, canLoadInbox } from '@/lib/messaging/responderBadge';
 import styles from './Header.module.scss';
 
 const PAGE_TITLES: Record<string, string> = {
@@ -21,7 +22,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/jobs': 'Logs',
   '/logs': 'Logs',
   '/admin': 'Verwaltung',
-  '/settings': 'Einstellungen',
+  '/account': 'Profil',
+  '/settings': 'Globale Einstellungen',
   '/templates': 'Vorlagen',
   '/automation': 'Automatisierung',
   '/messages': 'Nachrichten',
@@ -32,6 +34,7 @@ const BACK_LINKS: Record<string, string> = {
   '/ads/new': '/ads',
   '/ads/edit': '/ads',
   '/ads/ai': '/ads',
+  '/account': '/ads',
   '/settings': '/ads',
   '/templates/new': '/templates',
   '/templates/edit': '/templates',
@@ -97,11 +100,10 @@ export function Header() {
 
   return (
     <header className={styles.header}>
-      {/* Brand group: K icon + page title + optional back */}
+      {/* Brand group: K icon + optional back + page title */}
       <div className={styles.headerBrandGroup}>
         <Link href="/" className={styles.headerBrand}>
           <div className={styles.brandIcon}>K</div>
-          <h1 className={styles.headerTitle}>{title}</h1>
         </Link>
         {backLink && (
           <Link href={backLink} className={styles.headerBack}>
@@ -110,6 +112,7 @@ export function Header() {
             </svg>
           </Link>
         )}
+        <h1 className={styles.headerTitle}>{title}</h1>
       </div>
 
       {/* Mobile hamburger */}
@@ -202,7 +205,7 @@ function MessagesLink({ onClose }: { onClose: () => void }) {
   const { data: responder } = useResponderStatus();
   const { isAiAvailable } = useAiAvailable();
   const count = data?.numUnreadMessages ?? 0;
-  const aiMode = isAiAvailable ? responder?.mode : undefined;
+  const badge = getResponderBadge(responder?.mode, isAiAvailable, canLoadInbox(data?.status, data?.userId != null));
 
   return (
     <Link
@@ -216,10 +219,8 @@ function MessagesLink({ onClose }: { onClose: () => void }) {
         </svg>
       </span>
       <span className={styles.navLabel}>Nachrichten</span>
-      {aiMode && aiMode !== 'off' && (
-        <Badge variant={aiMode === 'auto' ? 'success' : 'info'}>
-          {aiMode === 'auto' ? 'Auto' : 'Review'}
-        </Badge>
+      {badge && (
+        <Badge variant={badge.variant}>{badge.short}</Badge>
       )}
       {count > 0 && (
         <Badge variant="danger">{count}</Badge>

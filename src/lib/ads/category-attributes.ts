@@ -3,6 +3,10 @@
  * Extracted from CategoryAttributesPicker for testability.
  */
 
+// Short keys of attributes using a text-search input combobox — bot matches by display text.
+// All other attributes use button/select handlers and must keep their API value.
+export const INPUT_COMBOBOX_KEYS = new Set(['brand_s', 'marke_s']);
+
 export interface AttributeOption {
   value: string;
   text: string;
@@ -46,7 +50,7 @@ const LABEL_DE: Record<string, string> = {
   verfuegbarm: 'Monat', verfuegbary: 'Jahr',
 };
 
-const HIDDEN_ATTR_SUFFIXES = ['guarantee_b', 'seller_badges_s'];
+export const HIDDEN_ATTR_SUFFIXES = ['guarantee_b', 'seller_badges_s'];
 
 // art_s always comes first so the primary category attribute is prominent
 const ATTR_SORT_ORDER: Record<string, number> = { art_s: 0 };

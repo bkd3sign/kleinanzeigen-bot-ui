@@ -47,7 +47,7 @@
 .priceDot {
   cursor: pointer;
   opacity: 0;
-  animation: fadeIn 300ms var(--ease-out) forwards;
+  animation: fadeIn var(--duration-slower) var(--ease-out) forwards;
   animation-delay: var(--anim-delay, 0ms);
 }
 
@@ -59,7 +59,7 @@
 
 .axisLabel {
   fill: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
 }
 
 .tooltip {

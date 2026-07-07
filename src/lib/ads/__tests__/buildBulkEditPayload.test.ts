@@ -8,7 +8,6 @@ const none: BulkEditOptions = {
   priceAdjust: null,
   absolutePrice: null,
   shippingChoice: null,
-  customShippingCost: '',
   aprEnabled: null,
   aprStrategy: null,
   aprAmount: null,
@@ -131,28 +130,6 @@ describe('buildBulkEditPayload', () => {
   it('sets SHIPPING with all L carriers', () => {
     const p = buildBulkEditPayload(ad, { ...none, shippingChoice: 'L' });
     expect(p.shipping_options).toEqual(allCarriersOf('L'));
-  });
-
-  it('sets CUSTOM shipping with valid cost', () => {
-    const p = buildBulkEditPayload(ad, { ...none, shippingChoice: 'CUSTOM', customShippingCost: '5.99' });
-    expect(p.shipping_type).toBe('SHIPPING');
-    expect(p.shipping_costs).toBe(5.99);
-    expect(p.shipping_options).toEqual([]);
-  });
-
-  it('skips shipping when CUSTOM cost is empty', () => {
-    const p = buildBulkEditPayload(ad, { ...none, shippingChoice: 'CUSTOM', customShippingCost: '' });
-    expect(p.shipping_type).toBeUndefined();
-  });
-
-  it('skips shipping when CUSTOM cost is invalid text', () => {
-    const p = buildBulkEditPayload(ad, { ...none, shippingChoice: 'CUSTOM', customShippingCost: 'abc' });
-    expect(p.shipping_type).toBeUndefined();
-  });
-
-  it('skips shipping when CUSTOM cost is 0 or negative', () => {
-    const p = buildBulkEditPayload(ad, { ...none, shippingChoice: 'CUSTOM', customShippingCost: '0' });
-    expect(p.shipping_type).toBeUndefined();
   });
 
   // ── APR ───────────────────────────────────────────────────────────────────
@@ -294,7 +271,6 @@ describe('buildBulkEditPayload', () => {
         priceAdjust: -10,
         absolutePrice: null,
         shippingChoice: 'S',
-        customShippingCost: '',
         aprEnabled: true,
         aprStrategy: 'PERCENTAGE',
         aprAmount: 5,

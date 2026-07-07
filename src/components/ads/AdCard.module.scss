@@ -15,7 +15,7 @@
 
 .card:hover {
   border-color: var(--border-color-hover);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px var(--shadow-card);
 }
 
 .cardSelected {
@@ -70,7 +70,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-medium) ease;
 }
 
 .card:hover .cardImageImg {
@@ -92,19 +92,21 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-  z-index: 1;
+  z-index: var(--z-local-1);
   /* Override badge color tokens for image overlay — raise opacity so badges are visible on photos */
-  --green-muted: rgba(34, 197, 94, 0.85);
-  --red-muted: rgba(239, 68, 68, 0.85);
-  --yellow-muted: rgba(245, 158, 11, 0.85);
-  --bg-tertiary: rgba(100, 100, 100, 0.85);
-  --blue-muted: rgba(59, 130, 246, 0.85);
-  --text-success: #fff;
-  --text-danger: #fff;
-  --text-warning: #fff;
-  --text-muted: #fff;
-  --text-secondary: #fff;
-  --text-info: #fff;
+  --green-muted: var(--green-overlay);
+  --red-muted: var(--red-overlay);
+  --yellow-muted: var(--yellow-overlay);
+  --bg-tertiary: var(--gray-overlay);
+  --blue-muted: var(--blue-overlay);
+  --purple-muted: var(--purple-overlay);
+  --purple: var(--on-overlay);
+  --text-success: var(--on-overlay);
+  --text-danger: var(--on-overlay);
+  --text-warning: var(--on-overlay);
+  --text-muted: var(--on-overlay);
+  --text-secondary: var(--on-overlay);
+  --text-info: var(--on-overlay);
 }
 
 
@@ -116,19 +118,19 @@
   width: 32px;
   height: 32px;
   border-radius: var(--radius-md);
-  background-color: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  color: #fff;
+  background-color: var(--overlay-strong);
+  backdrop-filter: blur(var(--blur-md));
+  color: var(--on-overlay);
   border: none;
-  font-size: 18px;
-  line-height: 1;
+  font-size: var(--font-size-lg);
+  line-height: var(--leading-none);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.15s ease;
-  z-index: 2;
+  transition: opacity var(--transition-fast) ease;
+  z-index: var(--z-local-2);
 }
 
 .card:hover .cardMenu {
@@ -136,7 +138,7 @@
 }
 
 .cardMenu:hover {
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--overlay-darker);
 }
 
 /* Card body */
@@ -158,7 +160,7 @@
   font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin-bottom: var(--space-1);
-  line-height: 1.4;
+  line-height: var(--leading-snug);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -242,7 +244,7 @@
 .cardInfoDate {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-0-75);
   white-space: nowrap;
 
   svg {
@@ -278,15 +280,15 @@
   right: var(--space-2);
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  font-size: 11px;
+  gap: var(--space-0-75);
+  padding: var(--space-0-5) var(--space-1-5);
+  font-size: var(--font-size-xs-plus);
   font-weight: var(--font-medium);
-  color: #fff;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
+  color: var(--on-overlay);
+  background: var(--overlay-medium);
+  backdrop-filter: blur(var(--blur-sm));
   border-radius: var(--radius-sm);
-  z-index: 2;
+  z-index: var(--z-local-2);
   pointer-events: none;
 
   svg {
@@ -298,16 +300,16 @@
   position: absolute;
   top: var(--space-2);
   right: var(--space-2);
-  padding: 2px var(--space-2);
-  font-size: 10px;
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--font-size-2xs);
   font-weight: var(--font-semibold);
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-medium-px);
   text-transform: uppercase;
-  color: #fff;
-  background: linear-gradient(135deg, #8b5cf6, #a855f7, #c084fc);
+  color: var(--on-overlay);
+  background: linear-gradient(135deg, var(--ai-gradient-from), var(--ai-color), var(--ai-gradient-to));
   background-size: 400% 100%;
   border-radius: var(--radius-full);
-  z-index: 2;
+  z-index: var(--z-local-2);
   animation: sparkleBadge 500ms var(--ease-out) both, sparkleShine 2s ease-in-out 0.5s 3;
 }
 
@@ -319,10 +321,10 @@
 
 @keyframes sparkleGlow {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.0), inset 0 0 0 1px rgba(168, 85, 247, 0.0);
+    box-shadow: 0 0 0 0 var(--ai-glow-transparent), inset 0 0 0 1px var(--ai-glow-transparent);
   }
   50% {
-    box-shadow: 0 0 12px 2px rgba(168, 85, 247, 0.3), inset 0 0 0 1px rgba(168, 85, 247, 0.2);
+    box-shadow: 0 0 12px 2px var(--ai-glow-medium), inset 0 0 0 1px var(--ai-glow-soft);
   }
 }
 
@@ -369,7 +371,7 @@
     right: var(--space-1);
     width: 24px;
     height: 24px;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     background: none;
     backdrop-filter: none;
     color: var(--text-muted);
@@ -384,7 +386,7 @@
     flex: 1;
     min-width: 0;
     padding: var(--space-2) var(--space-3);
-    padding-right: 32px;
+    padding-right: var(--space-8);
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
@@ -405,11 +407,11 @@
   }
 
   .cardExpiry {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 
   .cardInfo {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     margin-top: auto;
   }
 
@@ -424,8 +426,8 @@
   .cardDateMobile {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    font-size: 10px;
+    gap: var(--space-0-75);
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     margin-bottom: var(--space-1);
     white-space: nowrap;
@@ -437,7 +439,7 @@
   }
 
   .cardNewBadge {
-    font-size: 8px;
-    padding: 1px var(--space-1);
+    font-size: var(--font-size-4xs);
+    padding: var(--space-px) var(--space-1);
   }
 }

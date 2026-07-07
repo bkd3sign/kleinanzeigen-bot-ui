@@ -10,7 +10,7 @@ import { PriceChart } from '@/components/dashboard/PriceChart';
 import { CategoryBars } from '@/components/dashboard/CategoryBars';
 import { DistributionCharts } from '@/components/dashboard/DistributionCharts';
 import { StatsSection } from '@/components/dashboard/StatsSection';
-import { Spinner } from '@/components/ui';
+import { PageLoader } from '@/components/ui';
 import { api } from '@/lib/api/client';
 import type { AdStatsEntry } from '@/types/stats';
 import styles from './page.module.scss';
@@ -41,11 +41,7 @@ export default function DashboardPage() {
   }, []);
 
   if (adsLoading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
-        <Spinner size="lg" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (

@@ -5,50 +5,15 @@ import { useFormContext } from 'react-hook-form';
 import { Select, Toggle, Input, Button } from '@/components/ui';
 import { InfoTip } from './InfoTip';
 import type { AdCreateInput } from '@/validation/schemas';
-import { resolveAttributes, getLabel, shortKey } from '@/lib/ads/category-attributes';
+import { resolveAttributes, getLabel, shortKey, INPUT_COMBOBOX_KEYS } from '@/lib/ads/category-attributes';
 import type { ResolvedAttribute } from '@/lib/ads/category-attributes';
+import { loadAttributeData } from '@/lib/ads/category-attributes-client';
+import type { ClientCatAttrsData } from '@/lib/ads/category-attributes-client';
 import styles from './AdForm.module.scss';
 
-interface AttributeOption {
-  value: string;
-  text: string;
-}
-
-interface SharedAttributeDef {
-  options?: AttributeOption[];
-  type?: string;
-  text?: string;
-}
-
-interface InlineAttributeDef extends SharedAttributeDef {
-  attribute_key: string;
-}
-
-interface CategoryEntry {
-  attributes: InlineAttributeDef[];
-  shared: string[];
-}
-
-interface AttributeData {
-  categories: Record<string, CategoryEntry>;
-  shared_attributes: Record<string, SharedAttributeDef>;
-}
+type AttributeData = ClientCatAttrsData;
 
 type AttrValues = Record<string, string>;
-
-// Keys that store display text instead of API values (bot uses text-search input combobox).
-// Select options for these must use o.text as value to match what the YAML stores.
-const INPUT_COMBOBOX_KEYS = new Set(['brand_s', 'marke_s']);
-
-// Module-level cache to avoid re-fetching
-let attrDataCache: AttributeData | null = null;
-
-async function loadAttributeData(): Promise<AttributeData> {
-  if (attrDataCache) return attrDataCache;
-  const res = await fetch('/data/category_attributes.json');
-  attrDataCache = await res.json() as AttributeData;
-  return attrDataCache;
-}
 
 // -- CategoryAttributesPicker --
 
@@ -91,6 +56,25 @@ export function CategoryAttributesPicker({ category, values, onChange }: Categor
 
   const nonBoolAttrs = useMemo(() => attrs.filter((a) => a.type !== 'boolean'), [attrs]);
   const boolAttrs = useMemo(() => attrs.filter((a) => a.type === 'boolean'), [attrs]);
+
+  // SoT enforcement (client side): drop attribute keys that aren't valid for this category.
+  // Only runs for categories that define attributes — free-form (KvEditor) categories keep all keys.
+  // Catches orphans from older YAML or category changes; suggested values are already SoT-conform.
+  useEffect(() => {
+    if (attrs.length === 0) return;
+    const validKeys = new Set<string>();
+    for (const a of attrs) {
+      validKeys.add(shortKey(a.key));
+      if (a.yearKey) validKeys.add(shortKey(a.yearKey));
+    }
+    const hasOrphan = Object.keys(values).some((k) => !validKeys.has(shortKey(k)));
+    if (!hasOrphan) return;
+    const cleaned: AttrValues = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (validKeys.has(shortKey(k))) cleaned[shortKey(k)] = v;
+    }
+    onChange(cleaned);
+  }, [attrs, values, onChange]);
 
   // Validate required attrs and sync with form error state
   useEffect(() => {
@@ -189,7 +173,7 @@ export function CategoryAttributesPicker({ category, values, onChange }: Categor
               <Toggle
                 key={attr.key}
                 label={attr.label}
-                checked={!!getVal(attr.key)}
+                checked={getVal(attr.key) === 'true'}
                 onChange={(val) => handleChange(attr.key, val)}
               />
             ))}

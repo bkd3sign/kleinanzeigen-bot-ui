@@ -149,7 +149,7 @@
   position: sticky;
   bottom: 52px;
   background: var(--bg-primary);
-  z-index: 10;
+  z-index: var(--z-elevated);
 }
 
 .stagedThumb {
@@ -181,11 +181,11 @@
   width: 20px;
   height: 20px;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: var(--bg-primary);
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1;
+  font-size: var(--font-size-sm-minus);
+  line-height: var(--leading-none);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -209,7 +209,7 @@
   position: sticky;
   bottom: 0;
   background: var(--bg-primary);
-  z-index: 10;
+  z-index: var(--z-elevated);
 }
 
 /* Image upload button matching legacy .adAiImageBtn */
@@ -328,14 +328,14 @@
   height: 40px;
   border-radius: var(--radius-full);
   border: none;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  font-size: 22px;
+  background: var(--overlay-darker);
+  color: var(--on-overlay);
+  font-size: var(--font-size-xl-plus);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: var(--z-local-1);
   transition: background var(--transition-fast);
 
   &:hover {

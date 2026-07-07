@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
           running: responder.running,
           lastPoll: responder.lastPoll,
           sentCount: responder.sentCount,
+          oooSentCount: responder.oooSentCount,
           pendingCount: responder.pendingCount,
         },
         aiAdGen: {

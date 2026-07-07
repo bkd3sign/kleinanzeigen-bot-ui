@@ -89,7 +89,7 @@
   padding: var(--space-1);
   border-radius: var(--radius-md);
   transition: all var(--transition-fast);
-  line-height: 1;
+  line-height: var(--leading-none);
 
   &:hover {
     background: var(--bg-hover);

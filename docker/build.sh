@@ -17,6 +17,7 @@ echo "==> Copying Docker files..."
 cp "$DOCKER_DIR/Dockerfile"          "$OUT_DIR/Dockerfile"
 cp "$DOCKER_DIR/docker-compose.yml"  "$OUT_DIR/docker-compose.yml"
 cp "$DOCKER_DIR/entrypoint.sh"       "$OUT_DIR/entrypoint.sh"
+cp "$DOCKER_DIR/nginx.conf"          "$OUT_DIR/nginx.conf"
 cp "$DOCKER_DIR/config.example.yaml" "$OUT_DIR/config.example.yaml"
 
 echo "==> Copying source files..."

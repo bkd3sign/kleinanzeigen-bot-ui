@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { loadUsers, saveUsers, generateUserId, createUserWorkspace } from '@/lib/yaml/users';
-import { readMergedConfig } from '@/lib/yaml/config';
+import { readMergedConfig, USER_CONFIG_KEYS } from '@/lib/yaml/config';
 
 import { hashPassword } from '@/lib/auth/password';
 import { jobs } from '@/lib/bot/jobs';
@@ -53,10 +53,9 @@ export async function GET(request: NextRequest) {
 
           // Create user workspace
           const ws = createUserWorkspace(userId);
-          const userKeys = new Set(['login', 'ad_defaults']);
           const userCfg: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(cfg)) {
-            if (userKeys.has(k)) userCfg[k] = v;
+            if (USER_CONFIG_KEYS.has(k)) userCfg[k] = v;
           }
           fs.writeFileSync(
             path.join(ws, 'config.yaml'),
@@ -64,7 +63,7 @@ export async function GET(request: NextRequest) {
           );
 
           // Strip user-specific data from root config
-          for (const key of userKeys) {
+          for (const key of USER_CONFIG_KEYS) {
             delete cfg[key];
           }
           fs.writeFileSync(rootConfigPath, yaml.dump(cfg, { flowLevel: -1 }));

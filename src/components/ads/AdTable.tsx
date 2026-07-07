@@ -2,20 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
-import { Badge, DropdownMenu, useToast, showConfirm } from '@/components/ui';
-import { useAds, useUpdateAdByFile } from '@/hooks/useAds';
+import { Badge, DropdownMenu } from '@/components/ui';
 import { useAdStats } from '@/hooks/useAdStats';
-import type { DropdownMenuItem } from '@/components/ui';
-import { api } from '@/lib/api/client';
+import { useAdMenuBuilder } from '@/hooks/useAdMenuBuilder';
 import { useCategoryName } from '@/hooks/useCategories';
 import { useSort } from '@/hooks/useSort';
 import type { SortDir } from '@/hooks/useSort';
 import type { AdListItem } from '@/types/ad';
-import type { Job } from '@/types/bot';
-import { isExpired, isExpiringSoon, isReserved, getExpiryDate } from '@/lib/ads/status';
+import { isExpired, isExpiringSoon, isReserved, getExpiryDate, getStatusLabel, getStatusVariant } from '@/lib/ads/status';
 import { detectSizeGroup } from '@/lib/shipping';
-import { getCurrentPrice, getAprError } from '@/lib/ads/pricing';
+import { getCurrentPrice, getAprError, getAprErrorTitle } from '@/lib/ads/pricing';
 import type { AdStatsEntry } from '@/types/stats';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import styles from './AdTable.module.scss';
@@ -49,37 +45,6 @@ function formatPrice(ad: AdListItem): React.ReactNode {
   }
 
   return `${ad.price} €${suffix}`;
-}
-
-// SVG icon helper for action menu items
-function Icon({ paths }: { paths: string[] }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {paths.map((d, i) => <path key={i} d={d} />)}
-    </svg>
-  );
-}
-
-const ICONS: Record<string, string[]> = {
-  Bearbeiten: ['M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7', 'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'],
-  Veröffentlichen: ['M22 2L11 13', 'M22 2l-7 20-4-9-9-4 20-7z'],
-  Aktualisieren: ['M23 4v6h-6', 'M1 20v-6h6', 'M3.51 9a9 9 0 0 1 14.85-3.36L23 10', 'M20.49 15a9 9 0 0 1-14.85 3.36L1 14'],
-  Verlängern: ['M12 2v10l4.5 4.5', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z'],
-  Duplizieren: ['M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'M9 2h6v4H9z'],
-  Vorlage: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
-  Löschen: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'],
-  Deaktivieren: ['M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94', 'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19', 'M14.12 14.12a3 3 0 0 1-4.24-4.24', 'M1 1l22 22'],
-  Aktivieren: ['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8', 'M12 9a3 3 0 0 1 0 6 3 3 0 0 1 0-6z'],
-};
-
-function getStatusRank(ad: AdListItem): number {
-  if (!ad.id && !ad.is_archived) return 0;        // Draft
-  if (ad.active === false || ad.is_archived) return 1; // Inactive / archived
-  if (isExpired(ad)) return 2;                     // Expired
-  if (isExpiringSoon(ad)) return 3;                // Expiring soon
-  if (ad.is_orphaned) return 4;                    // Orphaned
-  if (ad.is_changed) return 5;                     // Changed
-  return 6;                                        // Active
 }
 
 function getAprRank(ad: AdListItem): number {
@@ -121,7 +86,7 @@ export function compareAds(a: AdListItem, b: AdListItem, key: AdSortKey): number
   if (key === 'shipping_type') return getShippingRank(a) - getShippingRank(b);
   if (key === 'created_on') return new Date(a.created_on ?? 0).getTime() - new Date(b.created_on ?? 0).getTime();
   if (key === 'updated_on') return new Date(a.updated_on ?? 0).getTime() - new Date(b.updated_on ?? 0).getTime();
-  if (key === 'status') return getStatusRank(a) - getStatusRank(b);
+  // status sort is stats-dependent and handled in makeCompare
   if (key === 'republication_interval') return (a.republication_interval ?? 0) - (b.republication_interval ?? 0);
   return 0;
 }
@@ -144,6 +109,13 @@ export function makeCompare(statsData: StatsMap | undefined) {
       const bt = bs?.expires_at ? parseDMY(bs.expires_at) : (getExpiryDate(b)?.getTime() ?? 0);
       return at - bt;
     }
+    if (key === 'status') {
+      // Sort by status label alphabetically (Abgelaufen → Aktiv → Entwurf → …)
+      // Within the same status group: alphabetical by title.
+      const cmp = getStatusLabel(a, as).localeCompare(getStatusLabel(b, bs), 'de');
+      if (cmp !== 0) return cmp;
+      return (a.title ?? '').localeCompare(b.title ?? '', 'de');
+    }
     return compareAds(a, b, key);
   };
 }
@@ -157,10 +129,8 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
   const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number; maxHeight?: number } | null>(null);
   const [templateAd, setTemplateAd] = useState<{ file: string; title: string } | null>(null);
   const catName = useCategoryName();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const refreshAds = useCallback(() => { queryClient.invalidateQueries({ queryKey: ['ads'] }); }, [queryClient]);
-  const updateByFile = useUpdateAdByFile();
+  const handleSaveAsTemplate = useCallback((a: AdListItem) => setTemplateAd({ file: a.file, title: a.title || '' }), []);
+  const buildMenuItems = useAdMenuBuilder({ onSaveAsTemplate: handleSaveAsTemplate });
 
   const handleWrapperScroll = useCallback(() => {
     const el = wrapperRef.current;
@@ -174,7 +144,6 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
   }, [handleWrapperScroll]);
 
   // Internal sort state — used only when no controlled sort props are passed
-  const { data: allAdsData } = useAds();
   const { data: statsData } = useAdStats();
   const compareFn = useMemo(() => makeCompare(statsData), [statsData]);
 
@@ -222,70 +191,6 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
     },
     [router, selectMode, onSelect],
   );
-
-  function buildMenuItems(ad: AdListItem): DropdownMenuItem[] {
-    const encFile = ad.file.split('/').map(encodeURIComponent).join('/');
-    const items: DropdownMenuItem[] = [
-      { label: 'Bearbeiten', icon: <Icon paths={ICONS.Bearbeiten} />, onClick: () => router.push(`/ads/edit?file=${encodeURIComponent(ad.file)}`) },
-      { label: !ad.active ? 'Aktivieren' : 'Deaktivieren', icon: <Icon paths={!ad.active ? ICONS.Aktivieren : ICONS.Deaktivieren} />, onClick: () => {
-        const newActive = !ad.active;
-        updateByFile.mutate(
-          { filename: ad.file, data: { active: newActive } },
-          {
-            onSuccess: () => toast('success', newActive ? 'Anzeige aktiviert' : 'Anzeige deaktiviert'),
-            onError: (err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Ändern des Status'),
-          },
-        );
-      }},
-      { label: ad.id ? 'Erneut veröffentlichen' : 'Veröffentlichen', icon: <Icon paths={ICONS.Veröffentlichen} />, onClick: async () => {
-        if (!ad.id) {
-          const allDrafts = (allAdsData?.ads ?? []).filter(a => !a.id);
-          const ok = await showConfirm(
-            'Alle neuen Anzeigen veröffentlichen',
-            'Wichtig: Da „' + (ad.title || 'diese Anzeige') + '" noch keine Kleinanzeigen-ID hat, werden alle neuen Anzeigen in deinem Workspace veröffentlicht – nicht nur diese eine.',
-            'Alle neuen veröffentlichen',
-            'Abbrechen',
-            allDrafts.length > 1 ? allDrafts.map(a => a.title || '(Ohne Titel)') : undefined,
-          );
-          if (!ok) return;
-        }
-        api.post<Job>('/api/bot/publish', { ads: ad.id ? String(ad.id) : 'new' }).then(refreshAds)
-          .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Veröffentlichen'));
-      }},
-    ];
-    if (ad.id) {
-      items.push({ label: 'Aktualisieren', icon: <Icon paths={ICONS.Aktualisieren} />, onClick: () => {
-        api.post<Job>('/api/bot/update', { ads: String(ad.id) }).then(refreshAds)
-          .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Aktualisieren'));
-      }});
-      if (isExpiringSoon(ad) || isExpired(ad)) {
-        items.push({ label: 'Verlängern', icon: <Icon paths={ICONS.Verlängern} />, onClick: () => {
-          api.post<Job>('/api/bot/extend', { ads: String(ad.id) }).then(refreshAds)
-            .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Verlängern'));
-        }});
-      }
-    }
-    items.push({ label: 'Duplizieren', icon: <Icon paths={ICONS.Duplizieren} />, onClick: () => {
-      api.post(`/api/ads/duplicate/${encFile}`)
-        .then(() => { refreshAds(); toast('success', 'Anzeige dupliziert'); })
-        .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Duplizieren'));
-    }});
-    items.push({ label: 'Als Vorlage speichern', icon: <Icon paths={ICONS.Vorlage} />, onClick: () => {
-      setTemplateAd({ file: ad.file, title: ad.title || '' });
-    }});
-    items.push({ label: 'Entfernen', icon: <Icon paths={ICONS.Löschen} />, danger: true, separator: true, onClick: () => {
-      api.delete(`/api/ads/by-file/${encFile}`)
-        .then(() => { refreshAds(); toast('success', 'Anzeige entfernt'); })
-        .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Entfernen'));
-    }});
-    if (ad.id) {
-      items.push({ label: 'Löschen (Live)', icon: <Icon paths={ICONS.Löschen} />, danger: true, onClick: () => {
-        api.post<Job>('/api/bot/delete', { ads: String(ad.id) }).then(refreshAds)
-          .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Löschen'));
-      }});
-    }
-    return items;
-  }
 
   return (
     <div className={styles.outer}>
@@ -415,11 +320,7 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
                 <td className={`${styles.td} ${styles.tdApr}`}>
                   {ad.auto_price_reduction?.enabled ? (() => {
                     const aprErr = ad.price != null ? getAprError(ad.price, ad.auto_price_reduction!) : null;
-                    const aprTitle = aprErr?.type === 'ineffective'
-                      ? `Preisreduktion wirkungslos — die Reduktion ergibt nach Rundung auf ganze Euro keine Preisänderung`
-                      : aprErr?.type === 'stuck'
-                      ? `Preis steckt fest — ab ~${aprErr.stuckAt} € rundet die Reduktion auf 0, der Mindestpreis ${ad.auto_price_reduction!.min_price} € wird nie erreicht`
-                      : undefined;
+                    const aprTitle = aprErr ? getAprErrorTitle(aprErr, ad.auto_price_reduction!.min_price) : undefined;
                     return (
                       <Badge variant={aprErr ? 'danger' : 'warning'} title={aprTitle}>
                         ↓{ad.auto_price_reduction!.min_price ?? '?'}€{aprErr ? ' ⚠' : ''}
@@ -436,23 +337,8 @@ export function AdTable({ ads, selectedFiles, onSelect, selectMode = false, sort
 
                 <td className={`${styles.td} ${styles.tdStatus}`}>
                   {(() => {
-                    const variant = isDraft ? 'muted'
-                      : isReserved(ad, adStats) ? 'reserved'
-                      : ad.active === false ? 'danger'
-                      : expired ? 'danger'
-                      : expiring ? 'warning'
-                      : ad.is_orphaned ? 'warning'
-                      : ad.is_changed ? 'info'
-                      : 'success';
-                    const label = isDraft ? 'Entwurf'
-                      : isReserved(ad, adStats) ? 'Reserviert'
-                      : ad.active === false ? 'Inaktiv'
-                      : expired ? 'Abgelaufen'
-                      : expiring ? 'Läuft bald ab'
-                      : ad.is_orphaned ? 'Verwaist'
-                      : ad.is_changed ? 'Geändert'
-                      : 'Aktiv';
-                    return <Badge variant={variant}>{label}</Badge>;
+                    const label = getStatusLabel(ad, adStats);
+                    return <Badge variant={getStatusVariant(label)}>{label}</Badge>;
                   })()}
                 </td>
 

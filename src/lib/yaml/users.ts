@@ -200,3 +200,22 @@ export function initUsersFile(data: UsersData): boolean {
 export function generateUserId(email: string): string {
   return sanitizeUserId(email);
 }
+
+/**
+ * Map every known user id to its current email, for display purposes such as
+ * log line prefixes and job labels. The id is a frozen directory name derived
+ * from the original email at registration, so it can drift from the current
+ * email after an email change — this resolves it back to the live value.
+ * Falls back to the raw id when no user matches (e.g. a deleted user's
+ * leftover workspace).
+ */
+export function getUserLabelMap(): Record<string, string> {
+  const data = loadUsers();
+  const map: Record<string, string> = {};
+  if (data) {
+    for (const user of data.users) {
+      map[user.id] = user.email;
+    }
+  }
+  return map;
+}

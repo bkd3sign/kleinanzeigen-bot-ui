@@ -6,7 +6,7 @@
   inset: 0;
   background-color: var(--bg-overlay);
   z-index: var(--z-sidebar);
-  animation: fadeIn 200ms var(--ease-out);
+  animation: fadeIn var(--duration-medium) var(--ease-out);
 }
 
 .panel {

@@ -1,26 +1,34 @@
 import type { AdListItem, AutoPriceReduction } from '@/types/ad';
 import { getNextRepubDate } from './status';
 
-export type AprErrorType = 'ineffective' | 'stuck';
+export type AprErrorType = 'ineffective' | 'stuck' | 'below_min';
 
 export interface AprError {
   type: AprErrorType;
-  /** The lowest price the APR can actually reach (due to rounding). */
+  /** The lowest price the APR can actually reach (due to rounding), or the floor for 'below_min'. */
   stuckAt: number;
 }
 
 /**
- * Detects whether an APR config has a rounding error that prevents price reductions.
+ * Detects whether an APR config is invalid or has a rounding error.
  *
+ * 'below_min': min_price is higher than the current price. The bot rejects this
+ *   ("min_price darf price nicht überschreiten") and aborts the whole run.
  * 'ineffective': the very first reduction step rounds back to the original price.
  * 'stuck': the reduction works initially but will eventually round to zero change
  *   before reaching min_price, leaving the price permanently stuck above the floor.
  */
 export function getAprError(price: number, apr: AutoPriceReduction): AprError | null {
-  if (!apr.enabled || !apr.strategy || !apr.amount || price <= 0) return null;
+  if (!apr.enabled || price <= 0) return null;
+
+  const minPrice = apr.min_price ?? 0;
+
+  // Invalid state: the floor is above the current price → the bot rejects the ad.
+  if (minPrice > price) return { type: 'below_min', stuckAt: minPrice };
+
+  if (!apr.strategy || !apr.amount) return null;
 
   const { strategy, amount } = apr;
-  const minPrice = apr.min_price ?? 0;
   const roundedPrice = Math.round(price);
 
   if (strategy === 'PERCENTAGE') {
@@ -37,6 +45,18 @@ export function getAprError(price: number, apr: AutoPriceReduction): AprError | 
     return { type: 'ineffective', stuckAt: roundedPrice };
   }
   return null;
+}
+
+/** German tooltip text describing an APR error, shared by AdCard and AdTable. */
+export function getAprErrorTitle(err: AprError, minPrice: number | null | undefined): string {
+  switch (err.type) {
+    case 'below_min':
+      return `Mindestpreis ${minPrice ?? '?'} € liegt über dem aktuellen Preis — der Bot lehnt die Anzeige ab (min_price darf den Preis nicht überschreiten)`;
+    case 'ineffective':
+      return `Preisreduktion wirkungslos — die Reduktion ergibt nach Rundung auf ganze Euro keine Preisänderung`;
+    case 'stuck':
+      return `Preis steckt fest — ab ~${err.stuckAt} € rundet die Reduktion auf 0, der Mindestpreis ${minPrice ?? '?'} € wird nie erreicht`;
+  }
 }
 
 const DAY_MS = 86400000;
@@ -248,10 +268,10 @@ export function projectReposts(ad: AdListItem, maxFutureSteps = 500): RepostProj
     prevPublishDate = validUpdatedOn;
   }
 
-  // Fast-forward nextRepubDate to the first date >= today
-  // Bot publishes when ad_age.days > interval, so actual spacing is interval + 1
+  // Fast-forward nextRepubDate to the first date >= today.
+  // Bot publishes when ad_age.days >= interval (fix #1099), so spacing is interval.
   let futureAnchor = nextRepubDate;
-  const actualIntervalMs = (interval + 1) * DAY_MS;
+  const actualIntervalMs = interval * DAY_MS;
   while (futureAnchor.getTime() < now.getTime()) {
     futureAnchor = new Date(futureAnchor.getTime() + actualIntervalMs);
   }

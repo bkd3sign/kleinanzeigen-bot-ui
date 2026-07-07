@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
+import { encodeAdFilePath } from '@/lib/ads/paths';
 import type { AdListItem, Ad, AdCreate, AdUpdate } from '@/types/ad';
 
 interface AdsResponse {
@@ -28,7 +29,7 @@ export function useAd(adId: number | null) {
 export function useAdByFile(filename: string | null) {
   return useQuery<Ad>({
     queryKey: ['ad-file', filename],
-    queryFn: () => api.get(`/api/ads/by-file/${filename!.split('/').map(encodeURIComponent).join('/')}`),
+    queryFn: () => api.get(`/api/ads/by-file/${encodeAdFilePath(filename!)}`),
     enabled: !!filename,
     staleTime: 30000,
   });
@@ -59,7 +60,7 @@ export function useUpdateAdByFile() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ filename, data }: { filename: string; data: AdUpdate }) =>
-      api.put(`/api/ads/by-file/${filename.split('/').map(encodeURIComponent).join('/')}`, data),
+      api.put(`/api/ads/by-file/${encodeAdFilePath(filename)}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ads'] });
     },
@@ -80,7 +81,7 @@ export function useDeleteAd() {
 export function useDeleteAdByFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (filename: string) => api.delete(`/api/ads/by-file/${filename.split('/').map(encodeURIComponent).join('/')}`),
+    mutationFn: (filename: string) => api.delete(`/api/ads/by-file/${encodeAdFilePath(filename)}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ads'] });
     },
@@ -90,7 +91,7 @@ export function useDeleteAdByFile() {
 export function useDuplicateAd() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (filename: string) => api.post(`/api/ads/duplicate/${filename.split('/').map(encodeURIComponent).join('/')}`),
+    mutationFn: (filename: string) => api.post(`/api/ads/duplicate/${encodeAdFilePath(filename)}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ads'] });
     },

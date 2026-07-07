@@ -1,7 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { jobs, cleanupJobs } from '@/lib/bot/jobs';
+import { jobs, cleanupJobs, withUserLabel } from '@/lib/bot/jobs';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -24,7 +24,7 @@ function getPlatformSuffix(): string {
     return `linux-${arch === 'arm64' ? 'arm64' : 'amd64'}`;
   }
   if (platform === 'darwin') {
-    return `darwin-${arch === 'arm64' ? 'arm64' : 'x86_64'}`;
+    return `darwin-${arch === 'arm64' ? 'arm64' : 'amd64'}`;
   }
   throw new Error(`Unsupported platform: ${platform}/${arch}`);
 }
@@ -112,11 +112,13 @@ async function runBotUpdate(jobId: string, channel: string): Promise<void> {
     fs.chmodSync(tempPath, 0o755);
     log(`  Temporäre Datei geschrieben: ${tempPath}`);
 
-    // Verify the new binary works
+    // Verify the new binary works. The first run of a freshly written PyInstaller
+    // binary is cold — it unpacks ~15 MB to a temp dir before responding, which can
+    // take well over 10 s (especially on macOS), so allow a generous timeout here.
     log('  Neue Binary testen…');
     let newVersion: string;
     try {
-      newVersion = execFileSync(tempPath, ['version'], { timeout: 10000 }).toString().trim();
+      newVersion = execFileSync(tempPath, ['version'], { timeout: 120000 }).toString().trim();
       log(`  Neue Version: ${newVersion} — OK`);
     } catch (err) {
       fs.unlinkSync(tempPath);
@@ -207,7 +209,7 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget: run update in background
     runBotUpdate(jobId, channel).catch(() => { /* error handled in job status */ });
 
-    return NextResponse.json(job);
+    return NextResponse.json(withUserLabel(job));
   } catch (error) {
     return handleApiError(error);
   }

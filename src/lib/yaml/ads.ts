@@ -1,41 +1,88 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { globSync } from 'glob';
 import { validatePathWithin } from '@/lib/security/validation';
 import { toNFC } from '@/lib/images/normalize';
 import { resolveExistingPath } from '@/lib/fs/resolve-path';
 
 const AD_FILE_EXTENSIONS = new Set(['.yaml', '.yml', '.json']);
 
-/**
- * Find all ad YAML files matching the bot's glob pattern in a workspace.
- * Excludes files in the templates directory and any additional directories
- * passed via excludeDirs.
- */
-export function findAdFiles(workspace: string, excludeDirs?: string[]): string[] {
-  const templateDir = path.join(workspace, 'ads', 'templates');
-  const excluded = new Set([templateDir, ...(excludeDirs ?? [])]);
-  const files: string[] = [];
+// Mirrors the bot's ad_files default (src/kleinanzeigen_bot/__init__.py).
+const DEFAULT_AD_FILE_PATTERNS = ['./**/ad_*.{json,yml,yaml}'];
 
-  function walk(dir: string): void {
-    if (!fs.existsSync(dir)) return;
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!excluded.has(fullPath)) walk(fullPath);
-      } else if (
-        entry.isFile() &&
-        entry.name.startsWith('ad_') &&
-        AD_FILE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())
-      ) {
-        files.push(fullPath);
+// Our own config/state files that must never be treated as ads, even if a broad
+// user ad_files glob (e.g. ./**/*.yaml) would otherwise match them. Dotfiles
+// (.bot-config.yaml, .ad-stats.json, .last_download_all.json) are already
+// excluded by globSync's dot:false default; listed here only for the non-dot ones.
+const NON_AD_BASENAMES = new Set(['config.yaml', 'config.yml', 'config.json', 'users.yaml']);
+
+/**
+ * Read the ad_files glob patterns the bot would use, resolved the same way:
+ * relative to the config file (the workspace). User workspace config wins over
+ * the root config (mirroring readMergedConfig precedence); falls back to the bot
+ * default when unset/unreadable. Reads config.yaml directly (no bot spawn) so
+ * discovery stays cheap and test-safe.
+ */
+function getAdFilePatterns(workspace: string): string[] {
+  const botDir = process.env.BOT_DIR || process.cwd();
+  for (const dir of [workspace, botDir]) {
+    try {
+      const cfgPath = path.join(dir, 'config.yaml');
+      if (!fs.existsSync(cfgPath)) continue;
+      const cfg = yaml.load(fs.readFileSync(cfgPath, 'utf-8')) as Record<string, unknown> | undefined;
+      const pats = cfg?.ad_files;
+      if (Array.isArray(pats) && pats.length > 0 && pats.every((p) => typeof p === 'string')) {
+        return pats as string[];
       }
+    } catch {
+      // Unreadable/invalid config — try the next location, then the default.
     }
   }
+  return DEFAULT_AD_FILE_PATTERNS;
+}
 
-  walk(workspace);
-  return files.sort();
+/** True when `child` is `parent` itself or nested inside it. */
+function isWithin(parent: string, child: string): boolean {
+  const p = path.resolve(parent);
+  const c = path.resolve(child);
+  return c === p || c.startsWith(p + path.sep);
+}
+
+/**
+ * Find all ad config files in a workspace, driven by the bot's ad_files glob
+ * (so the GUI loads exactly what the bot loads, regardless of naming templates).
+ *
+ * @param workspace  Glob base — the directory holding config.yaml.
+ * @param opts.scanDir      Restrict results to this subtree (default: whole workspace).
+ * @param opts.excludeDirs  Additional subtrees to exclude (e.g. the archive dir).
+ */
+export function findAdFiles(
+  workspace: string,
+  opts?: { scanDir?: string; excludeDirs?: string[] },
+): string[] {
+  const patterns = getAdFilePatterns(workspace);
+  const scanDir = opts?.scanDir ?? workspace;
+  const templateDir = path.join(workspace, 'ads', 'templates');
+  const excluded = [templateDir, ...(opts?.excludeDirs ?? [])];
+
+  let matches: string[];
+  try {
+    matches = globSync(patterns, { cwd: workspace, absolute: true, nodir: true });
+  } catch {
+    matches = [];
+  }
+
+  const out = new Set<string>();
+  for (const match of matches) {
+    const abs = path.resolve(match);
+    if (!AD_FILE_EXTENSIONS.has(path.extname(abs).toLowerCase())) continue;
+    if (NON_AD_BASENAMES.has(path.basename(abs))) continue;
+    if (!isWithin(scanDir, abs)) continue;
+    if (excluded.some((dir) => isWithin(dir, abs))) continue;
+    out.add(abs);
+  }
+  return [...out].sort();
 }
 
 /**
@@ -176,6 +223,13 @@ export function applyAdUpdates(
       Object.entries(raw).map(([k, v]) => [k.includes('.') ? k.split('.').pop()! : k, v]),
     );
     delete updates.special_attributes;
+  }
+
+  // shipping_costs is deprecated: a null update removes the key entirely
+  // (migration) rather than writing `shipping_costs: null` into the YAML.
+  if ('shipping_costs' in updates && updates.shipping_costs == null) {
+    delete ad.shipping_costs;
+    delete updates.shipping_costs;
   }
 
   // Apply remaining top-level fields

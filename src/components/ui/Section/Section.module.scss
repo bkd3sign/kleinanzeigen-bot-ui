@@ -1,34 +1,4 @@
-/* Settings page — matches legacy settingsPage + adForm section layout */
-.settingsPage {
-  max-width: 680px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.stickyHeader {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--bg-primary);
-  padding-bottom: var(--space-4);
-}
-
-.title {
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-/* Collapsible sections — same pattern as AdForm */
+/* Collapsible section — shared by Account + Settings pages (same pattern as AdForm) */
 .section {
   border-bottom: 1px solid var(--border-color);
 }
@@ -37,6 +7,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   width: 100%;
   padding: var(--space-4) 0;
   background: none;
@@ -51,6 +22,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  // Allow the title/description to wrap instead of pushing the chevron out
+  min-width: 0;
 }
 
 .sectionTitle {
@@ -78,7 +51,7 @@
 .sectionBodyWrap {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 300ms var(--ease-out);
+  transition: grid-template-rows var(--duration-slower) var(--ease-out);
 }
 
 .sectionBodyWrapCollapsed {
@@ -95,30 +68,4 @@
 
 .sectionBodyWrapCollapsed .sectionBody {
   padding-bottom: 0;
-}
-
-/* Row for side-by-side fields */
-.row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-}
-
-/* Save button */
-.saveBtn {
-  width: 100%;
-  margin-top: var(--space-6);
-  padding: var(--space-3) var(--space-4);
-}
-
-@media (max-width: 767px) {
-  .row {
-    grid-template-columns: 1fr;
-  }
-  .title {
-    font-size: var(--font-size-xl);
-  }
-  .sectionHeader {
-    flex-wrap: wrap;
-  }
 }

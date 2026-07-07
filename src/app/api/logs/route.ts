@@ -1,6 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, requireAdmin } from '@/lib/auth/middleware';
+import { getUserLabelMap } from '@/lib/yaml/users';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import path from 'path';
 import { jobs } from '@/lib/bot/jobs';
@@ -14,6 +15,7 @@ export async function GET(request: NextRequest) {
     const lines = Math.min(Math.max(parseInt(searchParams.get('lines') ?? '100', 10) || 100, 1), 5000);
 
     const botDir = process.env.BOT_DIR ?? process.cwd();
+    const userLabels = getUserLabelMap();
     const allLines: string[] = [];
 
     // Collect logs from all user workspaces
@@ -25,8 +27,9 @@ export async function GET(request: NextRequest) {
         const logPath = path.join(userDir, 'kleinanzeigen-bot.log');
         if (existsSync(logPath)) {
           const content = readFileSync(logPath, 'utf-8');
+          const label = userLabels[entry] ?? entry;
           for (const line of content.split('\n')) {
-            if (line) allLines.push(`[${entry}] ${line}`);
+            if (line) allLines.push(`[${label}] ${line}`);
           }
         }
       }
@@ -44,8 +47,9 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => (a.started_at > b.started_at ? 1 : -1));
     for (const job of recentJobs) {
       if (job.output) {
-        const user = path.basename(job.workspace);
-        const prefix = `[job:${user}:${job.command}] `;
+        const workspaceId = path.basename(job.workspace);
+        const label = userLabels[workspaceId] ?? workspaceId;
+        const prefix = `[job:${label}:${job.command}] `;
         for (const line of job.output.split('\n')) {
           if (line.trim()) allLines.push(`${prefix}${line}`);
         }

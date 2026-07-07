@@ -1,7 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { jobs, startJob } from '@/lib/bot/jobs';
+import { jobs, startJob, withUserLabel } from '@/lib/bot/jobs';
 import { submitMfaCode, submitMfaToRunningBot } from '@/lib/bot/mfa-resolver';
 import { killOrphanedChromium } from '@/lib/bot/browser-cleanup';
 import { z } from 'zod';
@@ -22,6 +22,11 @@ export async function POST(request: NextRequest) {
 
     const job = jobs.get(job_id);
     if (!job) return NextResponse.json({ detail: 'Job nicht gefunden' }, { status: 404 });
+    // Ownership guard (parity with /api/bot/resume): a job id must belong to the caller's
+    // workspace — otherwise any authenticated user could drive another user's bot via a guessed id.
+    if (job.workspace !== user.workspace) {
+      return NextResponse.json({ detail: 'Kein Zugriff auf diesen Job' }, { status: 403 });
+    }
 
     const workspace = job.workspace || user.workspace;
 
@@ -34,9 +39,9 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ message: 'MFA erfolgreich — Bot fährt fort' });
         }
         // Bot crashed — Chrome survived for code injection, now kill it and restart job
-        killOrphanedChromium(workspace);
+        await killOrphanedChromium(workspace);
         const newJob = startJob(job.command, workspace, job.user_id || user.id);
-        return NextResponse.json({ message: 'MFA erfolgreich — Befehl wird wiederholt', job: newJob });
+        return NextResponse.json({ message: 'MFA erfolgreich — Befehl wird wiederholt', job: withUserLabel(newJob) });
       }
       // CDP failed (Chrome died) — fall through to legacy prepare flow
     }
@@ -48,7 +53,7 @@ export async function POST(request: NextRequest) {
     job.mfa_required = false;
     const newJob = startJob(job.command, workspace, job.user_id || user.id);
 
-    return NextResponse.json({ message: 'MFA erfolgreich — Befehl wird wiederholt', job: newJob });
+    return NextResponse.json({ message: 'MFA erfolgreich — Befehl wird wiederholt', job: withUserLabel(newJob) });
   } catch (error) {
     return handleApiError(error);
   }

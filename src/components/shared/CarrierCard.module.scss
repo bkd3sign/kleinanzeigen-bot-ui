@@ -1,0 +1,80 @@
+/* Selectable shipping-carrier card — shared by ShippingPicker + settings exclusion picker */
+.carrierCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--border-color-hover);
+    background-color: var(--bg-hover);
+  }
+}
+
+.carrierCardSelected {
+  border-color: var(--accent);
+  background-color: var(--accent-muted);
+}
+
+.carrierCheckbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.carrierCheck {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  margin-top: var(--space-px);
+}
+
+.carrierCheckActive {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-size: var(--font-size-xs-plus);
+  font-weight: var(--font-bold);
+}
+
+.carrierInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.carrierName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.carrierDetail {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.carrierTracking {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.carrierPrice {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}

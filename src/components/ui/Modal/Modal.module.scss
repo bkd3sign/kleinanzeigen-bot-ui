@@ -14,7 +14,7 @@
   position: absolute;
   inset: 0;
   background-color: var(--bg-overlay);
-  animation: fadeIn 200ms var(--ease-out);
+  animation: fadeIn var(--duration-medium) var(--ease-out);
 }
 
 .content {
@@ -28,7 +28,7 @@
   box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
-  animation: modalBounceIn 300ms var(--ease-out);
+  animation: modalBounceIn var(--duration-slower) var(--ease-out);
 }
 
 .contentWide {
@@ -50,30 +50,8 @@
   color: var(--text-primary);
 }
 
-.closeBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  font-size: var(--font-size-base);
-  transition: all var(--transition-fast);
-  cursor: pointer;
-  border: none;
-  background: none;
-
-  &:hover {
-    background-color: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  &:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-accent);
-  }
-}
+// Close button uses the global .modalCloseBtn utility (globals.css) — shared with the
+// custom VNC login portal so the × looks identical everywhere.
 
 .body {
   padding: var(--space-5);

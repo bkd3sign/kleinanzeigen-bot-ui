@@ -25,7 +25,7 @@
 
 /* Desktop column widths — fixed px so scrollable columns have breathing room */
 @media (min-width: 640px) {
-  .thTitle { width: 320px; min-width: 0; position: sticky; left: 0; z-index: 3; background-color: var(--bg-primary); }
+  .thTitle { width: 320px; min-width: 0; position: sticky; left: 0; z-index: var(--z-local-3); background-color: var(--bg-primary); }
   .thPrice, .tdPrice { width: 88px; }
   .thApr { width: 88px; text-align: center; }
   .tdApr { text-align: center; white-space: nowrap; }
@@ -38,7 +38,7 @@
   .thExpires, .tdExpires { width: 105px; white-space: nowrap; }
   .thInterval, .tdInterval { width: 88px; text-align: center; white-space: nowrap; }
   .thStatus { width: 112px; }
-  .thActions { width: 56px; text-align: center; position: sticky; right: 0; z-index: 3; background-color: var(--bg-primary); }
+  .thActions { width: 56px; text-align: center; position: sticky; right: 0; z-index: var(--z-local-3); background-color: var(--bg-primary); }
 }
 
 
@@ -105,7 +105,7 @@
   min-width: 0;
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--z-local-1);
   background-color: var(--bg-primary);
 
   &::before {
@@ -138,16 +138,16 @@
 
 .thumbCount {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  padding: 1px 4px;
-  font-size: 10px;
+  bottom: var(--space-0-5);
+  right: var(--space-0-5);
+  padding: var(--space-px) var(--space-1);
+  font-size: var(--font-size-2xs);
   font-weight: var(--font-medium);
-  color: #fff;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(3px);
+  color: var(--on-overlay);
+  background: var(--overlay-mid);
+  backdrop-filter: blur(var(--blur-xs));
   border-radius: var(--radius-sm);
-  line-height: 1.4;
+  line-height: var(--leading-snug);
   pointer-events: none;
 }
 
@@ -183,7 +183,7 @@
 .priceReduced {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-px);
   line-height: var(--leading-tight);
 }
 
@@ -209,7 +209,7 @@
   text-align: center;
   position: sticky;
   right: 0;
-  z-index: 1;
+  z-index: var(--z-local-1);
   background-color: var(--bg-primary);
 }
 
@@ -217,11 +217,11 @@
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   cursor: pointer;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-  line-height: 1;
+  line-height: var(--leading-none);
 
   &:hover {
     background-color: var(--bg-tertiary);
@@ -241,25 +241,25 @@
   height: 100%;
   width: 12px;
   pointer-events: none;
-  z-index: 4;
+  z-index: var(--z-local-4);
 }
 
 .shadowLeftOverlay {
   left: 320px;
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.04), transparent);
+  background: linear-gradient(to right, var(--overlay-faint), transparent);
 }
 
 .shadowRightOverlay {
   right: 56px;
-  background: linear-gradient(to left, rgba(0, 0, 0, 0.04), transparent);
+  background: linear-gradient(to left, var(--overlay-faint), transparent);
 }
 
 :global([data-theme="dark"]) .shadowLeftOverlay {
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.10), transparent);
+  background: linear-gradient(to right, var(--overlay-soft), transparent);
 }
 
 :global([data-theme="dark"]) .shadowRightOverlay {
-  background: linear-gradient(to left, rgba(0, 0, 0, 0.10), transparent);
+  background: linear-gradient(to left, var(--overlay-soft), transparent);
 }
 
 
@@ -278,7 +278,7 @@
   .rowExpiring .tdTitle::before { background-color: var(--yellow); }      /* priority 5 */
   .rowExpired .tdTitle::before { background-color: var(--red); }          /* priority 4 */
   .rowInactive .tdTitle::before { background-color: var(--red); }         /* priority 3 */
-  .rowReserved .tdTitle::before { background-color: #8b5cf6; }            /* priority 2 */
+  .rowReserved .tdTitle::before { background-color: var(--purple); }      /* priority 2 */
   .rowDraft .tdTitle::before { background-color: var(--text-muted); }     /* priority 1 */
   .tdActions { position: static; background-color: transparent; }
   .shadowLeftOverlay, .shadowRightOverlay { display: none; }
@@ -295,9 +295,9 @@
   .mobileMeta {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 1px;
-    font-size: 10px;
+    gap: var(--space-1-5);
+    margin-top: var(--space-px);
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     opacity: 0.75;
 
@@ -307,13 +307,13 @@
 }
 
 /* Shipping cell */
-.shippingWrap { display: inline-flex; align-items: center; gap: 3px; }
+.shippingWrap { display: inline-flex; align-items: center; gap: var(--space-0-75); }
 .shippingEmpty { color: var(--text-muted); }
 .sizeHint {
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   font-weight: var(--font-semibold);
   color: var(--text-muted);
   letter-spacing: 0;
-  line-height: 1;
-  margin-top: 3px;
+  line-height: var(--leading-none);
+  margin-top: var(--space-0-5);
 }

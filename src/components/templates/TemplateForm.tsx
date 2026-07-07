@@ -44,7 +44,6 @@ function toFormDefaults(ad: Record<string, unknown>): AdFormData {
     price: ad.price as number | undefined,
     price_type: (ad.price_type as AdFormData['price_type']) ?? 'NEGOTIABLE',
     shipping_type: (ad.shipping_type as AdFormData['shipping_type']) ?? 'SHIPPING',
-    shipping_costs: ad.shipping_costs as number | undefined,
     shipping_options: (ad.shipping_options as string[]) ?? [],
     sell_directly: (ad.sell_directly as boolean) ?? false,
     images: (ad.images as string[]) ?? [],
@@ -98,6 +97,9 @@ export function TemplateForm({ slug, onSaved }: TemplateFormProps) {
   const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
   const [formDefaults, setFormDefaults] = useState<AdFormData | null>(null);
   const [sourceAdFile, setSourceAdFile] = useState<string | null>(null);
+  // Legacy individual shipping_costs from the template's ad_data — read-only
+  // migration hint, mirrors the ad edit form.
+  const [legacyShippingCosts, setLegacyShippingCosts] = useState<number | null>(null);
 
   // Load existing template
   useEffect(() => {
@@ -112,6 +114,7 @@ export function TemplateForm({ slug, onSaved }: TemplateFormProps) {
         setTemplateDesc(data.description ?? '');
         setLockedFields(new Set(data.locked_fields ?? []));
         setSourceAdFile(data.source_ad_file ?? null);
+        setLegacyShippingCosts((data.ad_data.shipping_costs as number | undefined) ?? null);
         setFormDefaults(toFormDefaults(data.ad_data));
       })
       .catch(() => {
@@ -254,6 +257,7 @@ export function TemplateForm({ slug, onSaved }: TemplateFormProps) {
       {/* Reuse AdForm for the ad data fields */}
       <AdForm
         defaultValues={formDefaults}
+        legacyShippingCosts={legacyShippingCosts}
         onSubmit={handleSubmit}
         onDelete={isEdit ? handleDelete : undefined}
         isSubmitting={saving}

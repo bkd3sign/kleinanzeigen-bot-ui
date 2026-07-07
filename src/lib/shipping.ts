@@ -42,13 +42,6 @@ export function allCarriersOf(sizeId: ShippingSizeId): string[] {
   return group.carriers.map((c) => c.value);
 }
 
-/** Returns the lowest price (as a number) for the given size group. */
-export function cheapestPriceOf(sizeId: ShippingSizeId): number {
-  const group = SHIPPING_SIZES.find((s) => s.id === sizeId);
-  if (!group) return 0;
-  return Math.min(...group.carriers.map((c) => c.priceNum));
-}
-
 /** Returns the OptionItem description for a size group: example text + cheapest carrier price. */
 export function sizeDescOf(sizeId: ShippingSizeId): string {
   const group = SHIPPING_SIZES.find((s) => s.id === sizeId);

@@ -2,7 +2,7 @@ import { allCarriersOf } from '@/lib/shipping';
 import type { AdListItem } from '@/types/ad';
 
 export type BulkPriceType = 'FIXED' | 'NEGOTIABLE' | 'GIVE_AWAY';
-export type BulkShippingChoice = 'PICKUP' | 'S' | 'M' | 'L' | 'CUSTOM';
+export type BulkShippingChoice = 'PICKUP' | 'S' | 'M' | 'L';
 export type BulkIntervalPreset = 7 | 14 | 21 | 28 | 'CUSTOM';
 
 export interface BulkEditOptions {
@@ -12,7 +12,6 @@ export interface BulkEditOptions {
   /** Absolute price override — all selected ads get exactly this price. */
   absolutePrice: number | null;
   shippingChoice: BulkShippingChoice | null;
-  customShippingCost: string;
   aprEnabled: boolean | null;
   aprStrategy: 'PERCENTAGE' | 'FIXED' | null;
   aprAmount: number | null;
@@ -31,7 +30,6 @@ export function buildBulkEditPayload(
     priceAdjust,
     absolutePrice,
     shippingChoice,
-    customShippingCost,
     aprEnabled,
     aprStrategy,
     aprAmount,
@@ -63,13 +61,6 @@ export function buildBulkEditPayload(
       payload.shipping_type = 'PICKUP';
       payload.shipping_options = [];
       payload.shipping_costs = null;
-    } else if (shippingChoice === 'CUSTOM') {
-      const cost = parseFloat(customShippingCost);
-      if (!isNaN(cost) && cost > 0) {
-        payload.shipping_type = 'SHIPPING';
-        payload.shipping_costs = cost;
-        payload.shipping_options = [];
-      }
     } else {
       payload.shipping_type = 'SHIPPING';
       payload.shipping_options = allCarriersOf(shippingChoice);

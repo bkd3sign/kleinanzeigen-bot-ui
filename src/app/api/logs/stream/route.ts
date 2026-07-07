@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { loadUsers, ensureJwtSecret } from '@/lib/yaml/users';
+import { loadUsers, ensureJwtSecret, getUserLabelMap } from '@/lib/yaml/users';
 import { decodeJwt } from '@/lib/auth/jwt';
 import { ACCESS_COOKIE } from '@/lib/auth/cookies';
 import { existsSync, statSync, readdirSync, readFileSync, watch } from 'fs';
@@ -28,11 +28,20 @@ export async function GET(request: NextRequest) {
   }
 
   const secret = ensureJwtSecret(data);
+  let payload;
   try {
-    decodeJwt(jwtToken, secret);
+    payload = decodeJwt(jwtToken, secret);
   } catch (error) {
     return new Response(JSON.stringify({ detail: 'Invalid token' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // The stream aggregates EVERY user's bot log, so it is admin-only — parity with the non-stream
+  // GET /api/logs (requireAdmin). Without this any authenticated user could read all tenants' logs.
+  if (payload.role !== 'admin') {
+    return new Response(JSON.stringify({ detail: 'Admin access required' }), {
+      status: 403, headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -42,6 +51,7 @@ export async function GET(request: NextRequest) {
   // Find all log files (can change over time as bots run)
   function findLogFiles(): Array<{ label: string; path: string }> {
     const files: Array<{ label: string; path: string }> = [];
+    const userLabels = getUserLabelMap();
     const usersDir = path.join(botDir, 'users');
     if (existsSync(usersDir)) {
       for (const entry of readdirSync(usersDir)) {
@@ -51,7 +61,7 @@ export async function GET(request: NextRequest) {
         } catch (error) { continue; }
         const logPath = path.join(userDir, 'kleinanzeigen-bot.log');
         if (existsSync(logPath)) {
-          files.push({ label: entry, path: logPath });
+          files.push({ label: userLabels[entry] ?? entry, path: logPath });
         }
       }
     }

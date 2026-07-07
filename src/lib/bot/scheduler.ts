@@ -174,6 +174,12 @@ function executeSchedule(schedule: Schedule): void {
   }
 
   const workspace = getWorkspaceForSchedule(schedule);
+  // Skip if the schedule's workspace no longer exists (e.g. the creating user was deleted but
+  // the schedule lingered) — otherwise the run would write into a missing dir and just fail.
+  if (!fs.existsSync(workspace)) {
+    console.warn(`[Scheduler] Skipping schedule '${schedule.id}': workspace missing (${workspace})`);
+    return;
+  }
   const userId = schedule.created_by && schedule.created_by !== 'system' ? schedule.created_by : 'scheduler';
   const job = startJob(schedule.command, workspace, userId, schedule.id);
 

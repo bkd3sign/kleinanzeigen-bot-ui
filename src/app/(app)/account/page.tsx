@@ -1,0 +1,402 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { api } from '@/lib/api/client';
+import { useAiAvailable } from '@/hooks/useAiAvailable';
+import { Input, Textarea, Select, Toggle, Button, PageLoader, Section, useToast, showConfirm } from '@/components/ui';
+import { InfoTip } from '@/components/ads/AdForm/InfoTip';
+import { PlzLocationPicker } from '@/components/shared/PlzLocationPicker';
+import styles from '@/styles/settingsForm.module.scss';
+
+interface ConfigData {
+  login?: { username?: string; password?: string };
+  ad_defaults?: {
+    active?: boolean;
+    type?: string;
+    price_type?: string;
+    shipping_type?: string;
+    sell_directly?: boolean;
+    contact?: Record<string, string>;
+    description_prefix?: string;
+    description_suffix?: string;
+    republication_interval?: number;
+    auto_price_reduction?: Record<string, unknown>;
+  };
+}
+
+const STRATEGY_OPTIONS = [
+  { value: '', label: '– Keine –' },
+  { value: 'PERCENTAGE', label: 'Prozentual' },
+  { value: 'FIXED', label: 'Fester Betrag' },
+];
+
+const TYPE_OPTIONS = [
+  { value: 'OFFER', label: 'Angebot' },
+  { value: 'WANTED', label: 'Gesuch' },
+];
+
+const PRICE_TYPE_OPTIONS = [
+  { value: 'FIXED', label: 'Festpreis' },
+  { value: 'NEGOTIABLE', label: 'Verhandlungsbasis' },
+  { value: 'GIVE_AWAY', label: 'Zu verschenken' },
+];
+
+const SHIPPING_TYPE_OPTIONS = [
+  { value: 'PICKUP', label: 'Nur Abholung' },
+  { value: 'SHIPPING', label: 'Versand' },
+  { value: 'NOT_APPLICABLE', label: 'Nicht zutreffend' },
+];
+
+export default function AccountPage() {
+  const { toast } = useToast();
+  const { isAiAvailable } = useAiAvailable();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [adActive, setAdActive] = useState(true);
+  const [adType, setAdType] = useState('OFFER');
+  const [priceType, setPriceType] = useState('NEGOTIABLE');
+  const [shippingType, setShippingType] = useState('SHIPPING');
+  const [sellDirectly, setSellDirectly] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactStreet, setContactStreet] = useState('');
+  const [contactZip, setContactZip] = useState('');
+  const [contactLocation, setContactLocation] = useState('');
+  const [republication, setRepublication] = useState('7');
+  const [descPrefix, setDescPrefix] = useState('');
+  const [descSuffix, setDescSuffix] = useState('');
+  const [aprEnabled, setAprEnabled] = useState(false);
+  const [aprStrategy, setAprStrategy] = useState('');
+  const [aprAmount, setAprAmount] = useState('');
+  const [aprMinPrice, setAprMinPrice] = useState('');
+  const [aprDelayReposts, setAprDelayReposts] = useState('0');
+  const [aprDelayDays, setAprDelayDays] = useState('0');
+  const [aprOnUpdate, setAprOnUpdate] = useState(false);
+
+  // AI Messaging settings — control how this account's personal bot replies.
+  const [aiMsgMode, setAiMsgMode] = useState('off');
+  // Last persisted messaging mode — used to detect activation of out-of-office
+  const [savedAiMsgMode, setSavedAiMsgMode] = useState('off');
+  const [aiMsgPersonality, setAiMsgPersonality] = useState('');
+  const [aiMsgRules, setAiMsgRules] = useState('');
+  const [aiMsgEscalate, setAiMsgEscalate] = useState('');
+  const [aiMsgOooMessage, setAiMsgOooMessage] = useState('');
+  const [aiMsgAvailability, setAiMsgAvailability] = useState<Array<{ days: string; from: string; to: string }>>([]);
+
+  const addAvailability = useCallback(() => {
+    setAiMsgAvailability(prev => [...prev, { days: 'Werktags', from: '08:00', to: '20:00' }]);
+  }, []);
+
+  const updateAvailability = useCallback((index: number, field: string, value: string) => {
+    setAiMsgAvailability(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  }, []);
+
+  const removeAvailability = useCallback((index: number) => {
+    setAiMsgAvailability(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['login', 'contact']));
+  const toggle = useCallback((key: string) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    api.get<ConfigData>('/api/system/config')
+      .then((data) => {
+        const login = data.login ?? {};
+        const ad = data.ad_defaults ?? {};
+        const contact = ad.contact ?? {};
+        const apr = ad.auto_price_reduction ?? {};
+        setLoginEmail(login.username ?? '');
+        setLoginPassword(login.password ?? '');
+        setAdActive(ad.active !== false);
+        setAdType((ad.type as string) ?? 'OFFER');
+        setPriceType((ad.price_type as string) ?? 'NEGOTIABLE');
+        setShippingType((ad.shipping_type as string) ?? 'SHIPPING');
+        setSellDirectly(!!(ad.sell_directly));
+        setContactName(contact.name ?? '');
+        setContactPhone(contact.phone ?? '');
+        setContactStreet(contact.street ?? '');
+        setContactZip(contact.zipcode ?? '');
+        setContactLocation(contact.location ?? '');
+        setRepublication(String(ad.republication_interval ?? 7));
+        setDescPrefix(ad.description_prefix ?? '');
+        setDescSuffix(ad.description_suffix ?? '');
+        setAprEnabled(!!(apr.enabled));
+        setAprStrategy((apr.strategy as string) ?? '');
+        setAprAmount(apr.amount != null ? String(apr.amount) : '');
+        setAprMinPrice(apr.min_price != null ? String(apr.min_price) : '');
+        setAprDelayReposts(String(apr.delay_reposts ?? 0));
+        setAprDelayDays(String(apr.delay_days ?? 0));
+        setAprOnUpdate(!!(apr.on_update));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    // Load AI messaging rules (per-workspace .messaging-rules.yaml)
+    api.get<Record<string, unknown>>('/api/messages/responder/config')
+      .then((data) => {
+        setAiMsgMode((data.mode as string) ?? 'off');
+        setSavedAiMsgMode((data.mode as string) ?? 'off');
+        setAiMsgPersonality((data.personality as string) ?? '');
+        setAiMsgAvailability((data.availability as Array<{ days: string; from: string; to: string }>) ?? []);
+        setAiMsgRules((data.rules as string) ?? '');
+        setAiMsgEscalate((data.escalate_keywords as string) ?? '');
+        // Guard: this value is .trim()'d on save — a non-string from a hand-edited config would crash the form
+        setAiMsgOooMessage(typeof data.out_of_office_message === 'string' ? data.out_of_office_message : '');
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (aprEnabled && !aprMinPrice) {
+      toast('error', 'Mindestpreis ist Pflicht wenn Preisreduktion aktiviert ist');
+      return;
+    }
+    // Out-of-office needs a message whenever active — not just on activation
+    if (aiMsgMode === 'out_of_office' && !aiMsgOooMessage.trim()) {
+      toast('error', 'Bitte zuerst eine Abwesenheits-Nachricht eingeben.');
+      return;
+    }
+    // Auto-sending modes (KI Auto, Abwesenheit) fire messages to buyers without
+    // per-message confirmation — warn when newly switching into one. Review is exempt.
+    const isAutoSendMode = aiMsgMode === 'auto' || aiMsgMode === 'out_of_office';
+    if (isAutoSendMode && aiMsgMode !== savedAiMsgMode) {
+      const ok = aiMsgMode === 'out_of_office'
+        ? await showConfirm(
+            'Abwesenheitsmodus aktivieren?',
+            'Das System sendet deine feste Abwesenheitsnotiz automatisch an jeden Käufer, der dir ab jetzt schreibt — einmal pro Konversation.',
+            'Aktivieren', 'Abbrechen', undefined, 'accent',
+          )
+        : await showConfirm(
+            'KI-Auto-Modus aktivieren?',
+            'Die KI beantwortet eingehende Käufer-Nachrichten automatisch und sendet sofort — ohne dass du sie vorher bestätigst.',
+            'Aktivieren', 'Abbrechen', undefined, 'accent',
+          );
+      if (!ok) return;
+    }
+    setSaving(true);
+    try {
+      await api.put('/api/system/config', {
+        login: { username: loginEmail, password: loginPassword },
+        ad_defaults: {
+          active: adActive,
+          type: adType,
+          price_type: priceType,
+          shipping_type: shippingType,
+          sell_directly: sellDirectly,
+          contact: { name: contactName, street: contactStreet, zipcode: contactZip, location: contactLocation, phone: contactPhone },
+          republication_interval: parseInt(republication) || 7,
+          description_prefix: descPrefix,
+          description_suffix: descSuffix,
+          auto_price_reduction: {
+            enabled: aprEnabled, strategy: aprStrategy || null,
+            amount: aprAmount ? parseFloat(aprAmount) : null,
+            min_price: aprMinPrice ? parseFloat(aprMinPrice) : null,
+            delay_reposts: parseInt(aprDelayReposts) || 0,
+            delay_days: parseInt(aprDelayDays) || 0,
+            on_update: aprOnUpdate,
+          },
+        },
+      });
+      // Save AI messaging config separately (per-workspace responder rules). Critical: this
+      // carries mode activation — a swallowed failure would falsely show the mode as saved.
+      await api.put('/api/messages/responder/config', {
+        mode: aiMsgMode,
+        personality: aiMsgPersonality,
+        availability: aiMsgAvailability.filter(a => a.from && a.to),
+        rules: aiMsgRules,
+        escalate_keywords: aiMsgEscalate,
+        out_of_office_message: aiMsgOooMessage,
+      });
+
+      setSavedAiMsgMode(aiMsgMode);
+      toast('success', 'Profil gespeichert');
+    } catch (err) {
+      toast('error', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }, [loginEmail, loginPassword, adActive, adType, priceType, shippingType, sellDirectly, contactName, contactPhone, contactStreet, contactZip, contactLocation, republication, descPrefix, descSuffix, aprEnabled, aprStrategy, aprAmount, aprMinPrice, aprDelayReposts, aprDelayDays, aprOnUpdate, aiMsgMode, savedAiMsgMode, aiMsgPersonality, aiMsgRules, aiMsgEscalate, aiMsgAvailability, aiMsgOooMessage, toast]);
+
+  if (loading) {
+    return <PageLoader />;
+  }
+
+  return (
+    <div className={`${styles.settingsPage} animFadeIn`}>
+      <div className={styles.stickyHeader}>
+        <h2 className={styles.title}>Profil</h2>
+      </div>
+
+      <div className={styles.form}>
+        <Section title="Zugangsdaten" desc="Login für kleinanzeigen.de und dieses System." open={openSections.has('login')} onToggle={() => toggle('login')}>
+          <div className={styles.row}>
+            <Input label={<>E-Mail / Benutzername <InfoTip text="Login-E-Mail für kleinanzeigen.de" /></>} value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+            <Input
+              label={<>Passwort <InfoTip text="Login-Passwort für kleinanzeigen.de" /></>}
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              onFocus={() => { if (loginPassword === '••••••••') setLoginPassword(''); }}
+              placeholder="Passwort eingeben"
+            />
+          </div>
+        </Section>
+
+        <Section title="Kontaktdaten" desc="Standard-Kontaktdaten für alle Anzeigen." open={openSections.has('contact')} onToggle={() => toggle('contact')}>
+          <div className={styles.row}>
+            <Input label={<>Name <InfoTip text="Anzeigename für alle Anzeigen" /></>} value={contactName} onChange={(e) => setContactName(e.target.value)} />
+            <Input label={<>Telefon <InfoTip text="Wird in Anzeigen angezeigt (optional)" /></>} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+          </div>
+          <div className={styles.row}>
+            <PlzLocationPicker
+              zipValue={contactZip}
+              locationValue={contactLocation}
+              onZipChange={setContactZip}
+              onLocationChange={setContactLocation}
+              locationLabel={<>Ort <InfoTip text="Wird von Kleinanzeigen anhand der PLZ bestimmt" /></>}
+            />
+          </div>
+          <Input label="Straße/Nr." value={contactStreet} onChange={(e) => setContactStreet(e.target.value)} placeholder="Optional" />
+        </Section>
+
+        <Section title="Anzeigen-Inhalte" desc="Standardwerte, Typ, Versand und Beschreibungs-Prefixe für neue Anzeigen." open={openSections.has('prefix')} onToggle={() => toggle('prefix')}>
+          <Toggle label={<>Anzeigen standardmäßig aktiv <InfoTip text="Neue Anzeigen sind standardmäßig aktiv und werden vom Bot verarbeitet" /></>} checked={adActive} onChange={setAdActive} />
+          <div className={styles.row}>
+            <Select label={<>Angebotstyp <InfoTip text="Standard-Typ für neue Anzeigen" /></>} options={TYPE_OPTIONS} value={adType} onChange={(e) => setAdType(e.target.value)} />
+            <Select label={<>Preistyp <InfoTip text="Standard-Preistyp für neue Anzeigen" /></>} options={PRICE_TYPE_OPTIONS} value={priceType} onChange={(e) => setPriceType(e.target.value)} />
+          </div>
+          <div className={styles.row}>
+            <Select label={<>Versandart <InfoTip text="Standard-Versandart für neue Anzeigen" /></>} options={SHIPPING_TYPE_OPTIONS} value={shippingType} onChange={(e) => setShippingType(e.target.value)} />
+          </div>
+          <Toggle label={<>Direktverkauf <InfoTip text="Käufer können den Artikel ohne vorherige Nachricht direkt kaufen und bezahlen." /></>} checked={sellDirectly} onChange={setSellDirectly} />
+          <Textarea label={<>Beschreibungs-Prefix <InfoTip text="Text, der vor jeder Anzeigenbeschreibung eingefügt wird" /></>} value={descPrefix} onChange={(e) => setDescPrefix(e.target.value)} rows={3} />
+          <Textarea label={<>Beschreibungs-Suffix <InfoTip text="Text, der nach jeder Anzeigenbeschreibung eingefügt wird" /></>} value={descSuffix} onChange={(e) => setDescSuffix(e.target.value)} rows={3} />
+        </Section>
+
+        <Section title="Republication & Preisreduktion" desc="Intervall für Neueinstellungen und automatische Preissenkung." open={openSections.has('apr')} onToggle={() => toggle('apr')}>
+          <Input label={<>Republication-Intervall (Tage) <InfoTip text="Anzeige wird neu eingestellt, wenn mehr als N volle Tage seit dem letzten Publish vergangen sind. Beispiel: Bei 7 wird frühestens nach 8 Kalendertagen repostet, weil der Bot auf ganze Tage abrundet und auf strikt-größer prüft." /></>} type="number" min="1" value={republication} onChange={(e) => setRepublication(e.target.value)} placeholder="z.B. 7" />
+          <Toggle label={<>Preisreduktion aktiviert <InfoTip text="Senkt den Preis automatisch bei jedem Repost. Der erste Repost ändert den Preis nie — die Reduktion beginnt erst ab dem zweiten Repost." /></>} checked={aprEnabled} onChange={setAprEnabled} />
+          {aprEnabled && (
+            <>
+              <div className={styles.row}>
+                <Select label={<>Strategie <InfoTip text="Prozentual: Senkt den Preis um X% des aktuellen Preises pro Repost (Zinseszins-Effekt). Fester Betrag: Senkt um einen fixen Euro-Betrag pro Repost (gleichmäßige Schritte). Tipp: Prozentual für teure Artikel, fester Betrag für günstige." /></>} options={STRATEGY_OPTIONS} value={aprStrategy} onChange={(e) => setAprStrategy(e.target.value)} />
+                <Input label={<>Betrag <InfoTip text="Wie viel pro Repost gesenkt wird. Bei Prozentual: z.B. 5 = 5% vom aktuellen Preis. Bei Fester Betrag: z.B. 5 = 5 € weniger pro Repost. Alle Preise werden auf ganze Euro gerundet." /></>} type="number" min="0" step="0.1" value={aprAmount} onChange={(e) => setAprAmount(e.target.value)} />
+              </div>
+              <div className={styles.row}>
+                <Input label={<>Mindestpreis (€) <InfoTip text="Untergrenze: Der Preis wird nie unter diesen Wert gesenkt. Pflichtfeld wenn Preisreduktion aktiviert ist." /></>} type="number" min="0" value={aprMinPrice} onChange={(e) => setAprMinPrice(e.target.value)} />
+                <Input label={<>Verzögerung (Reposts) <InfoTip text="Wartet N zusätzliche Reposts bevor die erste Preissenkung greift. Beispiel: Bei 2 bleiben die ersten 3 Reposts zum vollen Preis (1 implizit + 2 Verzögerung), ab Repost 4 wird gesenkt. Empfohlen wenn der Artikel zuerst zum Vollpreis Chancen haben soll." /></>} type="number" min="0" value={aprDelayReposts} onChange={(e) => setAprDelayReposts(e.target.value)} />
+              </div>
+              <Input label={<>Verzögerung (Tage) <InfoTip text="Senkt den Preis erst, wenn seit dem letzten Publish mindestens N Tage vergangen sind. Achtung: Der Zähler startet bei jedem Repost neu! Wenn delay_days größer als das Republication-Intervall ist, greift die Reduktion nie. Tipp: Nutze stattdessen Verzögerung (Reposts) — das ist zuverlässiger." /></>} type="number" min="0" value={aprDelayDays} onChange={(e) => setAprDelayDays(e.target.value)} />
+              <Toggle label={<>Auch bei Update anwenden <InfoTip text="Senkt den Preis auch beim update-Befehl (Text-/Bildänderungen), nicht nur beim publish (Neu-Einstellen). Nur die Tage-Verzögerung wird dabei berücksichtigt, die Repost-Verzögerung nicht." /></>} checked={aprOnUpdate} onChange={setAprOnUpdate} />
+            </>
+          )}
+        </Section>
+
+        <Section title="KI-Nachrichten" desc="Automatische Antworten auf Kleinanzeigen-Nachrichten — per LLM oder als feste Abwesenheitsnotiz." open={openSections.has('ai-msg')} onToggle={() => toggle('ai-msg')}>
+          {!isAiAvailable && (
+            <div className={styles.infoBox}>
+              KI-Antworten (Review/Auto) benötigen einen OpenRouter API-Key in der config.yaml unter <code>ai.api_key</code>. Die Abwesenheitsnotiz funktioniert auch ohne Key.
+            </div>
+          )}
+          <Select
+            label={<>Modus <InfoTip text={"Aus — Keine automatischen Antworten.\n\nAbwesenheit — Feste Notiz an jeden Käufer, ganz ohne KI.\n\nReview — Die KI schlägt Antworten vor, du bestätigst jede.\n\nAuto — Die KI antwortet sofort und automatisch."} /></>}
+            options={[
+              { value: 'off', label: 'Aus' },
+              { value: 'out_of_office', label: 'Abwesenheitsnotiz' },
+              ...(isAiAvailable ? [
+                { value: 'review', label: 'Review (Vorschlag bestätigen)' },
+                { value: 'auto', label: 'Auto (sofort senden)' },
+              ] : []),
+            ]}
+            value={aiMsgMode}
+            onChange={(e) => setAiMsgMode(e.target.value)}
+          />
+          {aiMsgMode === 'out_of_office' && (
+            <Textarea
+              label={<>Abwesenheits-Nachricht <InfoTip text="Diese feste Nachricht wird einmal pro Konversation an jeden Käufer gesendet, der dir schreibt. Ideal für Urlaub: nenne z.B. den frühesten Versandtermin." /></>}
+              value={aiMsgOooMessage}
+              onChange={(e) => setAiMsgOooMessage(e.target.value)}
+              rows={4}
+              placeholder={"Hallo! Ich bin aktuell im Urlaub und kann frühestens ab dem 15.07. verschicken. Deine Nachricht ist angekommen — ich melde mich, sobald ich zurück bin. Beste Grüße"}
+            />
+          )}
+          {aiMsgMode !== 'off' && aiMsgMode !== 'out_of_office' && isAiAvailable && (
+            <>
+              {/* Availability schedule builder */}
+              <div>
+                <label className="formLabel">Verfügbarkeitszeiten <InfoTip text="Wann bist du für Abholung erreichbar? Die KI nennt diese Zeiten bei Terminanfragen." /></label>
+                {aiMsgAvailability.length > 0 && (
+                  <div className={styles.availabilityHeader}>
+                    <span className="formLabel">Tage</span>
+                    <span className="formLabel">Von</span>
+                    <span className="formLabel">Bis</span>
+                    <span />
+                  </div>
+                )}
+                {aiMsgAvailability.map((slot, i) => (
+                  <div key={i} className={styles.availabilityRow}>
+                    <Select
+                      options={[
+                        { value: 'Werktags', label: 'Werktags (Mo–Fr)' },
+                        { value: 'Wochenende', label: 'Wochenende (Sa–So)' },
+                        { value: 'Montag', label: 'Montag' },
+                        { value: 'Dienstag', label: 'Dienstag' },
+                        { value: 'Mittwoch', label: 'Mittwoch' },
+                        { value: 'Donnerstag', label: 'Donnerstag' },
+                        { value: 'Freitag', label: 'Freitag' },
+                        { value: 'Samstag', label: 'Samstag' },
+                        { value: 'Sonntag', label: 'Sonntag' },
+                        { value: 'Täglich', label: 'Täglich' },
+                      ]}
+                      value={slot.days}
+                      onChange={(e) => updateAvailability(i, 'days', e.target.value)}
+                    />
+                    <Input type="time" value={slot.from} onChange={(e) => updateAvailability(i, 'from', e.target.value)} />
+                    <Input type="time" value={slot.to} min={slot.from} onChange={(e) => updateAvailability(i, 'to', e.target.value)} />
+                    <button type="button" onClick={() => removeAvailability(i)} title="Entfernen" className={styles.availabilityRemove}>×</button>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" onClick={addAvailability}>+ Zeitfenster hinzufügen</Button>
+              </div>
+
+              <Textarea
+                label={<>Persönlichkeit <InfoTip text="Beschreibe wie die KI schreiben soll: Charakter, Tonalität, Begrüßung, Verabschiedung — alles in einem Prompt. Preisregeln, Sicherheit und Termin-Schutz sind fest eingebaut und können hier nicht überschrieben werden." /></>}
+                value={aiMsgPersonality}
+                onChange={(e) => setAiMsgPersonality(e.target.value)}
+                rows={5}
+                placeholder={"Du bist freundlich und locker. Duze den Käufer. Schreibe kurz in 2-3 Sätzen, maximal 4. Benutze gelegentlich Emojis aber übertreibe nicht. Klinge wie ein netter Nachbar, nicht wie ein Geschäft.\n\nStarte Nachrichten mit \"Hey\" oder \"Moin\".\nVerabschiede dich mit \"VG\" oder \"Beste Grüße\"."}
+              />
+              <Textarea
+                label={<>Eigene Regeln <InfoTip text="Eine Regel pro Zeile. Ergänzt die eingebauten Sicherheits- und Preisregeln (die nicht überschrieben werden können)." /></>}
+                value={aiMsgRules}
+                onChange={(e) => setAiMsgRules(e.target.value)}
+                rows={5}
+                placeholder={"Bei 'Ist noch da?' → Ja + Versand anbieten\nBei Fragen zum Zustand → auf Beschreibung verweisen\nBei PayPal-Anfrage → nur Friends & Family"}
+              />
+              <Textarea
+                label={<>Eskalations-Keywords <InfoTip text="Ein Wort pro Zeile. Bei diesen Wörtern wird die Nachricht zur manuellen Prüfung weitergeleitet statt automatisch beantwortet." /></>}
+                value={aiMsgEscalate}
+                onChange={(e) => setAiMsgEscalate(e.target.value)}
+                rows={3}
+                placeholder={"Tausch\nPaySafe\nRatenzahlung\nWestern Union\nGeschenkkarte\nKäuferschutz-Link"}
+              />
+            </>
+          )}
+        </Section>
+
+        <Button variant="primary" size="lg" className={styles.saveBtn} onClick={handleSave} loading={saving}>
+          Profil speichern
+        </Button>
+      </div>
+    </div>
+  );
+}

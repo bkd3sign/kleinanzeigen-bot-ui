@@ -70,20 +70,31 @@ download:
   folder_name_max_length: 100
   folder_name_template: 'ad_{id}'
   rename_existing_folders: true
+  # Keep local-only settings (auto_price_reduction, republication_interval,
+  # repost_count, price_reduction_count) when re-downloading an already saved ad.
+  preserve_local_settings: true
 
 # ################################################################################
 # Publishing behavior
 publishing:
   delete_old_ads: AFTER_PUBLISH       # BEFORE_PUBLISH | AFTER_PUBLISH | NEVER
   delete_old_ads_by_title: true       # only with BEFORE_PUBLISH
+  local_path_renaming:
+    mode: TEMPLATE_MATCH              # OFF | TEMPLATE_MATCH — keep local folder/file IDs in sync with the new Kleinanzeigen ID after a republish (only renames paths matching the download templates)
+
+# ################################################################################
+# Deletion behaviour
+deleting:
+  after_delete: DISABLE               # NONE | RESET | DISABLE — what to do with the local ad YAML after a delete; DISABLE marks it inactive so the GUI status stays honest
 
 # ################################################################################
 # Browser configuration (auto-detected in most cases)
 browser:
+  mode: auto                          # auto (Standard) | headless (kein Fenster) | visible (für VNC-Login)
   arguments: []                       # Docker: ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--password-store=basic"]
   binary_location: ''                 # leave empty for auto-detection
   extensions: []
-  use_private_window: true
+  use_private_window: false            # must stay false — the warm login session needs a persistent (non-incognito) profile
   user_data_dir: ''
   profile_name: ''
 
@@ -140,4 +151,5 @@ diagnostics:
   capture_log_copy: true
   pause_on_login_detection_failure: false
   output_dir:
-  timing_collection: true
+  # Disabled by default upstream (perf); enable only for diagnostics.
+  timing_collection: false

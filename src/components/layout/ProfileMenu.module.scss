@@ -132,7 +132,7 @@
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown);
   padding: var(--space-1) 0;
-  animation: slideDown 150ms var(--ease-out);
+  animation: slideDown var(--duration-fast) var(--ease-out);
 
   @media (max-width: 560px) {
     position: static;

@@ -51,7 +51,7 @@
     display: flex;
     position: absolute;
     inset: 0;
-    z-index: 10;
+    z-index: var(--z-elevated);
     background: var(--bg-primary);
     gap: var(--space-2);
   }

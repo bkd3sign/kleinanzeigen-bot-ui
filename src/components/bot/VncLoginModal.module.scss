@@ -1,0 +1,119 @@
+// Own portal overlay (rendered to document.body, like the logs fullscreen) so
+// position:fixed always resolves to the viewport — no containing-block surprises on
+// mobile. Toggling .windowFullscreen never moves the iframe in the DOM (no reconnect).
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-modal);
+}
+
+// Compact windowed box — use the fullscreen button (⛶) for a large view.
+.window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  // Sized so the full Kleinanzeigen login fits the framebuffer (resize=remote) without the remote
+  // page showing its OWN scrollbars — those are baked into the VNC pixels and can't be hidden from
+  // our side. These values are the measured clean threshold on the login page.
+  width: min(510px, 96vw);
+  height: min(760px, 96dvh);
+  padding: var(--space-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+}
+
+// Fill the whole viewport (overlay is already fixed inset:0). dvh = true mobile height.
+.windowFullscreen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.headerBtns {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+// Close button uses the global .modalCloseBtn utility (globals.css) — identical to the
+// shared Modal's × so the close affordance matches everywhere.
+
+.hint {
+  margin: 0;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+// Shared framing for the browser view and its connecting placeholder — same box.
+.frameArea {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  // Clip the iframe's square content to the rounded border (no square corner poking out).
+  overflow: hidden;
+}
+
+.frame {
+  width: 100%;
+  display: block;
+}
+
+.pasteRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  flex-shrink: 0;
+
+  > :first-child {
+    flex: 1;
+  }
+}
+
+.connecting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.connectingTitle {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+// Live elapsed-seconds counter shown while connecting — subtle, tabular so it doesn't jitter.
+.connectingElapsed {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,51 +1,37 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api/client';
-import { useAiAvailable } from '@/hooks/useAiAvailable';
-import { Input, Textarea, Select, Toggle, Button, Spinner, useToast } from '@/components/ui';
+import { useAuth } from '@/hooks/useAuth';
+import { useAiModels } from '@/lib/api/queries/system';
+import { Input, Textarea, Select, Toggle, Button, PageLoader, Section, EmptyState, useToast } from '@/components/ui';
 import { InfoTip } from '@/components/ads/AdForm/InfoTip';
-import { PlzLocationPicker } from '@/components/shared/PlzLocationPicker';
-import styles from './page.module.scss';
+import { CarrierCard } from '@/components/shared/CarrierCard';
+import { ShippingSizeCards } from '@/components/shared/ShippingSizeCards';
+import { SHIPPING_SIZES } from '@/lib/shipping';
+import type { AiModelOption } from '@/app/api/system/ai-models/route';
+import styles from '@/styles/settingsForm.module.scss';
+
+const MASKED_KEY = '••••••••';
 
 interface ConfigData {
-  login?: { username?: string; password?: string };
-  ad_defaults?: {
-    active?: boolean;
-    type?: string;
-    price_type?: string;
-    shipping_type?: string;
-    sell_directly?: boolean;
-    contact?: Record<string, string>;
-    description_prefix?: string;
-    description_suffix?: string;
-    republication_interval?: number;
-    auto_price_reduction?: Record<string, unknown>;
-  };
   deleting?: { after_delete?: string };
+  publishing?: Record<string, unknown>;
+  download?: Record<string, unknown>;
+  ai?: Record<string, unknown>;
+  diagnostics?: Record<string, unknown>;
+  browser?: Record<string, unknown>;
 }
 
-const STRATEGY_OPTIONS = [
-  { value: '', label: '– Keine –' },
-  { value: 'PERCENTAGE', label: 'Prozentual' },
-  { value: 'FIXED', label: 'Fester Betrag' },
+const PATH_RENAMING_OPTIONS = [
+  { value: 'TEMPLATE_MATCH', label: 'Pfade synchron halten (empfohlen)' },
+  { value: 'OFF', label: 'Aus (Pfade nie umbenennen)' },
 ];
 
-const TYPE_OPTIONS = [
-  { value: 'OFFER', label: 'Angebot' },
-  { value: 'WANTED', label: 'Gesuch' },
-];
-
-const PRICE_TYPE_OPTIONS = [
-  { value: 'FIXED', label: 'Festpreis' },
-  { value: 'NEGOTIABLE', label: 'Verhandlungsbasis' },
-  { value: 'GIVE_AWAY', label: 'Zu verschenken' },
-];
-
-const SHIPPING_TYPE_OPTIONS = [
-  { value: 'PICKUP', label: 'Nur Abholung' },
-  { value: 'SHIPPING', label: 'Versand' },
-  { value: 'NOT_APPLICABLE', label: 'Nicht zutreffend' },
+const DELETE_OLD_ADS_OPTIONS = [
+  { value: 'AFTER_PUBLISH', label: 'Nach dem Veröffentlichen (empfohlen)' },
+  { value: 'BEFORE_PUBLISH', label: 'Vor dem Veröffentlichen' },
+  { value: 'NEVER', label: 'Nie' },
 ];
 
 const AFTER_DELETE_OPTIONS = [
@@ -54,56 +40,83 @@ const AFTER_DELETE_OPTIONS = [
   { value: 'DISABLE', label: 'Deaktivieren (active: false)' },
 ];
 
+/** Format one OpenRouter model as a dropdown option (id + prompt price per 1M tokens). */
+function modelToOption(m: AiModelOption): { value: string; label: string } {
+  const price = m.pricePromptPerM != null ? ` — $${m.pricePromptPerM.toFixed(2)}/M` : '';
+  return { value: m.id, label: `${m.id}${price}` };
+}
+
+/**
+ * Build the Select options for a model field: recommended subset by default, full
+ * list when showAll is on. Falls back to the full pool if no model is flagged
+ * recommended, and always keeps the currently-saved value selectable.
+ */
+function buildModelOptions(
+  models: AiModelOption[],
+  visionOnly: boolean,
+  showAll: boolean,
+  current: string,
+): { value: string; label: string }[] {
+  const pool = visionOnly ? models.filter((m) => m.vision) : models;
+  const base = showAll
+    ? pool
+    : pool.filter((m) => (visionOnly ? m.recommendedVision : m.recommendedText));
+  const list = base.length ? base : pool;
+  const options = list.map(modelToOption);
+  if (current && !options.some((o) => o.value === current)) {
+    options.unshift({ value: current, label: `${current} (aktuell)` });
+  }
+  return options;
+}
+
 export default function SettingsPage() {
   const { toast } = useToast();
-  const { isAiAvailable } = useAiAvailable();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [adActive, setAdActive] = useState(true);
-  const [adType, setAdType] = useState('OFFER');
-  const [priceType, setPriceType] = useState('NEGOTIABLE');
-  const [shippingType, setShippingType] = useState('SHIPPING');
-  const [sellDirectly, setSellDirectly] = useState(false);
-  const [contactName, setContactName] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
-  const [contactStreet, setContactStreet] = useState('');
-  const [contactZip, setContactZip] = useState('');
-  const [contactLocation, setContactLocation] = useState('');
-  const [republication, setRepublication] = useState('7');
-  const [descPrefix, setDescPrefix] = useState('');
-  const [descSuffix, setDescSuffix] = useState('');
-  const [aprEnabled, setAprEnabled] = useState(false);
-  const [aprStrategy, setAprStrategy] = useState('');
-  const [aprAmount, setAprAmount] = useState('');
-  const [aprMinPrice, setAprMinPrice] = useState('');
-  const [aprDelayReposts, setAprDelayReposts] = useState('0');
-  const [aprDelayDays, setAprDelayDays] = useState('0');
-  const [aprOnUpdate, setAprOnUpdate] = useState(false);
+  // Publishing — keep the raw object to preserve unknown sibling keys on write.
+  const [publishingConfig, setPublishingConfig] = useState<Record<string, unknown>>({});
+  const [pathRenaming, setPathRenaming] = useState('TEMPLATE_MATCH');
+  const [deleteOldAds, setDeleteOldAds] = useState('AFTER_PUBLISH');
+  const [deleteOldAdsByTitle, setDeleteOldAdsByTitle] = useState(true);
 
-  // AI Messaging settings
+  // Deleting
   const [afterDelete, setAfterDelete] = useState('NONE');
-  const [aiMsgMode, setAiMsgMode] = useState('off');
-  const [aiMsgPersonality, setAiMsgPersonality] = useState('');
-  const [aiMsgRules, setAiMsgRules] = useState('');
-  const [aiMsgEscalate, setAiMsgEscalate] = useState('');
-  const [aiMsgAvailability, setAiMsgAvailability] = useState<Array<{ days: string; from: string; to: string }>>([]);
 
-  const addAvailability = useCallback(() => {
-    setAiMsgAvailability(prev => [...prev, { days: 'Werktags', from: '08:00', to: '20:00' }]);
-  }, []);
+  // Download — raw object preserves siblings (e.g. dir) on write.
+  const [downloadConfig, setDownloadConfig] = useState<Record<string, unknown>>({});
+  const [folderTemplate, setFolderTemplate] = useState('ad_{id}_{title}');
+  const [adFileTemplate, setAdFileTemplate] = useState('ad_{id}');
+  const [renameExisting, setRenameExisting] = useState(false);
+  const [includeAllShipping, setIncludeAllShipping] = useState(false);
+  const [excludedShipping, setExcludedShipping] = useState<string[]>([]);
+  const [activeExclSize, setActiveExclSize] = useState<string | null>(null);
+  const [preserveLocal, setPreserveLocal] = useState(true);
+  const [folderMaxLength, setFolderMaxLength] = useState('100');
 
-  const updateAvailability = useCallback((index: number, field: string, value: string) => {
-    setAiMsgAvailability(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
-  }, []);
+  // AI — raw object preserves siblings (referer, app_name) on write.
+  const [aiConfig, setAiConfig] = useState<Record<string, unknown>>({});
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState('');
+  const [aiModelVision, setAiModelVision] = useState('');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiPromptVision, setAiPromptVision] = useState('');
+  const [showAllModels, setShowAllModels] = useState(false);
 
-  const removeAvailability = useCallback((index: number) => {
-    setAiMsgAvailability(prev => prev.filter((_, i) => i !== index));
-  }, []);
+  // Browser — raw object preserves siblings (arguments, binary_location, …) on write.
+  const [browserConfig, setBrowserConfig] = useState<Record<string, unknown>>({});
+  const [browserMode, setBrowserMode] = useState<'auto' | 'headless' | 'visible'>('auto');
 
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['profile', 'login', 'contact']));
+  // Diagnostics — raw object preserves siblings (capture_log_copy, output_dir, …) on write.
+  const [diagnosticsConfig, setDiagnosticsConfig] = useState<Record<string, unknown>>({});
+  const [captureLoginDetection, setCaptureLoginDetection] = useState(false);
+  const [capturePublish, setCapturePublish] = useState(false);
+  const [captureLogCopy, setCaptureLogCopy] = useState(false);
+  const [timingCollection, setTimingCollection] = useState(false);
+
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const toggle = useCallback((key: string) => {
     setOpenSections((prev) => {
       const next = new Set(prev);
@@ -112,172 +125,161 @@ export default function SettingsPage() {
     });
   }, []);
 
+  const toggleExcludedShipping = useCallback((id: string) => {
+    setExcludedShipping((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const { data: aiModelsData } = useAiModels(isAdmin);
+  const models = useMemo(() => aiModelsData?.models ?? [], [aiModelsData]);
+  const modelsAvailable = models.length > 0;
+  const textModelOptions = useMemo(() => buildModelOptions(models, false, showAllModels, aiModel), [models, showAllModels, aiModel]);
+  const visionModelOptions = useMemo(() => buildModelOptions(models, true, showAllModels, aiModelVision), [models, showAllModels, aiModelVision]);
+
   useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
     api.get<ConfigData>('/api/system/config')
       .then((data) => {
-        const login = data.login ?? {};
-        const ad = data.ad_defaults ?? {};
-        const contact = ad.contact ?? {};
-        const apr = ad.auto_price_reduction ?? {};
-        setLoginEmail(login.username ?? '');
-        setLoginPassword(login.password ?? '');
-        setAdActive(ad.active !== false);
-        setAdType((ad.type as string) ?? 'OFFER');
-        setPriceType((ad.price_type as string) ?? 'NEGOTIABLE');
-        setShippingType((ad.shipping_type as string) ?? 'SHIPPING');
-        setSellDirectly(!!(ad.sell_directly));
-        setContactName(contact.name ?? '');
-        setContactPhone(contact.phone ?? '');
-        setContactStreet(contact.street ?? '');
-        setContactZip(contact.zipcode ?? '');
-        setContactLocation(contact.location ?? '');
-        setRepublication(String(ad.republication_interval ?? 7));
-        setDescPrefix(ad.description_prefix ?? '');
-        setDescSuffix(ad.description_suffix ?? '');
-        setAprEnabled(!!(apr.enabled));
-        setAprStrategy((apr.strategy as string) ?? '');
-        setAprAmount(apr.amount != null ? String(apr.amount) : '');
-        setAprMinPrice(apr.min_price != null ? String(apr.min_price) : '');
-        setAprDelayReposts(String(apr.delay_reposts ?? 0));
-        setAprDelayDays(String(apr.delay_days ?? 0));
-        setAprOnUpdate(!!(apr.on_update));
         setAfterDelete((data.deleting?.after_delete as string) ?? 'NONE');
+
+        const publishing = data.publishing ?? {};
+        setPublishingConfig(publishing);
+        setPathRenaming(((publishing.local_path_renaming as Record<string, unknown>)?.mode as string) ?? 'TEMPLATE_MATCH');
+        setDeleteOldAds((publishing.delete_old_ads as string) ?? 'AFTER_PUBLISH');
+        setDeleteOldAdsByTitle(publishing.delete_old_ads_by_title !== false);
+
+        const download = data.download ?? {};
+        setDownloadConfig(download);
+        setFolderTemplate((download.folder_name_template as string) ?? 'ad_{id}_{title}');
+        setAdFileTemplate((download.ad_file_name_template as string) ?? 'ad_{id}');
+        setRenameExisting(!!download.rename_existing_folders);
+        setIncludeAllShipping(!!download.include_all_matching_shipping_options);
+        setExcludedShipping(Array.isArray(download.excluded_shipping_options) ? (download.excluded_shipping_options as string[]) : []);
+        setPreserveLocal(download.preserve_local_settings !== false);
+        setFolderMaxLength(String(download.folder_name_max_length ?? 100));
+
+        const ai = data.ai ?? {};
+        setAiConfig(ai);
+        setAiApiKey((ai.api_key as string) ?? '');
+        setAiModel((ai.model as string) ?? '');
+        setAiModelVision((ai.model_vision as string) ?? '');
+        setAiPrompt((ai.prompt as string) ?? '');
+        setAiPromptVision((ai.prompt_vision as string) ?? '');
+
+        const browser = data.browser ?? {};
+        setBrowserConfig(browser);
+        const rawMode = browser.mode as string;
+        setBrowserMode(rawMode === 'headless' || rawMode === 'visible' ? rawMode : 'auto');
+
+        const diagnostics = data.diagnostics ?? {};
+        setDiagnosticsConfig(diagnostics);
+        const captureOn = (diagnostics.capture_on as Record<string, unknown>) ?? {};
+        setCaptureLoginDetection(!!captureOn.login_detection);
+        setCapturePublish(!!captureOn.publish);
+        setCaptureLogCopy(!!diagnostics.capture_log_copy);
+        setTimingCollection(!!diagnostics.timing_collection);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-
-    // Load AI messaging rules
-    api.get<Record<string, unknown>>('/api/messages/responder/config')
-      .then((data) => {
-        setAiMsgMode((data.mode as string) ?? 'off');
-        setAiMsgPersonality((data.personality as string) ?? '');
-        setAiMsgAvailability((data.availability as Array<{ days: string; from: string; to: string }>) ?? []);
-        setAiMsgRules((data.rules as string) ?? '');
-        setAiMsgEscalate((data.escalate_keywords as string) ?? '');
-      })
-      .catch(() => {});
-  }, []);
+  }, [isAdmin]);
 
   const handleSave = useCallback(async () => {
-    if (aprEnabled && !aprMinPrice) {
-      toast('error', 'Mindestpreis ist Pflicht wenn Preisreduktion aktiviert ist');
-      return;
-    }
     setSaving(true);
     try {
       await api.put('/api/system/config', {
-        login: { username: loginEmail, password: loginPassword },
         deleting: { after_delete: afterDelete },
-        ad_defaults: {
-          active: adActive,
-          type: adType,
-          price_type: priceType,
-          shipping_type: shippingType,
-          sell_directly: sellDirectly,
-          contact: { name: contactName, street: contactStreet, zipcode: contactZip, location: contactLocation, phone: contactPhone },
-          republication_interval: parseInt(republication) || 7,
-          description_prefix: descPrefix,
-          description_suffix: descSuffix,
-          auto_price_reduction: {
-            enabled: aprEnabled, strategy: aprStrategy || null,
-            amount: aprAmount ? parseFloat(aprAmount) : null,
-            min_price: aprMinPrice ? parseFloat(aprMinPrice) : null,
-            delay_reposts: parseInt(aprDelayReposts) || 0,
-            delay_days: parseInt(aprDelayDays) || 0,
-            on_update: aprOnUpdate,
+        publishing: {
+          ...publishingConfig,
+          // Nested-spread so any sibling keys the bot stores under
+          // local_path_renaming survive — we only own the `mode`.
+          local_path_renaming: {
+            ...((publishingConfig.local_path_renaming as Record<string, unknown>) ?? {}),
+            mode: pathRenaming,
+          },
+          delete_old_ads: deleteOldAds,
+          // The "by title" lookup only applies to BEFORE_PUBLISH; never persist a
+          // stale true when the strategy changed and its toggle is hidden.
+          delete_old_ads_by_title: deleteOldAds === 'BEFORE_PUBLISH' && deleteOldAdsByTitle,
+        },
+        download: {
+          ...downloadConfig,
+          folder_name_template: folderTemplate,
+          ad_file_name_template: adFileTemplate,
+          rename_existing_folders: renameExisting,
+          include_all_matching_shipping_options: includeAllShipping,
+          excluded_shipping_options: excludedShipping,
+          preserve_local_settings: preserveLocal,
+          folder_name_max_length: parseInt(folderMaxLength) || 100,
+        },
+        ai: {
+          ...aiConfig,
+          api_key: aiApiKey,
+          model: aiModel,
+          model_vision: aiModelVision,
+          prompt: aiPrompt,
+          prompt_vision: aiPromptVision,
+        },
+        diagnostics: {
+          ...diagnosticsConfig,
+          capture_log_copy: captureLogCopy,
+          timing_collection: timingCollection,
+          capture_on: {
+            ...((diagnosticsConfig.capture_on as Record<string, unknown>) ?? {}),
+            login_detection: captureLoginDetection,
+            publish: capturePublish,
           },
         },
+        // Spread siblings so unknown browser keys (arguments, binary_location, …)
+        // survive a round-trip through the settings form.
+        browser: { ...browserConfig, mode: browserMode },
       });
-      // Save AI messaging config separately
-      await api.put('/api/messages/responder/config', {
-        mode: aiMsgMode,
-        personality: aiMsgPersonality,
-        availability: aiMsgAvailability.filter(a => a.from && a.to),
-        rules: aiMsgRules,
-        escalate_keywords: aiMsgEscalate,
-      }).catch(() => {}); // Non-critical
-
       toast('success', 'Einstellungen gespeichert');
     } catch (err) {
       toast('error', (err as Error).message);
     } finally {
       setSaving(false);
     }
-  }, [loginEmail, loginPassword, adActive, adType, priceType, shippingType, sellDirectly, contactName, contactPhone, contactStreet, contactZip, contactLocation, republication, descPrefix, descSuffix, aprEnabled, aprStrategy, aprAmount, aprMinPrice, aprDelayReposts, aprDelayDays, aprOnUpdate, afterDelete, aiMsgMode, aiMsgPersonality, aiMsgRules, aiMsgEscalate, aiMsgAvailability, toast]);
+  }, [afterDelete, publishingConfig, pathRenaming, deleteOldAds, deleteOldAdsByTitle, downloadConfig, folderTemplate, adFileTemplate, renameExisting, includeAllShipping, excludedShipping, preserveLocal, folderMaxLength, aiConfig, aiApiKey, aiModel, aiModelVision, aiPrompt, aiPromptVision, diagnosticsConfig, captureLoginDetection, capturePublish, captureLogCopy, timingCollection, browserConfig, browserMode, toast]);
+
+  if (!isAdmin) {
+    return (
+      <EmptyState
+        title="Kein Zugriff"
+        message="Diese Einstellungen gelten für alle Workspaces und sind nur für Administratoren zugänglich."
+      />
+    );
+  }
 
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}><Spinner size="lg" /></div>;
+    return <PageLoader />;
   }
 
   return (
     <div className={`${styles.settingsPage} animFadeIn`}>
       <div className={styles.stickyHeader}>
-        <h2 className={styles.title}>Einstellungen</h2>
+        <h2 className={styles.title}>Globale Einstellungen</h2>
+        <p className={styles.subtitle}>Bot-weite Standardwerte — gelten für alle Workspaces.</p>
       </div>
 
       <div className={styles.form}>
-        <Section title="Zugangsdaten" desc="Login für kleinanzeigen.de und dieses System." open={openSections.has('login')} onToggle={() => toggle('login')}>
-          <div className={styles.row}>
-            <Input label={<>E-Mail / Benutzername <InfoTip text="Login-E-Mail für kleinanzeigen.de" /></>} value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
-            <Input
-              label={<>Passwort <InfoTip text="Login-Passwort für kleinanzeigen.de" /></>}
-              type="password"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              onFocus={() => { if (loginPassword === '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022') setLoginPassword(''); }}
-              placeholder="Passwort eingeben"
-            />
-          </div>
-        </Section>
-
-        <Section title="Kontaktdaten" desc="Standard-Kontaktdaten für alle Anzeigen." open={openSections.has('contact')} onToggle={() => toggle('contact')}>
-          <div className={styles.row}>
-            <Input label={<>Name <InfoTip text="Anzeigename für alle Anzeigen" /></>} value={contactName} onChange={(e) => setContactName(e.target.value)} />
-            <Input label={<>Telefon <InfoTip text="Wird in Anzeigen angezeigt (optional)" /></>} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-          </div>
-          <div className={styles.row}>
-            <PlzLocationPicker
-              zipValue={contactZip}
-              locationValue={contactLocation}
-              onZipChange={setContactZip}
-              onLocationChange={setContactLocation}
-              locationLabel={<>Ort <InfoTip text="Wird von Kleinanzeigen anhand der PLZ bestimmt" /></>}
-            />
-          </div>
-          <Input label="Straße/Nr." value={contactStreet} onChange={(e) => setContactStreet(e.target.value)} placeholder="Optional" />
-        </Section>
-
-        <Section title="Anzeigen-Inhalte" desc="Standardwerte, Typ, Versand und Beschreibungs-Prefixe für neue Anzeigen." open={openSections.has('prefix')} onToggle={() => toggle('prefix')}>
-          <Toggle label={<>Anzeigen standardmäßig aktiv <InfoTip text="Neue Anzeigen sind standardmäßig aktiv und werden vom Bot verarbeitet" /></>} checked={adActive} onChange={setAdActive} />
-          <div className={styles.row}>
-            <Select label={<>Angebotstyp <InfoTip text="Standard-Typ für neue Anzeigen" /></>} options={TYPE_OPTIONS} value={adType} onChange={(e) => setAdType(e.target.value)} />
-            <Select label={<>Preistyp <InfoTip text="Standard-Preistyp für neue Anzeigen" /></>} options={PRICE_TYPE_OPTIONS} value={priceType} onChange={(e) => setPriceType(e.target.value)} />
-          </div>
-          <div className={styles.row}>
-            <Select label={<>Versandart <InfoTip text="Standard-Versandart für neue Anzeigen" /></>} options={SHIPPING_TYPE_OPTIONS} value={shippingType} onChange={(e) => setShippingType(e.target.value)} />
-          </div>
-          <Toggle label={<>Direktverkauf <InfoTip text="Käufer können den Artikel direkt kaufen ohne Nachricht" /></>} checked={sellDirectly} onChange={setSellDirectly} />
-          <Textarea label={<>Beschreibungs-Prefix <InfoTip text="Text, der vor jeder Anzeigenbeschreibung eingefügt wird" /></>} value={descPrefix} onChange={(e) => setDescPrefix(e.target.value)} rows={3} />
-          <Textarea label={<>Beschreibungs-Suffix <InfoTip text="Text, der nach jeder Anzeigenbeschreibung eingefügt wird" /></>} value={descSuffix} onChange={(e) => setDescSuffix(e.target.value)} rows={3} />
-        </Section>
-
-        <Section title="Republication & Preisreduktion" desc="Intervall für Neueinstellungen und automatische Preissenkung." open={openSections.has('apr')} onToggle={() => toggle('apr')}>
-          <Input label={<>Republication-Intervall (Tage) <InfoTip text="Anzeige wird neu eingestellt, wenn mehr als N volle Tage seit dem letzten Publish vergangen sind. Beispiel: Bei 7 wird frühestens nach 8 Kalendertagen repostet, weil der Bot auf ganze Tage abrundet und auf strikt-größer prüft." /></>} type="number" min="1" value={republication} onChange={(e) => setRepublication(e.target.value)} placeholder="z.B. 7" />
-          <Toggle label={<>Preisreduktion aktiviert <InfoTip text="Senkt den Preis automatisch bei jedem Repost. Der erste Repost ändert den Preis nie — die Reduktion beginnt erst ab dem zweiten Repost." /></>} checked={aprEnabled} onChange={setAprEnabled} />
-          {aprEnabled && (
-            <>
-              <div className={styles.row}>
-                <Select label={<>Strategie <InfoTip text="Prozentual: Senkt den Preis um X% des aktuellen Preises pro Repost (Zinseszins-Effekt). Fester Betrag: Senkt um einen fixen Euro-Betrag pro Repost (gleichmäßige Schritte). Tipp: Prozentual für teure Artikel, fester Betrag für günstige." /></>} options={STRATEGY_OPTIONS} value={aprStrategy} onChange={(e) => setAprStrategy(e.target.value)} />
-                <Input label={<>Betrag <InfoTip text="Wie viel pro Repost gesenkt wird. Bei Prozentual: z.B. 5 = 5% vom aktuellen Preis. Bei Fester Betrag: z.B. 5 = 5 € weniger pro Repost. Alle Preise werden auf ganze Euro gerundet." /></>} type="number" min="0" step="0.1" value={aprAmount} onChange={(e) => setAprAmount(e.target.value)} />
-              </div>
-              <div className={styles.row}>
-                <Input label={<>Mindestpreis (€) <InfoTip text="Untergrenze: Der Preis wird nie unter diesen Wert gesenkt. Pflichtfeld wenn Preisreduktion aktiviert ist." /></>} type="number" min="0" value={aprMinPrice} onChange={(e) => setAprMinPrice(e.target.value)} />
-                <Input label={<>Verzögerung (Reposts) <InfoTip text="Wartet N zusätzliche Reposts bevor die erste Preissenkung greift. Beispiel: Bei 2 bleiben die ersten 3 Reposts zum vollen Preis (1 implizit + 2 Verzögerung), ab Repost 4 wird gesenkt. Empfohlen wenn der Artikel zuerst zum Vollpreis Chancen haben soll." /></>} type="number" min="0" value={aprDelayReposts} onChange={(e) => setAprDelayReposts(e.target.value)} />
-              </div>
-              <Input label={<>Verzögerung (Tage) <InfoTip text="Senkt den Preis erst, wenn seit dem letzten Publish mindestens N Tage vergangen sind. Achtung: Der Zähler startet bei jedem Repost neu! Wenn delay_days größer als das Republication-Intervall ist, greift die Reduktion nie. Tipp: Nutze stattdessen Verzögerung (Reposts) — das ist zuverlässiger." /></>} type="number" min="0" value={aprDelayDays} onChange={(e) => setAprDelayDays(e.target.value)} />
-              <Toggle label={<>Auch bei Update anwenden <InfoTip text="Senkt den Preis auch beim update-Befehl (Text-/Bildänderungen), nicht nur beim publish (Neu-Einstellen). Nur die Tage-Verzögerung wird dabei berücksichtigt, die Repost-Verzögerung nicht." /></>} checked={aprOnUpdate} onChange={setAprOnUpdate} />
-            </>
+        <Section title="Veröffentlichung" desc="Verhalten beim Einstellen und Neu-Veröffentlichen von Anzeigen." open={openSections.has('publishing')} onToggle={() => toggle('publishing')}>
+          <Select
+            label={<>Alte Anzeigen löschen <InfoTip text="Beim Neu-Veröffentlichen vergibt Kleinanzeigen eine neue ID. Nach dem Veröffentlichen: Die alte Anzeige wird gelöscht, sobald die neue online ist (empfohlen, kein Doppel). Vor dem Veröffentlichen: Erst löschen, dann neu einstellen. Nie: Alte Anzeigen bleiben bestehen (Gefahr von Duplikaten)." /></>}
+            options={DELETE_OLD_ADS_OPTIONS}
+            value={deleteOldAds}
+            onChange={(e) => setDeleteOldAds(e.target.value)}
+          />
+          {deleteOldAds === 'BEFORE_PUBLISH' && (
+            <Toggle label={<>Alte Anzeigen per Titel finden <InfoTip text="Findet die zu löschende alte Anzeige anhand des Titels statt der ID. Wirkt nur mit der Option Vor dem Veröffentlichen. Nützlich, wenn die alte ID nicht mehr bekannt ist." /></>} checked={deleteOldAdsByTitle} onChange={setDeleteOldAdsByTitle} />
           )}
+          <Select
+            label={<>Lokale Pfade synchron halten <InfoTip text="Beim Neu-Veröffentlichen vergibt Kleinanzeigen eine neue Anzeigen-ID. Synchron halten benennt dann die lokalen Datei- und Ordnernamen automatisch auf die neue ID um, sodass sie zur Kleinanzeigen-ID passen. Es wird nur der ID-Teil ersetzt — manuell vergebene Titel bleiben erhalten, und Namen, die nicht zu deinen Download-Vorlagen passen, werden nicht angefasst. Aus lässt die Pfade unverändert, die alte ID bleibt dann im Namen." /></>}
+            options={PATH_RENAMING_OPTIONS}
+            value={pathRenaming}
+            onChange={(e) => setPathRenaming(e.target.value)}
+          />
         </Section>
 
         <Section title="Löschen" desc="Verhalten nach dem Löschen einer Anzeige per delete-Befehl." open={openSections.has('deleting')} onToggle={() => toggle('deleting')}>
@@ -289,117 +291,115 @@ export default function SettingsPage() {
           />
         </Section>
 
-        <Section title="KI-Nachrichten" desc="Automatische Antworten auf Kleinanzeigen-Nachrichten per LLM." open={openSections.has('ai-msg')} onToggle={() => toggle('ai-msg')}>
-          {!isAiAvailable && (
-            <div style={{
-              padding: 'var(--space-3) var(--space-4)',
-              background: 'var(--bg-tertiary)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 'var(--font-size-sm)',
-              color: 'var(--text-muted)',
-              marginBottom: 'var(--space-4)',
-              border: '1px solid var(--border-color)',
-            }}>
-              KI-Nachrichten benötigen einen OpenRouter API-Key. Trage ihn in der config.yaml unter <code>ai.api_key</code> ein.
+        <Section title="Download" desc="Verhalten beim Herunterladen von Anzeigen (download-Befehl)." open={openSections.has('download')} onToggle={() => toggle('download')}>
+          <Input label={<>Ordnername-Vorlage <InfoTip text="Vorlage für heruntergeladene Anzeigen-Ordner. Platzhalter {id} (Pflicht) und {title} (optional). Text außerhalb der Platzhalter wird wörtlich übernommen. Beispiel: ad_{id}_{title}" /></>} value={folderTemplate} onChange={(e) => setFolderTemplate(e.target.value)} placeholder="ad_{id}_{title}" />
+          <Input label={<>Dateiname-Vorlage <InfoTip text="Vorlage für die heruntergeladene YAML-Datei und den Bild-Prefix. Platzhalter {id} (Pflicht) und {title} (optional). Beispiel: ad_{id}" /></>} value={adFileTemplate} onChange={(e) => setAdFileTemplate(e.target.value)} placeholder="ad_{id}" />
+          <Input label={<>Max. Ordnernamen-Länge <InfoTip text="Maximale Länge für heruntergeladene Ordnernamen (10–255, Standard 100). Begrenzt nicht die Dateinamen." /></>} type="number" min="10" max="255" value={folderMaxLength} onChange={(e) => setFolderMaxLength(e.target.value)} />
+          <Toggle label={<>Bestehende Ordner umbenennen <InfoTip text="Benennt bestehende Ordner ohne Titel beim erneuten Download um, sodass sie den Titel enthalten." /></>} checked={renameExisting} onChange={setRenameExisting} />
+          <Toggle label={<>Lokale Einstellungen erhalten <InfoTip text="Bewahrt lokale Werte (Preisreduktion, Republication-Intervall, Repost-/Reduktions-Zähler) beim erneuten Download einer bereits gespeicherten Anzeige. Nützlich, um Live-Änderungen zu übernehmen ohne lokale Konfiguration zu verlieren." /></>} checked={preserveLocal} onChange={setPreserveLocal} />
+          <Toggle label={<>Alle passenden Versandoptionen <InfoTip text="Wenn aktiv, werden alle zur Paketgröße passenden Versandoptionen übernommen statt nur der günstigsten." /></>} checked={includeAllShipping} onChange={setIncludeAllShipping} />
+          <div>
+            <label className="formLabel">Ausgeschlossene Versandoptionen <InfoTip text="Aktivierte Optionen werden beim Download nie übernommen — auch wenn sie zur Paketgröße passen. Nützlich, wenn du z.B. keinen Hermes-Shop in der Nähe hast. Es lassen sich nur Optionen aus EINER Größengruppe kombinieren (S, M oder L)." /></label>
+            {(() => {
+              const summary = SHIPPING_SIZES
+                .map((s) => ({
+                  label: s.label,
+                  names: s.carriers.filter((c) => excludedShipping.includes(c.value)).map((c) => c.name),
+                }))
+                .filter((g) => g.names.length > 0);
+              return (
+                <p className={styles.exclSummary}>
+                  {summary.length > 0
+                    ? summary.map((g) => (
+                        <span key={g.label}>
+                          <strong>{g.label}:</strong> {g.names.join(', ')}
+                        </span>
+                      ))
+                    : 'Noch keine Versandoption ausgeschlossen.'}
+                </p>
+              );
+            })()}
+            <div style={{ marginTop: 'var(--space-2)' }}>
+              <ShippingSizeCards
+                options={SHIPPING_SIZES.map((s) => ({ id: s.id, label: s.label, example: s.example }))}
+                activeId={activeExclSize}
+                onSelect={(id) => setActiveExclSize((prev) => (prev === id ? null : id))}
+              />
             </div>
-          )}
-          <Select
-            label={<>Modus <InfoTip text="Auto: Antwortet sofort automatisch. Review: Schlägt Antworten vor, du bestätigst. Aus: Keine KI-Antworten." /></>}
-            options={[
-              { value: 'off', label: 'Aus' },
-              { value: 'review', label: 'Review (Vorschlag bestätigen)' },
-              { value: 'auto', label: 'Auto (sofort senden)' },
-            ]}
-            value={aiMsgMode}
-            onChange={(e) => setAiMsgMode(e.target.value)}
-            disabled={!isAiAvailable}
-          />
-          {aiMsgMode !== 'off' && isAiAvailable && (
-            <>
-              {/* Availability schedule builder */}
-              <div>
-                <label className="formLabel">Verfügbarkeitszeiten <InfoTip text="Wann bist du für Abholung erreichbar? Die KI nennt diese Zeiten bei Terminanfragen." /></label>
-                {aiMsgAvailability.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 20px', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
-                    <span className="formLabel">Tage</span>
-                    <span className="formLabel">Von</span>
-                    <span className="formLabel">Bis</span>
-                    <span />
-                  </div>
-                )}
-                {aiMsgAvailability.map((slot, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 20px', gap: 'var(--space-2)', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
-                    <Select
-                      options={[
-                        { value: 'Werktags', label: 'Werktags (Mo–Fr)' },
-                        { value: 'Wochenende', label: 'Wochenende (Sa–So)' },
-                        { value: 'Montag', label: 'Montag' },
-                        { value: 'Dienstag', label: 'Dienstag' },
-                        { value: 'Mittwoch', label: 'Mittwoch' },
-                        { value: 'Donnerstag', label: 'Donnerstag' },
-                        { value: 'Freitag', label: 'Freitag' },
-                        { value: 'Samstag', label: 'Samstag' },
-                        { value: 'Sonntag', label: 'Sonntag' },
-                        { value: 'Täglich', label: 'Täglich' },
-                      ]}
-                      value={slot.days}
-                      onChange={(e) => updateAvailability(i, 'days', e.target.value)}
-                    />
-                    <Input type="time" value={slot.from} onChange={(e) => updateAvailability(i, 'from', e.target.value)} />
-                    <Input type="time" value={slot.to} min={slot.from} onChange={(e) => updateAvailability(i, 'to', e.target.value)} />
-                    <button type="button" onClick={() => removeAvailability(i)} title="Entfernen" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, height: 'var(--space-9)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'var(--space-5)' }}>×</button>
-                  </div>
+            {SHIPPING_SIZES.filter((s) => s.id === activeExclSize).map((group) => (
+              <div key={group.id} className={styles.optionGroup}>
+                {group.carriers.map((c) => (
+                  <CarrierCard
+                    key={c.value}
+                    name={c.name}
+                    detail={c.detail}
+                    tracking={c.tracking}
+                    price={c.price}
+                    checked={excludedShipping.includes(c.value)}
+                    onToggle={() => toggleExcludedShipping(c.value)}
+                  />
                 ))}
-                <Button variant="outline" size="sm" onClick={addAvailability}>+ Zeitfenster hinzufügen</Button>
               </div>
+            ))}
+          </div>
+        </Section>
 
-              <Textarea
-                label={<>Persönlichkeit <InfoTip text="Beschreibe wie die KI schreiben soll: Charakter, Tonalität, Begrüßung, Verabschiedung — alles in einem Prompt. Preisregeln, Sicherheit und Termin-Schutz sind fest eingebaut und können hier nicht überschrieben werden." /></>}
-                value={aiMsgPersonality}
-                onChange={(e) => setAiMsgPersonality(e.target.value)}
-                rows={5}
-                placeholder={"Du bist freundlich und locker. Duze den Käufer. Schreibe kurz in 2-3 Sätzen, maximal 4. Benutze gelegentlich Emojis aber übertreibe nicht. Klinge wie ein netter Nachbar, nicht wie ein Geschäft.\n\nStarte Nachrichten mit \"Hey\" oder \"Moin\".\nVerabschiede dich mit \"VG\" oder \"Beste Grüße\"."}
-              />
-              <Textarea
-                label={<>Eigene Regeln <InfoTip text="Eine Regel pro Zeile. Ergänzt die eingebauten Sicherheits- und Preisregeln (die nicht überschrieben werden können)." /></>}
-                value={aiMsgRules}
-                onChange={(e) => setAiMsgRules(e.target.value)}
-                rows={5}
-                placeholder={"Bei 'Ist noch da?' → Ja + Versand anbieten\nBei Fragen zum Zustand → auf Beschreibung verweisen\nBei PayPal-Anfrage → nur Friends & Family"}
-              />
-              <Textarea
-                label={<>Eskalations-Keywords <InfoTip text="Ein Wort pro Zeile. Bei diesen Wörtern wird die Nachricht zur manuellen Prüfung weitergeleitet statt automatisch beantwortet." /></>}
-                value={aiMsgEscalate}
-                onChange={(e) => setAiMsgEscalate(e.target.value)}
-                rows={3}
-                placeholder={"Tausch\nPaySafe\nRatenzahlung\nWestern Union\nGeschenkkarte\nKäuferschutz-Link"}
-              />
-            </>
+        <Section title="KI" desc="OpenRouter-Zugang und Prompts für die KI-Anzeigenerstellung." open={openSections.has('ai')} onToggle={() => toggle('ai')}>
+          <Input
+            label={<>OpenRouter API-Key <InfoTip text="API-Key von openrouter.ai für alle KI-Funktionen (Anzeigentexte, Bildanalyse, KI-Nachrichten). Gilt für alle Workspaces. Wird verschlüsselt gespeichert und nie im Klartext angezeigt." /></>}
+            type="password"
+            value={aiApiKey}
+            onChange={(e) => setAiApiKey(e.target.value)}
+            onFocus={() => { if (aiApiKey === MASKED_KEY) setAiApiKey(''); }}
+            placeholder="sk-or-…"
+          />
+          {modelsAvailable && (
+            <Toggle label={<>Alle Modelle anzeigen <InfoTip text="Standardmäßig wird eine kuratierte Auswahl gängiger, günstiger Modelle gezeigt. Aktiviere dies, um die komplette OpenRouter-Liste (340 Modelle) zu durchsuchen." /></>} checked={showAllModels} onChange={setShowAllModels} />
           )}
+          <div className={styles.row}>
+            {modelsAvailable ? (
+              <>
+                <Select label={<>Text-Modell <InfoTip text="OpenRouter-Modell für Anzeigentexte. Preis = Prompt-Kosten pro 1 Mio. Tokens. Beispiel: openai/gpt-4.1-nano" /></>} options={textModelOptions} value={aiModel} onChange={(e) => setAiModel(e.target.value)} />
+                <Select label={<>Vision-Modell <InfoTip text="OpenRouter-Modell für die Bildanalyse. Nur bildfähige Modelle werden gelistet. Beispiel: openai/gpt-4.1-mini" /></>} options={visionModelOptions} value={aiModelVision} onChange={(e) => setAiModelVision(e.target.value)} />
+              </>
+            ) : (
+              <>
+                <Input label={<>Text-Modell <InfoTip text="OpenRouter-Modell für Anzeigentexte. Beispiel: openai/gpt-4.1-nano" /></>} value={aiModel} onChange={(e) => setAiModel(e.target.value)} placeholder="openai/gpt-4.1-nano" />
+                <Input label={<>Vision-Modell <InfoTip text="OpenRouter-Modell für die Bildanalyse. Beispiel: openai/gpt-4.1-mini" /></>} value={aiModelVision} onChange={(e) => setAiModelVision(e.target.value)} placeholder="openai/gpt-4.1-mini" />
+              </>
+            )}
+          </div>
+          <Textarea label={<>Prompt (Anzeigentext) <InfoTip text="System-Prompt für die KI-Anzeigenerstellung. Steuert Stil, Struktur und Format der generierten Beschreibung." /></>} value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} rows={8} />
+          <Textarea label={<>Prompt (Bildanalyse) <InfoTip text="System-Prompt für die Bildanalyse. Steuert, welche Artikelinformationen die KI aus hochgeladenen Bildern extrahiert." /></>} value={aiPromptVision} onChange={(e) => setAiPromptVision(e.target.value)} rows={6} />
+        </Section>
+
+        <Section title="Browser" desc="Steuert, in welchem Modus der Browser-Bot gestartet wird." open={openSections.has('browser')} onToggle={() => toggle('browser')}>
+          <Select
+            label={<>Browser-Modus <InfoTip text={`Auto (empfohlen): läuft unsichtbar; bei Login-Bedarf öffnet ein Anmelde-Fenster.
+
+Immer unsichtbar: läuft komplett im Hintergrund; bricht ab, wenn ein Login nötig ist.
+
+Immer sichtbar: Fenster zum Mitschauen; bleibt dauerhaft offen und braucht mehr Leistung.`} /></>}
+            options={[
+              { value: 'auto', label: 'Auto (empfohlen)' },
+              { value: 'headless', label: 'Immer unsichtbar (headless)' },
+              { value: 'visible', label: 'Immer sichtbar (VNC)' },
+            ]}
+            value={browserMode}
+            onChange={(e) => setBrowserMode(e.target.value as 'auto' | 'headless' | 'visible')}
+          />
+        </Section>
+
+        <Section title="Diagnose" desc="Fehlerdiagnose-Aufnahmen bei Bot-Problemen (Screenshots, HTML, JSON)." open={openSections.has('diagnostics')} onToggle={() => toggle('diagnostics')}>
+          <Toggle label={<>Login-Erkennung aufzeichnen <InfoTip text="Erstellt Screenshot und HTML, wenn die Erkennung des Login-Status fehlschlägt. Hilft beim Debuggen von Login-Problemen." /></>} checked={captureLoginDetection} onChange={setCaptureLoginDetection} />
+          <Toggle label={<>Veröffentlichung aufzeichnen <InfoTip text="Erstellt Screenshot, HTML und JSON, wenn das Veröffentlichen einer Anzeige fehlschlägt. Hilft bei der Fehlersuche." /></>} checked={capturePublish} onChange={setCapturePublish} />
+          <Toggle label={<>Timeout-Timing erfassen <InfoTip text="Sammelt lokale Timeout-Zeitdaten und schreibt sie in die Diagnose-JSON. Nützlich zum Troubleshooting und Feinjustieren von Timeouts." /></>} checked={timingCollection} onChange={setTimingCollection} />
+          <Toggle label={<>Log-Kopie in Diagnose <InfoTip text="Kopiert beim Erstellen einer Diagnose-Aufnahme die komplette Bot-Logdatei mit hinein. Kann Log-Inhalte duplizieren, hilft aber bei der Fehlersuche." /></>} checked={captureLogCopy} onChange={setCaptureLogCopy} />
         </Section>
 
         <Button variant="primary" size="lg" className={styles.saveBtn} onClick={handleSave} loading={saving}>
           Einstellungen speichern
         </Button>
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, desc, open, onToggle, children }: { title: string; desc: string; open: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <div className={styles.section}>
-      <button type="button" className={styles.sectionHeader} onClick={onToggle}>
-        <div className={styles.sectionTitleCol}>
-          <span className={styles.sectionTitle}>{title}</span>
-          {desc && <span className={styles.sectionDesc}>{desc}</span>}
-        </div>
-        <span className={`${styles.sectionChevron} ${!open ? styles.sectionChevronCollapsed : ''}`}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
-        </span>
-      </button>
-      <div className={`${styles.sectionBodyWrap} ${!open ? styles.sectionBodyWrapCollapsed : ''}`}>
-        <div className={styles.sectionBody}>{children}</div>
       </div>
     </div>
   );

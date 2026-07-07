@@ -2,7 +2,7 @@ import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteOptionsSchema } from '@/validation/schemas';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { startJob } from '@/lib/bot/jobs';
+import { startJob, withUserLabel } from '@/lib/bot/jobs';
 import { buildFlags } from '@/lib/bot/flags';
 import { validateAdsParam } from '@/lib/security/validation';
 
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     const flags = buildFlags({ ads: validatedAds, verbose });
     const job = startJob(`delete ${flags}`.trim(), user.workspace, user.id);
-    return NextResponse.json(job);
+    return NextResponse.json(withUserLabel(job));
   } catch (error) {
     return handleApiError(error);
   }

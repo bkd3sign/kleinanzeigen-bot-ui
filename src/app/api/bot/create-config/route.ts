@@ -1,7 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
-import { startJob } from '@/lib/bot/jobs';
+import { startJob, withUserLabel } from '@/lib/bot/jobs';
 import { BOT_DIR } from '@/lib/bot/runner';
 
 export async function POST(request: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     // System command — runs in root workspace, not user workspace
     const job = startJob('create-config', BOT_DIR, user.id);
-    return NextResponse.json(job);
+    return NextResponse.json(withUserLabel(job));
   } catch (error) {
     return handleApiError(error);
   }

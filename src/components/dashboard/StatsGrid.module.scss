@@ -40,8 +40,8 @@
   font-size: clamp(var(--font-size-base), 3vw, var(--font-size-lg));
   font-weight: var(--font-bold);
   color: var(--text-primary);
-  line-height: 1;
-  margin-bottom: 2px;
+  line-height: var(--leading-none);
+  margin-bottom: var(--space-0-5);
   letter-spacing: -0.02em;
 }
 
@@ -60,7 +60,7 @@
   }
 
   .cardLabel {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 }
 

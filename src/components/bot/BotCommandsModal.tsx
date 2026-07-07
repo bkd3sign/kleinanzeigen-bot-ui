@@ -66,6 +66,7 @@ const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       { id: 'verify', title: 'Verify', icon: ['M22 11.08V12a10 10 0 1 1-5.93-9.14', 'M22 4L12 14.01l-3-3'], description: 'Konfiguration und Anzeigen auf Fehler prüfen.', endpoint: '/api/bot/verify',
         options: [] },
+      { id: 'status', title: 'Status', icon: ['M3 3v18h18', 'M18.7 8l-5.1 5.2-2.8-2.7L7 14.3'], description: 'Anzeigenstatus und Preisreduktions-Vorschau anzeigen.', endpoint: '/api/bot/status', options: [] },
       { id: 'diagnose', title: 'Diagnose', icon: ['M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z'], description: 'Browser- und System-Diagnose ausführen.', endpoint: '/api/bot/diagnose', options: [] },
       { id: 'version', title: 'Version', icon: ['M12 2v4', 'M12 18v4', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M12 16V12', 'M12 8h.01'], description: 'Installierte Bot-Version anzeigen.', endpoint: '/api/bot/version', method: 'GET', options: [] },
     ],

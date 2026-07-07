@@ -33,7 +33,7 @@
 
   &:active:not(:disabled) {
     transform: scale(0.97);
-    transition: transform 80ms var(--ease-out);
+    transition: transform var(--duration-instant) var(--ease-out);
   }
 
   &:disabled {
@@ -65,14 +65,25 @@
   }
 }
 
+.btnDangerSolid {
+  background-color: var(--red);
+  border-color: var(--red);
+  color: var(--on-overlay);
+
+  &:hover {
+    background-color: var(--red-hover);
+    border-color: var(--red-hover);
+  }
+}
+
 .btnWarning {
   background-color: var(--orange);
   border-color: var(--orange);
-  color: #fff;
+  color: var(--on-overlay);
 
   &:hover {
-    background-color: var(--orange-hover, color-mix(in srgb, var(--orange), #000 10%));
-    border-color: var(--orange-hover, color-mix(in srgb, var(--orange), #000 10%));
+    background-color: var(--orange-hover);
+    border-color: var(--orange-hover);
   }
 }
 
@@ -121,7 +132,7 @@
   border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: var(--radius-full);
-  animation: btnSpin 600ms linear infinite;
+  animation: btnSpin var(--duration-long) linear infinite;
 }
 
 @keyframes btnSpin {

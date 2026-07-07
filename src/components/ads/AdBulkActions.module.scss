@@ -10,7 +10,7 @@
   border-top: 1px solid var(--border-color);
   padding: var(--space-5) var(--space-6);
   box-shadow: var(--shadow-lg);
-  animation: slideUpFromBottom 300ms var(--ease-out);
+  animation: slideUpFromBottom var(--duration-slower) var(--ease-out);
 }
 
 .barInner {

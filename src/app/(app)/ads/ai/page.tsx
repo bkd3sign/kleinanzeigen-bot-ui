@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { AiGenerator } from '@/components/ads/AiGenerator/AiGenerator';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
-import { EmptyState, Spinner } from '@/components/ui';
+import { EmptyState, PageLoader } from '@/components/ui';
 
 export default function AiGeneratorPage() {
   const { isAiAvailable, isLoading } = useAiAvailable();
@@ -19,11 +19,7 @@ export default function AiGeneratorPage() {
   }, [isAiAvailable]);
 
   if (isLoading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-10)' }}>
-        <Spinner size="lg" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!isAiAvailable) {

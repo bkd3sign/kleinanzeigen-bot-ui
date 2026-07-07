@@ -5,7 +5,7 @@ import { useForm, FormProvider, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { adCreateSchema, type AdCreateInput } from '@/validation/schemas';
 import { Button, Toggle, useToast } from '@/components/ui';
-import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
+import { filterImageFiles, formatRejectMessage } from '@/lib/images/formats';
 import { InfoTip } from './InfoTip';
 import { DetailsSection } from './DetailsSection';
 import { LocationSection } from './LocationSection';
@@ -32,6 +32,9 @@ export interface AdFormData extends Partial<AdCreateInput> {
 
 interface AdFormProps {
   defaultValues?: AdFormData;
+  /** Legacy individual shipping_costs read from an existing ad — shown read-only
+   * as a migration hint; never enters the editable form model. */
+  legacyShippingCosts?: number | null;
   initialFiles?: File[];
   pendingFilesRef?: React.MutableRefObject<File[]>;
   onSubmit: (data: AdCreateInput) => Promise<void>;
@@ -64,18 +67,12 @@ interface AdFormProps {
 
 // Clean up fields that don't apply based on current selections
 function cleanupAdData(data: AdCreateInput) {
+  // Individual shipping_costs is no longer supported by kleinanzeigen.de / the bot.
+  // Always drop it so editing a legacy ad migrates it to predefined shipping_options.
+  data.shipping_costs = null;
   if (data.shipping_type !== 'SHIPPING') {
-    data.shipping_costs = null;
     data.shipping_options = null;
     data.sell_directly = false;
-  } else {
-    // Mutual exclusivity: shipping_options OR shipping_costs, never both
-    const hasOptions = data.shipping_options && data.shipping_options.length > 0;
-    if (hasOptions) {
-      data.shipping_costs = null;
-    } else {
-      data.shipping_options = null;
-    }
   }
   if (data.price_type === 'GIVE_AWAY') {
     data.price = 0;
@@ -96,6 +93,7 @@ const LOCKED_FIELD_LABELS: Record<string, string> = {
 
 export function AdForm({
   defaultValues,
+  legacyShippingCosts,
   initialFiles,
   pendingFilesRef,
   onSubmit,
@@ -184,7 +182,7 @@ export function AdForm({
     dragCounter.current = 0;
     setDragOver(false);
     const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
-    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
+    if (rejected.length > 0) toast('error', formatRejectMessage(rejected));
     if (accepted.length > 0 && dropHandlerRef.current) {
       dropHandlerRef.current(accepted);
     }
@@ -357,6 +355,7 @@ export function AdForm({
             onDropHandlerReady={(handler) => { dropHandlerRef.current = handler; }}
             lockedFields={lockedFields}
             defaultSizeGroup={defaultValues?.shipping_size}
+            legacyShippingCosts={legacyShippingCosts}
           />
 
           {/* Section 2: Ort (collapsed for new ads, expanded if editing with data) */}

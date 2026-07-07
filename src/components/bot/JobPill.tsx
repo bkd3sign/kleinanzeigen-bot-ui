@@ -5,8 +5,11 @@ import { useJobs, useCancelJob } from '@/hooks/useJobs';
 import { useAuth } from '@/hooks/useAuth';
 import { JobOutputModal } from './JobOutputModal';
 import { Badge, showConfirm, useToast } from '@/components/ui';
+import { jobStatusShortLabel } from '@/lib/bot/job-status';
 import Link from 'next/link';
 import styles from './JobPill.module.scss';
+import { useGuiUpdateCheck } from '@/hooks/useGuiUpdateCheck';
+import { useAboutModal } from '@/contexts/AboutModalContext';
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('de-DE', {
@@ -27,12 +30,15 @@ export function JobPill() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const cancelJob = useCancelJob();
   const { toast } = useToast();
+  const isAdmin = user?.role === 'admin';
+  const { latestVersion, visible: updateVisible, dismiss: dismissUpdate } = useGuiUpdateCheck(isAdmin);
+  const { openAbout } = useAboutModal();
 
   const handleCancel = useCallback(async (jobId: string, command: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const confirmed = await showConfirm(
       'Job abbrechen',
-      `Soll der Job \u201E${command}\u201C wirklich abgebrochen werden?`,
+      `Soll der Job „${command}“ wirklich abgebrochen werden?`,
       'Abbrechen',
       'Zurück',
     );
@@ -80,37 +86,65 @@ export function JobPill() {
   const failed = useMemo(() => recentJobs.filter((j) => j.status === 'failed').length, [recentJobs]);
   const withErrors = useMemo(() => recentJobs.filter((j) => j.status === 'completed_with_errors').length, [recentJobs]);
   const mfaRequired = useMemo(() => recentJobs.filter((j) => j.status === 'mfa_required').length, [recentJobs]);
+  const loginRequired = useMemo(() => recentJobs.filter((j) => j.status === 'login_required').length, [recentJobs]);
+  const waitingForUser = useMemo(() => recentJobs.filter((j) => j.status === 'waiting_for_user').length, [recentJobs]);
   const completed = useMemo(() => recentJobs.filter((j) => j.status === 'completed').length, [recentJobs]);
 
   // Check if pill should be hidden (all current jobs were dismissed)
   const newestJobId = recentJobs[0]?.job_id ?? null;
   const isDismissed = dismissedJobId !== null && newestJobId === dismissedJobId;
+  const hasJobs = recentJobs.length > 0 && !isDismissed;
 
-  if (recentJobs.length === 0 || isDismissed) return null;
+  // Jobs take priority; the update state fills the same slot when idle.
+  const showUpdate = !hasJobs && updateVisible;
 
-  const isAdmin = user?.role === 'admin';
+  if (!hasJobs && !showUpdate) return null;
+
+  // Update-available state: same pill slot, opens the About modal on click.
+  if (showUpdate && latestVersion) {
+    return (
+      <div className={styles.tracker}>
+        <div className={`${styles.pill} ${styles.pillUpdate}`}>
+          <button className={styles.updateBody} onClick={openAbout} title="Details anzeigen">
+            <span className={`${styles.dot} ${styles.dotUpdate}`} />
+            <span>Update verfügbar</span>
+            <span className={styles.updateVersion}>v{latestVersion}</span>
+          </button>
+          <button className={styles.updateClose} aria-label="Ausblenden" onClick={dismissUpdate}>×</button>
+        </div>
+      </div>
+    );
+  }
 
   // Dot class
   const dotClass = running > 0
     ? styles.dot
-    : mfaRequired > 0
+    : waitingForUser > 0
       ? `${styles.dot} ${styles.dotWarning}`
-      : failed > 0
-        ? `${styles.dot} ${styles.dotFailed}`
-        : withErrors > 0
-          ? `${styles.dot} ${styles.dotWarning}`
-          : `${styles.dot} ${styles.dotDone}`;
+      : mfaRequired > 0
+      ? `${styles.dot} ${styles.dotWarning}`
+      : loginRequired > 0
+        ? `${styles.dot} ${styles.dotWarning}`
+        : failed > 0
+          ? `${styles.dot} ${styles.dotFailed}`
+          : withErrors > 0
+            ? `${styles.dot} ${styles.dotWarning}`
+            : `${styles.dot} ${styles.dotDone}`;
 
   // Pill text
   const pillText = running > 0
-    ? `${running} Job${running > 1 ? 's' : ''} laufen`
+    ? `${running} Job${running > 1 ? 's' : ''} ${running > 1 ? 'laufen' : 'läuft'}`
+    : waitingForUser > 0
+      ? 'Anmeldung erforderlich'
     : mfaRequired > 0
-      ? 'mfa required'
-      : failed > 0
-        ? `${failed} fehlgeschlagen`
-        : withErrors > 0
-          ? `${withErrors} mit Fehlern`
-          : `${completed} abgeschlossen`;
+      ? 'MFA erforderlich'
+      : loginRequired > 0
+        ? 'Login erforderlich'
+        : failed > 0
+          ? `${failed} fehlgeschlagen`
+          : withErrors > 0
+            ? `${withErrors} mit Fehlern`
+            : `${completed} abgeschlossen`;
 
   return (
     <>
@@ -146,17 +180,18 @@ export function JobPill() {
                         : job.status === 'completed_with_errors' ? 'warning'
                         : job.status === 'failed' ? 'danger'
                         : job.status === 'mfa_required' ? 'warning'
+                        : job.status === 'login_required' ? 'warning'
                         : job.status === 'running' ? 'running'
                         : 'warning'
                       }
                     >
-                      {job.status === 'mfa_required' ? 'MFA' : job.status === 'completed_with_errors' ? 'with errors' : job.status}
+                      {jobStatusShortLabel(job.status, job.queue_position, job.retry_at)}
                     </Badge>
                   </div>
                   <div className={styles.itemInfo}>
                     <div className={styles.itemCmd}>{job.command}</div>
                     <div className={styles.itemTime}>
-                      {isAdmin && job.user_id ? `${job.user_id} · ` : ''}
+                      {isAdmin && job.user_id ? `${job.user_label || job.user_id} · ` : ''}
                       {formatTime(job.started_at)}
                     </div>
                   </div>

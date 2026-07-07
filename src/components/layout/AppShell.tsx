@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Header } from './Header';
 import { JobPill } from '@/components/bot/JobPill';
 import styles from './AppShell.module.scss';
+import { AboutModalProvider } from '@/contexts/AboutModalContext';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -28,12 +29,14 @@ export function AppShell({ children }: AppShellProps) {
   }, [pathname]);
 
   return (
-    <div className={styles.app}>
-      <div className={styles.mainWrapper}>
-        <Header />
-        <main ref={mainRef} className={`${styles.main} animPageEnter`}>{children}</main>
+    <AboutModalProvider>
+      <div className={styles.app}>
+        <div className={styles.mainWrapper}>
+          <Header />
+          <main ref={mainRef} className={`${styles.main} animPageEnter`}>{children}</main>
+        </div>
+        <JobPill />
       </div>
-      <JobPill />
-    </div>
+    </AboutModalProvider>
   );
 }

@@ -2,39 +2,16 @@
 
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api/client';
-import { useAds, useUpdateAdByFile } from '@/hooks/useAds';
 import { useAdStats } from '@/hooks/useAdStats';
-import { Badge, DropdownMenu, useToast, showConfirm } from '@/components/ui';
+import { useAdMenuBuilder } from '@/hooks/useAdMenuBuilder';
+import { Badge, DropdownMenu } from '@/components/ui';
 import { useCategoryName } from '@/hooks/useCategories';
 import type { AdListItem } from '@/types/ad';
-import { isExpired, isExpiringSoon, getExpiryDaysLeft, getExpiryDate, isReserved } from '@/lib/ads/status';
-import { getCurrentPrice, getAprError } from '@/lib/ads/pricing';
+import { isExpired, isExpiringSoon, getExpiryDaysLeft, getExpiryDate, getStatusLabel, getStatusVariant } from '@/lib/ads/status';
+import { getCurrentPrice, getAprError, getAprErrorTitle } from '@/lib/ads/pricing';
 import { detectSizeGroup } from '@/lib/shipping';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import styles from './AdCard.module.scss';
-
-// SVG icon helper for action menu items
-function Icon({ paths }: { paths: string[] }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {paths.map((d, i) => <path key={i} d={d} />)}
-    </svg>
-  );
-}
-
-const ICONS: Record<string, string[]> = {
-  Bearbeiten: ['M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7', 'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'],
-  Veröffentlichen: ['M22 2L11 13', 'M22 2l-7 20-4-9-9-4 20-7z'],
-  Aktualisieren: ['M23 4v6h-6', 'M1 20v-6h6', 'M3.51 9a9 9 0 0 1 14.85-3.36L23 10', 'M20.49 15a9 9 0 0 1-14.85 3.36L1 14'],
-  Verlängern: ['M12 2v10l4.5 4.5', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z'],
-  Duplizieren: ['M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'M9 2h6v4H9z'],
-  Vorlage: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
-  Löschen: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'],
-  Deaktivieren: ['M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94', 'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19', 'M14.12 14.12a3 3 0 0 1-4.24-4.24', 'M1 1l22 22'],
-  Aktivieren: ['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8', 'M12 9a3 3 0 0 1 0 6 3 3 0 0 1 0-6z'],
-};
 
 interface AdCardProps {
   ad: AdListItem;
@@ -72,39 +49,11 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
   const router = useRouter();
   const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number; maxHeight?: number } | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const { data: allAdsData } = useAds();
   const { data: statsData } = useAdStats();
   const catName = useCategoryName();
   const adStats = ad.id ? statsData?.ads[String(ad.id)] : undefined;
-  const refreshAds = useCallback(() => { queryClient.invalidateQueries({ queryKey: ['ads'] }); }, [queryClient]);
-  const updateByFile = useUpdateAdByFile();
-
-  const handleToggleActive = useCallback(() => {
-    const newActive = !ad.active;
-    updateByFile.mutate(
-      { filename: ad.file, data: { active: newActive } },
-      {
-        onSuccess: () => toast('success', newActive ? 'Anzeige aktiviert' : 'Anzeige deaktiviert'),
-        onError: (err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Ändern des Status'),
-      },
-    );
-  }, [ad.file, ad.active, updateByFile, toast]);
-
-  const encFile = ad.file.split('/').map(encodeURIComponent).join('/');
-
-  const handleRemove = useCallback(() => {
-    api.delete(`/api/ads/by-file/${encFile}`)
-      .then(() => { refreshAds(); toast('success', 'Anzeige entfernt'); })
-      .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Entfernen'));
-  }, [encFile, refreshAds, toast]);
-
-  const handleDuplicate = useCallback(() => {
-    api.post(`/api/ads/duplicate/${encFile}`)
-      .then(() => { refreshAds(); toast('success', 'Anzeige dupliziert'); })
-      .catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Duplizieren'));
-  }, [encFile, refreshAds, toast]);
+  const handleSaveAsTemplate = useCallback(() => setTemplateModalOpen(true), []);
+  const buildMenuItems = useAdMenuBuilder({ onSaveAsTemplate: handleSaveAsTemplate });
 
   const isDraft = !ad.id && !ad.is_archived;
   const expiring = isExpiringSoon(ad);
@@ -149,23 +98,9 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
     ad.is_changed ? styles.cardChanged : '',
   ].filter(Boolean).join(' ');
 
-  // Status badge
-  const statusVariant = isDraft ? 'muted'
-    : isReserved(ad, adStats) ? 'reserved'
-    : ad.active === false ? 'danger'
-    : expired ? 'danger'
-    : expiring ? 'warning'
-    : ad.is_orphaned ? 'warning'
-    : ad.is_changed ? 'info'
-    : 'success' as const;
-  const statusText = isDraft ? 'Entwurf'
-    : isReserved(ad, adStats) ? 'Reserviert'
-    : ad.active === false ? 'Inaktiv'
-    : expired ? 'Abgelaufen'
-    : expiring ? 'Läuft bald ab'
-    : ad.is_orphaned ? 'Verwaist'
-    : ad.is_changed ? 'Geändert'
-    : 'Aktiv';
+  // Status badge — label + colour from the single source in status.ts
+  const statusText = getStatusLabel(ad, adStats);
+  const statusVariant = getStatusVariant(statusText);
 
   // Price display
   const priceDisplay = formatPrice(ad);
@@ -195,32 +130,7 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
         <DropdownMenu
           pos={menuPos}
           onClose={() => setMenuPos(null)}
-          items={[
-            { label: 'Bearbeiten', icon: <Icon paths={ICONS.Bearbeiten} />, onClick: () => router.push(`/ads/edit?file=${encodeURIComponent(ad.file)}`) },
-            { label: !ad.active ? 'Aktivieren' : 'Deaktivieren', icon: <Icon paths={!ad.active ? ICONS.Aktivieren : ICONS.Deaktivieren} />, onClick: handleToggleActive },
-            { label: ad.id ? 'Erneut veröffentlichen' : 'Veröffentlichen', icon: <Icon paths={ICONS.Veröffentlichen} />, onClick: async () => {
-              if (!ad.id) {
-                const allDrafts = (allAdsData?.ads ?? []).filter(a => !a.id);
-                const ok = await showConfirm(
-                  'Alle neuen Anzeigen veröffentlichen',
-                  'Wichtig: Da „' + (ad.title || 'diese Anzeige') + '" noch keine Kleinanzeigen-ID hat, werden alle neuen Anzeigen in deinem Workspace veröffentlicht – nicht nur diese eine.',
-                  'Alle neuen veröffentlichen',
-                  'Abbrechen',
-                  allDrafts.length > 1 ? allDrafts.map(a => a.title || '(Ohne Titel)') : undefined,
-                );
-                if (!ok) return;
-              }
-              api.post('/api/bot/publish', { ads: ad.id ? String(ad.id) : 'new' }).then(refreshAds).catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Veröffentlichen'));
-            } },
-            ...(ad.id ? [
-              { label: 'Aktualisieren', icon: <Icon paths={ICONS.Aktualisieren} />, onClick: () => { api.post('/api/bot/update', { ads: String(ad.id) }).then(refreshAds).catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Aktualisieren')); } },
-              ...((expiring || expired) ? [{ label: 'Verlängern', icon: <Icon paths={ICONS.Verlängern} />, onClick: () => { api.post('/api/bot/extend', { ads: String(ad.id) }).then(refreshAds).catch((err) => toast('error', err instanceof Error ? err.message : 'Fehler beim Verlängern')); } }] : []),
-            ] : []),
-            { label: 'Duplizieren', icon: <Icon paths={ICONS.Duplizieren} />, onClick: handleDuplicate },
-            { label: 'Als Vorlage speichern', icon: <Icon paths={ICONS.Vorlage} />, onClick: () => setTemplateModalOpen(true) },
-            { label: 'Entfernen', icon: <Icon paths={ICONS.Löschen} />, danger: true, separator: true, onClick: handleRemove },
-            ...(ad.id ? [{ label: 'Löschen (Live)', icon: <Icon paths={ICONS.Löschen} />, danger: true, onClick: () => { api.post('/api/bot/delete', { ads: String(ad.id) }).then(refreshAds).catch(() => {}); } }] : []),
-          ]}
+          items={buildMenuItems(ad)}
         />
       )}
 
@@ -256,11 +166,7 @@ export function AdCard({ ad, selected = false, onSelect, selectMode = false, sty
           <Badge variant={statusVariant}>{statusText}</Badge>
           {ad.auto_price_reduction?.enabled && (() => {
             const aprErr = ad.price != null ? getAprError(ad.price, ad.auto_price_reduction!) : null;
-            const aprTitle = aprErr?.type === 'ineffective'
-              ? `Preisreduktion wirkungslos — die Reduktion ergibt nach Rundung auf ganze Euro keine Preisänderung`
-              : aprErr?.type === 'stuck'
-              ? `Preis steckt fest — ab ~${aprErr.stuckAt} € rundet die Reduktion auf 0, der Mindestpreis ${ad.auto_price_reduction!.min_price} € wird nie erreicht`
-              : undefined;
+            const aprTitle = aprErr ? getAprErrorTitle(aprErr, ad.auto_price_reduction!.min_price) : undefined;
             return (
               <Badge variant={aprErr ? 'danger' : 'warning'} title={aprTitle}>
                 ↓{ad.auto_price_reduction!.min_price ?? '?'}€{aprErr ? ' ⚠' : ''}

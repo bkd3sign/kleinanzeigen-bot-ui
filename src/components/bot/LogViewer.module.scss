@@ -30,24 +30,7 @@
   flex-shrink: 0;
 }
 
-.toggleBtn {
-  padding: var(--space-1-5) var(--space-3);
-  background-color: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-medium);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-family: inherit;
-}
-
-.toggleBtn:hover {
-  border-color: var(--border-color-hover);
-  color: var(--text-primary);
-}
-
+// .toggleBtn + .toggleBtnClose are shared global classes (src/styles/globals.css).
 .toggleBtnActive {
   background-color: var(--accent-muted);
   border-color: var(--accent);
@@ -72,31 +55,31 @@
   padding: var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
-  color: #fafafa;
+  color: var(--on-overlay-soft);
 
   // Terminal always has a dark background — force readable selection regardless of OS theme
   ::selection {
-    background: rgba(99, 102, 241, .5);
-    color: #fff;
+    background: var(--text-selection-bg);
+    color: var(--on-overlay);
   }
 }
 
 .line {
   display: flex;
   gap: var(--space-3);
-  padding: 1px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  padding: var(--space-px) 0;
+  border-bottom: 1px solid var(--border-overlay-soft);
 }
 
 .highlight {
   background: var(--yellow);
-  color: #000;
-  border-radius: 2px;
-  padding: 0 1px;
+  color: var(--on-bright);
+  border-radius: var(--space-0-5);
+  padding: 0 var(--space-px);
 }
 
 .empty {
@@ -115,24 +98,12 @@
   color: var(--text-danger);
 }
 
-/* Close button in fullscreen toolbar */
-.toggleBtnClose {
-  border-color: var(--color-danger, #ef4444);
-  color: var(--text-danger);
-
-  &:hover {
-    background-color: rgba(239, 68, 68, .1);
-    border-color: var(--color-danger, #ef4444);
-    color: var(--text-danger);
-  }
-}
-
 /* Fullscreen overlay */
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, .85);
+  z-index: var(--z-fullscreen);
+  background: var(--overlay-modal);
   display: flex;
   flex-direction: column;
   animation: overlayIn var(--transition-fast) ease;
@@ -155,7 +126,7 @@
 .toolbarFullscreen {
   border-bottom: 1px solid var(--border-color);
   padding: var(--space-3) var(--space-4);
-  background: var(--bg-elevated, var(--bg-card));
+  background: var(--bg-elevated);
 }
 
 .overlayBody {
@@ -195,11 +166,6 @@
     justify-content: flex-start;
   }
 
-  .toggleBtn {
-    font-size: 11px;
-    padding: var(--space-1) var(--space-2);
-  }
-
   .terminal {
     height: calc(100vh - var(--header-height) - 200px);
     min-height: 250px;
@@ -208,8 +174,8 @@
 
   .terminalBody {
     padding: var(--space-2);
-    font-size: 10px;
-    line-height: 1.4;
+    font-size: var(--font-size-2xs);
+    line-height: var(--leading-snug);
   }
 
   .line {

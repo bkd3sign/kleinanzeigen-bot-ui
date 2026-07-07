@@ -1,5 +1,6 @@
 import type { AdListItem } from '@/types/ad';
 import type { AdStatsEntry } from '@/types/stats';
+import type { BadgeVariant } from '@/components/ui';
 
 const DAY_MS = 86400000;
 
@@ -13,16 +14,16 @@ const EXPIRY_WARNING_DAYS = 7;
  * Calculate the next republication date for an ad.
  * Uses updated_on (last publish/update) as base, falls back to created_on.
  *
- * Bot logic: `if ad_age.days <= interval: SKIP` — the ad is only published
- * when `ad_age.days > interval`, i.e. at least `interval + 1` full days.
- * So the earliest next publish is `base + (interval + 1) days`.
+ * Bot logic (since fix #1099, kleinanzeigen-bot latest release): `if ad_age.days
+ * < interval: SKIP` — the ad becomes due exactly when `ad_age.days >= interval`.
+ * So the earliest next publish is `base + interval days`.
  */
 export function getNextRepubDate(ad: AdListItem): Date | null {
   const baseDate = ad.updated_on || ad.created_on;
   if (!baseDate || !ad.republication_interval) return null;
   const base = new Date(baseDate);
   if (isNaN(base.getTime())) return null;
-  return new Date(base.getTime() + (ad.republication_interval + 1) * DAY_MS);
+  return new Date(base.getTime() + ad.republication_interval * DAY_MS);
 }
 
 /**
@@ -64,4 +65,69 @@ export function getExpiryDaysLeft(ad: AdListItem): number {
   const expiry = getExpiryDate(ad);
   if (!expiry) return 0;
   return Math.ceil((expiry.getTime() - Date.now()) / DAY_MS);
+}
+
+export type AdStatusLabel =
+  | 'Entwurf' | 'Reserviert' | 'Inaktiv' | 'Abgelaufen'
+  | 'Läuft bald ab' | 'Verwaist' | 'Geändert' | 'Aktiv';
+
+/**
+ * Resolve the visible status label for an ad. Precedence order must stay in
+ * sync with badge rendering — sorting and rendering use this single source.
+ */
+export function getStatusLabel(ad: AdListItem, adStats?: AdStatsEntry): AdStatusLabel {
+  if (!ad.id && !ad.is_archived) return 'Entwurf';
+  if (isReserved(ad, adStats)) return 'Reserviert';
+  // "Verwaist" (gone from KA) is checked before "Inaktiv": an orphaned ad is
+  // typically also active:false locally, but being gone from the platform is
+  // the more meaningful state — and it mirrors liveDeleteAvailability(), which
+  // hides the delete action for orphaned ads.
+  if (ad.is_orphaned) return 'Verwaist';
+  if (ad.active === false || ad.is_archived) return 'Inaktiv';
+  if (isExpired(ad)) return 'Abgelaufen';
+  if (isExpiringSoon(ad)) return 'Läuft bald ab';
+  if (ad.is_changed) return 'Geändert';
+  return 'Aktiv';
+}
+
+// Single source for the badge colour of each status label — both AdTable and
+// AdCard derive the variant from here instead of re-deriving it inline (keeps
+// label and colour in sync, per the status-consistency invariant).
+const STATUS_VARIANTS: Record<AdStatusLabel, BadgeVariant> = {
+  Entwurf: 'muted',
+  Reserviert: 'reserved',
+  Verwaist: 'warning',
+  Inaktiv: 'danger',
+  Abgelaufen: 'danger',
+  'Läuft bald ab': 'warning',
+  Geändert: 'info',
+  Aktiv: 'success',
+};
+
+export function getStatusVariant(label: AdStatusLabel): BadgeVariant {
+  return STATUS_VARIANTS[label];
+}
+
+export type LiveDeleteAvailability = 'hidden' | 'blocked' | 'normal';
+
+/**
+ * Decide how the live "Inserat löschen" action behaves for an ad. The bot
+ * skips ads with `active: false` on delete (reserved ads are auto-flagged
+ * inactive by the KA online-sync), and there is nothing to delete once an ad
+ * is gone from KA.
+ *
+ * Decisions use raw fields, NOT getStatusLabel — the label resolves "Inaktiv"
+ * before "Verwaist", so an orphaned-and-inactive ad would otherwise look
+ * deletable when it is actually gone.
+ *
+ * - 'hidden':  no entry — draft without id, or orphaned (gone from KA)
+ * - 'blocked': online but bot-blocked (`active === false`, e.g. reserved) —
+ *              needs activation first → offer "activate & delete"
+ * - 'normal':  active listing → delete directly
+ */
+export function liveDeleteAvailability(ad: AdListItem): LiveDeleteAvailability {
+  if (!ad.id) return 'hidden';
+  if (ad.is_orphaned) return 'hidden';
+  if (ad.active === false) return 'blocked';
+  return 'normal';
 }

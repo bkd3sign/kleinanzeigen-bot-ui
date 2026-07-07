@@ -4,6 +4,8 @@ services:
     container_name: kleinanzeigen-bot-ui
     restart: unless-stopped
     ports:
+      # Port 3000 inside the container is nginx, which fronts the Next.js app
+      # (on internal port 3001) and serves noVNC same-origin under /bot-browser/.
       - "${PORT:-3737}:3000"
     volumes:
       - .:/workspace

@@ -1,0 +1,6 @@
+/* Centered full-page loading spinner — shared across all route pages */
+.pageLoader {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-10);
+}

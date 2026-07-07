@@ -3,13 +3,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useGenerateAd, useCreateAd } from '@/hooks/useAds';
+import { useCategoryName } from '@/hooks/useCategories';
 import { Button } from '@/components/ui/Button/Button';
 import { useToast } from '@/components/ui/Toast/ToastProvider';
 import { Spinner } from '@/components/ui/Spinner/Spinner';
 import { ImagePreview } from '@/components/ui';
-import { resizeImageForAi } from '@/lib/images/resize-client';
-import { filterImageFiles, allowedFormatsLabel } from '@/lib/images/formats';
 import { api } from '@/lib/api/client';
+import { useStagedImages, type StagedImage } from '@/hooks/useStagedImages';
+import { AttributeChips } from '@/components/ads/AttributeChips';
+import { buildEnumChipLabels } from '@/lib/ads/chip-attrs';
 import styles from './AiGenerator.module.scss';
 
 const EXAMPLE_PROMPTS = [
@@ -42,33 +44,39 @@ export function AiGenerator() {
   const router = useRouter();
   const generateAd = useGenerateAd();
   const createAd = useCreateAd();
+  const resolveCategoryName = useCategoryName('full');
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
+  const { staged, stagedFiles, sentFiles, fileInputKey, addFiles, removeAt, clearStaged, markSent, reset, resizeForAi } = useStagedImages();
   const [prompt, setPrompt] = useState('');
-  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [currentAd, setCurrentAd] = useState<GeneratedAd | null>(null);
-  const [allFiles, setAllFiles] = useState<File[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [showExamples, setShowExamples] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [fileInputKey, setFileInputKey] = useState(0);
+
+  // Object URLs for images shown in the chat history — revoked on reset/unmount.
+  const chatImageUrls = useRef<string[]>([]);
+  const revokeChatImageUrls = useCallback(() => {
+    for (const url of chatImageUrls.current) URL.revokeObjectURL(url);
+    chatImageUrls.current = [];
+  }, []);
+  useEffect(() => revokeChatImageUrls, [revokeChatImageUrls]);
 
   // Pick up staged files from ads page drop
   useEffect(() => {
     const win = window as unknown as Record<string, unknown>;
     const raw = win.__aiStagedFiles as File[] | undefined;
     if (raw?.length) {
-      const { accepted } = filterImageFiles(raw);
-      setStagedFiles(accepted);
+      addFiles(raw);
       delete win.__aiStagedFiles;
     }
-  }, []);
+  }, [addFiles]);
 
   // Auto-scroll chat to bottom on new messages
   useEffect(() => {
@@ -87,19 +95,18 @@ export function AiGenerator() {
 
   const handleGenerate = useCallback(async () => {
     const text = prompt.trim();
-    const hasImages = stagedFiles.length > 0;
     const isRefining = !!currentAd;
-    if (!text && !hasImages) return;
+    // Only send files that haven't been sent before
+    const toSend = stagedFiles.filter((f) => !sentFiles.includes(f));
+    if (!text && toSend.length === 0) return;
 
-    // Snapshot and clear staged files immediately to prevent race conditions
-    const sentFiles = hasImages ? [...stagedFiles] : [];
-    if (hasImages) setStagedFiles([]);
-    const previewUrls = sentFiles.map((f) => URL.createObjectURL(f));
+    // Create persistent preview URLs for the chat history, then clear the staging strip
+    const previewUrls = toSend.map((f) => URL.createObjectURL(f));
+    chatImageUrls.current.push(...previewUrls);
+    if (toSend.length > 0) clearStaged();
 
     // Add user message with text and/or image previews
-    if (text || hasImages) {
-      setMessages((prev) => [...prev, { type: 'user', content: text, images: previewUrls }]);
-    }
+    setMessages((prev) => [...prev, { type: 'user', content: text, images: previewUrls }]);
     setPrompt('');
     setShowExamples(false);
     if (textareaRef.current) {
@@ -109,14 +116,20 @@ export function AiGenerator() {
 
     try {
       let images: string[] = [];
-      if (hasImages) {
-        images = await Promise.all(sentFiles.map(resizeImageForAi));
+      if (toSend.length > 0) {
+        images = await resizeForAi(toSend);
+        // Abort only if nothing usable remains (no readable image and no text)
+        if (images.length === 0 && !text) {
+          setMessages((prev) => [...prev, { type: 'error', content: 'Keine der ausgewählten Bilder konnte verarbeitet werden.' }]);
+          return;
+        }
       }
 
-      // For refinement: pass current ad as JSON + change request
+      // For refinement: pass current ad as JSON + change request.
+      // Image-only refinement (no text) keeps the current ad as context.
       let finalPrompt = text;
       if (isRefining) {
-        const change = text || (hasImages ? 'Analysiere die neuen Bilder und verbessere die Anzeige.' : '');
+        const change = text || (toSend.length > 0 ? 'Analysiere die neuen Bilder und verbessere die Anzeige.' : '');
         finalPrompt = `${JSON.stringify(currentAd)}\n\nÄnderungswunsch: ${change}`;
       }
 
@@ -126,9 +139,8 @@ export function AiGenerator() {
       });
 
       const ad = result.ad as GeneratedAd;
-      if (sentFiles.length) setAllFiles((prev) => [...prev, ...sentFiles]);
+      if (toSend.length > 0) markSent(toSend);
       setCurrentAd(ad);
-      setFileInputKey((k) => k + 1);
 
       // Add preview message
       setMessages((prev) => [
@@ -148,17 +160,17 @@ export function AiGenerator() {
     } finally {
       setIsGenerating(false);
     }
-  }, [prompt, stagedFiles, currentAd, generateAd, toast]);
+  }, [prompt, stagedFiles, sentFiles, currentAd, generateAd, toast, clearStaged, markSent, resizeForAi]);
 
   const handleEditAndSave = useCallback(() => {
     if (!currentAd) return;
     const { images: _imgs, ...rest } = currentAd;
     sessionStorage.setItem('ai_ad_data', JSON.stringify(rest));
-    if (allFiles.length) {
-      (window as unknown as Record<string, unknown>).__aiStagedFiles = [...allFiles];
+    if (sentFiles.length) {
+      (window as unknown as Record<string, unknown>).__aiStagedFiles = [...sentFiles];
     }
     router.push('/ads/new?from=ai');
-  }, [currentAd, allFiles, router]);
+  }, [currentAd, sentFiles, router]);
 
   const handleQuickSave = useCallback(async () => {
     if (!currentAd) return;
@@ -172,9 +184,9 @@ export function AiGenerator() {
       } as Parameters<typeof createAd.mutateAsync>[0]) as { file: string };
 
       // Upload collected images
-      if (allFiles.length > 0) {
+      if (sentFiles.length > 0) {
         const url = '/api/images/upload?file=' + encodeURIComponent(result.file);
-        for (const file of allFiles) {
+        for (const file of sentFiles) {
           const formData = new FormData();
           formData.append('files', file);
           const res = await api.upload<{ rejected?: { name: string; reason: string }[] }>(url, formData).catch(() => null);
@@ -186,24 +198,24 @@ export function AiGenerator() {
       toast('success', `„${currentAd.title}" gespeichert`);
       setCurrentAd(null);
       setMessages([]);
-      setStagedFiles([]);
-      setAllFiles([]);
       setShowExamples(true);
+      reset();
+      revokeChatImageUrls();
       textareaRef.current?.focus();
     } catch (err) {
       toast('error', (err as Error).message);
     } finally {
       setIsSaving(false);
     }
-  }, [currentAd, createAd, toast, allFiles]);
+  }, [currentAd, createAd, toast, sentFiles, reset, revokeChatImageUrls]);
 
   const handleReset = useCallback(() => {
     setCurrentAd(null);
     setMessages([]);
-    setStagedFiles([]);
-    setAllFiles([]);
     setShowExamples(true);
-  }, []);
+    reset();
+    revokeChatImageUrls();
+  }, [reset, revokeChatImageUrls]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -216,33 +228,16 @@ export function AiGenerator() {
   );
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const { accepted, rejected } = filterImageFiles(Array.from(files));
-      if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-      if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
-    }
-    setFileInputKey((k) => k + 1);
-  }, [toast]);
-
-  const handleRemoveFile = useCallback((index: number) => {
-    setStagedFiles((prev) => {
-      const next = [...prev];
-      URL.revokeObjectURL(URL.createObjectURL(next[index]));
-      next.splice(index, 1);
-      return next;
-    });
-  }, []);
+    if (e.target.files?.length) addFiles(Array.from(e.target.files));
+  }, [addFiles]);
 
   // Paste images from clipboard
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const all = Array.from(e.clipboardData?.files || []);
     if (!all.length) return;
     e.preventDefault();
-    const { accepted, rejected } = filterImageFiles(all);
-    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
-  }, [toast]);
+    addFiles(all);
+  }, [addFiles]);
 
   // Drag & drop with fullscreen overlay
   const dragCounter = useRef(0);
@@ -251,10 +246,8 @@ export function AiGenerator() {
     e.preventDefault();
     dragCounter.current = 0;
     setIsDragOver(false);
-    const { accepted, rejected } = filterImageFiles(Array.from(e.dataTransfer.files));
-    if (rejected.length > 0) toast('error', `Format nicht unterstützt: ${rejected.join(', ')}. Erlaubt: ${allowedFormatsLabel()}`);
-    if (accepted.length > 0) setStagedFiles((prev) => [...prev, ...accepted]);
-  }, [toast]);
+    addFiles(Array.from(e.dataTransfer.files));
+  }, [addFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -365,16 +358,22 @@ export function AiGenerator() {
                 <div className={styles.previewCard}>
                   {[
                     ['Titel', ad.title],
-                    ['Preis', ad.price != null ? `${ad.price} € (${ad.price_type || 'NEGOTIABLE'})` : '–'],
-                    ['Kategorie', ad.category || '–'],
-                    ['Typ', ad.type || 'OFFER'],
-                    ['Versand', ad.shipping_type || 'SHIPPING'],
+                    ['Preis', ad.price != null
+                      ? `${ad.price} €${ad.price_type === 'NEGOTIABLE' ? ' VB' : ''}`
+                      : ad.price_type === 'GIVE_AWAY' ? 'Zu verschenken' : '–'],
+                    ['Kategorie', resolveCategoryName(ad.category as string) || '–'],
                   ].map(([label, value]) => (
                     <div key={label} className={styles.previewRow}>
                       <span className={styles.previewLabel}>{label}</span>
                       <span className={styles.previewValue}>{value}</span>
                     </div>
                   ))}
+
+                  <AttributeChips
+                    attrs={(ad.special_attributes as Record<string, unknown>) ?? {}}
+                    categoryId={ad.category}
+                    plainAttrs={buildEnumChipLabels(ad)}
+                  />
 
                   {ad.description && (
                     <div className={styles.previewDesc}>{String(ad.description)}</div>
@@ -423,10 +422,10 @@ export function AiGenerator() {
       </div>
 
       {/* Staging strip (above input) */}
-      {stagedFiles.length > 0 && (
+      {staged.length > 0 && (
         <StagingStrip
-          files={stagedFiles}
-          onRemove={handleRemoveFile}
+          images={staged}
+          onRemove={removeAt}
           onPreview={setPreviewSrc}
         />
       )}
@@ -491,47 +490,24 @@ export function AiGenerator() {
   );
 }
 
-// Staging strip with stable blob URLs and click-to-preview
+// Staging strip with click-to-preview. Object-URL lifecycle is owned by useStagedImages.
 function StagingStrip({
-  files,
+  images,
   onRemove,
   onPreview,
 }: {
-  files: File[];
+  images: StagedImage[];
   onRemove: (index: number) => void;
   onPreview: (src: string) => void;
 }) {
-  const urlMapRef = useRef<Map<File, string>>(new Map());
-
-  // Build stable URLs — only create new ones for files we haven't seen
-  const urls = files.map((f) => {
-    let url = urlMapRef.current.get(f);
-    if (!url) {
-      url = URL.createObjectURL(f);
-      urlMapRef.current.set(f, url);
-    }
-    return url;
-  });
-
-  // Cleanup removed files
-  useEffect(() => {
-    const currentFiles = new Set(files);
-    for (const [file, url] of urlMapRef.current) {
-      if (!currentFiles.has(file)) {
-        URL.revokeObjectURL(url);
-        urlMapRef.current.delete(file);
-      }
-    }
-  }, [files]);
-
   return (
     <div className={styles.stagingStrip}>
-      {files.map((file, i) => (
+      {images.map(({ file, url }, i) => (
         <div key={`${file.name}-${i}`} className={styles.stagedThumb}>
           <img
-            src={urls[i]}
+            src={url}
             alt={file.name}
-            onClick={() => onPreview(urls[i])}
+            onClick={() => onPreview(url)}
             style={{ cursor: 'pointer' }}
           />
           <button

@@ -28,19 +28,19 @@
   border-radius: var(--radius-full);
   border: none;
   background: var(--bg-overlay);
-  color: #fff;
+  color: var(--on-overlay);
   font-size: var(--font-size-3xl);
-  line-height: 1;
+  line-height: var(--leading-none);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: var(--z-local-1);
   transition: background var(--transition-fast);
   user-select: none;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--overlay-blackout);
   }
 }
 
@@ -58,11 +58,11 @@
   left: 50%;
   transform: translateX(-50%);
   background: var(--bg-overlay);
-  color: #fff;
+  color: var(--on-overlay);
   font-size: var(--font-size-sm);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-full);
-  z-index: 1;
+  z-index: var(--z-local-1);
   user-select: none;
 }
 
@@ -75,13 +75,13 @@
   border-radius: var(--radius-full);
   border: none;
   background: var(--bg-overlay);
-  color: #fff;
+  color: var(--on-overlay);
   font-size: var(--font-size-xl);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: var(--z-local-1);
   transition: background var(--transition-fast);
 
   &:hover {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { readConfig, writeConfig, buildConfig, buildServerConfig, BROWSER_DEFAULTS } from '../config';
+import { readConfig, writeConfig, buildConfig, buildServerConfig, BROWSER_DEFAULTS, applyProductDefaults, isEnvPlaceholder } from '../config';
 
 let tmpDir: string;
 
@@ -140,7 +140,79 @@ describe('BROWSER_DEFAULTS', () => {
     expect(args).toContain('--no-sandbox');
   });
 
-  it('has use_private_window set to true', () => {
-    expect(BROWSER_DEFAULTS.use_private_window).toBe(true);
+  it('has use_private_window set to false (warm session needs a persistent profile)', () => {
+    expect(BROWSER_DEFAULTS.use_private_window).toBe(false);
+  });
+});
+
+describe('applyProductDefaults', () => {
+  it('defaults local_path_renaming.mode to TEMPLATE_MATCH when absent', () => {
+    const result = applyProductDefaults({});
+    expect((result.publishing as Record<string, Record<string, unknown>>).local_path_renaming.mode)
+      .toBe('TEMPLATE_MATCH');
+  });
+
+  it('overrides the bot default OFF with TEMPLATE_MATCH (defaults layer)', () => {
+    const botDefaults = { publishing: { local_path_renaming: { mode: 'OFF' } } };
+    const result = applyProductDefaults(botDefaults);
+    expect((result.publishing as Record<string, Record<string, unknown>>).local_path_renaming.mode)
+      .toBe('TEMPLATE_MATCH');
+  });
+
+  it('defaults deleting.after_delete to DISABLE when absent', () => {
+    const result = applyProductDefaults({});
+    expect((result.deleting as Record<string, unknown>).after_delete).toBe('DISABLE');
+  });
+
+  it('overrides the bot default NONE with DISABLE (defaults layer)', () => {
+    const result = applyProductDefaults({ deleting: { after_delete: 'NONE' } });
+    expect((result.deleting as Record<string, unknown>).after_delete).toBe('DISABLE');
+  });
+
+  it('preserves sibling publishing keys', () => {
+    const result = applyProductDefaults({ publishing: { delete_old_ads: 'AFTER_PUBLISH' } });
+    const publishing = result.publishing as Record<string, unknown>;
+    expect(publishing.delete_old_ads).toBe('AFTER_PUBLISH');
+    expect((publishing.local_path_renaming as Record<string, unknown>).mode).toBe('TEMPLATE_MATCH');
+  });
+
+  it('preserves unrelated top-level keys and does not mutate the input', () => {
+    const input = { ad_defaults: { active: true }, publishing: { local_path_renaming: { mode: 'OFF' } } };
+    const result = applyProductDefaults(input);
+    expect(result.ad_defaults).toEqual({ active: true });
+    // input untouched
+    expect((input.publishing.local_path_renaming).mode).toBe('OFF');
+  });
+});
+
+describe('isEnvPlaceholder', () => {
+  it('detects a plain ${VAR} placeholder', () => {
+    expect(isEnvPlaceholder('${KLEINANZEIGEN_BOT_USERNAME}')).toBe(true);
+  });
+
+  it('detects a ${VAR:-default} placeholder with fallback', () => {
+    expect(isEnvPlaceholder('${KLEINANZEIGEN_BOT_PASSWORD:-changeme}')).toBe(true);
+  });
+
+  it('ignores surrounding whitespace', () => {
+    expect(isEnvPlaceholder('  ${VAR}  ')).toBe(true);
+  });
+
+  it('rejects a real email address', () => {
+    expect(isEnvPlaceholder('user@test.de')).toBe(false);
+  });
+
+  it('rejects a value that only contains a placeholder among other text', () => {
+    expect(isEnvPlaceholder('prefix-${VAR}')).toBe(false);
+  });
+
+  it('rejects empty, null and undefined', () => {
+    expect(isEnvPlaceholder('')).toBe(false);
+    expect(isEnvPlaceholder(null)).toBe(false);
+    expect(isEnvPlaceholder(undefined)).toBe(false);
+  });
+
+  it('rejects a placeholder whose name starts with a digit', () => {
+    expect(isEnvPlaceholder('${1VAR}')).toBe(false);
   });
 });

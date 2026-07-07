@@ -55,14 +55,14 @@
 .perfBarInner {
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width 0.8s var(--ease-out);
+  transition: width var(--duration-longer) var(--ease-out);
   background: var(--accent);
 }
 
 .perfBarDuration {
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width 0.8s var(--ease-out);
+  transition: width var(--duration-longer) var(--ease-out);
   background: var(--orange);
 }
 

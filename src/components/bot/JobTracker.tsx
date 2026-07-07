@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { useJobs, useCancelJob, useRepeatJob } from '@/hooks/useJobs';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useJobs, useCancelJob, useRepeatJob, useResumeJob } from '@/hooks/useJobs';
 import { useAuth } from '@/hooks/useAuth';
 import { useSort } from '@/hooks/useSort';
 import { useResponderStatus, useMessagingStatus } from '@/hooks/useMessages';
+import { getResponderBadge, canLoadInbox, type ResponderMode } from '@/lib/messaging/responderBadge';
+import { useVncLogin } from '@/hooks/useVncLogin';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, DropdownMenu, showConfirm, useToast } from '@/components/ui';
+import { Badge, Button, DropdownMenu, showConfirm, useToast } from '@/components/ui';
 import type { DropdownMenuItem } from '@/components/ui';
 import { JobOutputModal } from './JobOutputModal';
+import { VncLoginModal } from './VncLoginModal';
+import { jobStatusShortLabel } from '@/lib/bot/job-status';
 import type { Job, JobStatus, Schedule } from '@/types/bot';
 import { api } from '@/lib/api/client';
 import styles from './JobTracker.module.scss';
@@ -26,6 +30,8 @@ const FILTERS: FilterDef[] = [
   { label: 'Mit Fehlern', value: 'completed_with_errors' },
   { label: 'Fehlgeschlagen', value: 'failed' },
   { label: 'MFA ausstehend', value: 'mfa_required' },
+  { label: 'Login erforderlich', value: 'login_required' },
+  { label: 'Wartet auf Anmeldung', value: 'waiting_for_user' },
   { label: 'Automatisierung', value: 'scheduled', view: true },
   { label: 'KI-Nutzung', value: 'ki_messaging', view: true },
 ];
@@ -51,7 +57,7 @@ function durationMs(job: Job): number {
   return end - start;
 }
 
-const STATUS_ORDER: Record<JobStatus, number> = { running: 0, mfa_required: 1, queued: 2, completed: 3, completed_with_errors: 4, failed: 5 };
+const STATUS_ORDER: Record<JobStatus, number> = { running: 0, waiting_for_user: 1, mfa_required: 2, login_required: 3, queued: 4, completed: 5, completed_with_errors: 6, failed: 7 };
 
 function compareJobs(a: Job, b: Job, key: JobSortKey): number {
   if (key === 'job_id') return a.job_id.localeCompare(b.job_id);
@@ -67,6 +73,8 @@ function statusVariant(status: JobStatus): 'success' | 'danger' | 'running' | 'w
   if (status === 'completed_with_errors') return 'warning';
   if (status === 'failed') return 'danger';
   if (status === 'mfa_required') return 'warning';
+  if (status === 'login_required') return 'warning';
+  if (status === 'waiting_for_user') return 'warning';
   if (status === 'queued') return 'warning';
   return 'running';
 }
@@ -79,7 +87,7 @@ export function JobTracker() {
   const { data } = useJobs(apiFilter);
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const jobs = data?.jobs ?? [];
+  const jobs = useMemo(() => data?.jobs ?? [], [data?.jobs]);
 
   useEffect(() => {
     if (filter !== 'scheduled') return;
@@ -90,6 +98,7 @@ export function JobTracker() {
 
   const cancelJob = useCancelJob();
   const repeatJob = useRepeatJob();
+  const resumeJob = useResumeJob();
   const { toast } = useToast();
 
   const handleClose = useCallback(() => setSelectedJobId(null), []);
@@ -122,9 +131,44 @@ export function JobTracker() {
 
   const { sorted: sortedJobs, handleSort, sortIcon } = useSort<Job, JobSortKey>(jobs, 'started_at', compareJobs);
 
+  // Once the manual login succeeds: a paused job (waiting_for_user) just needs to resume
+  // (the bot is still running, attached to this browser); a finished login_required job
+  // needs a fresh retry. Resume wins — repeating a paused job would orphan it.
+  const handleVncSuccess = useCallback(() => {
+    const waitingJob = jobs.find((j) => j.status === 'waiting_for_user');
+    if (waitingJob) { resumeJob.mutate(waitingJob.job_id); return; }
+    const loginJob = jobs.find((j) => j.status === 'login_required');
+    if (loginJob) repeatJob.mutate(loginJob.job_id);
+  }, [jobs, repeatJob, resumeJob]);
+
+  const vnc = useVncLogin(handleVncSuccess);
+
   return (
     <div className={styles.wrapper}>
-      <div className={styles.filters}>
+      {(vnc.mode === 'visible' || (vnc.mode === 'auto' && vnc.loginRequired)) && (
+        <div className={`${styles.vncBar} scrollRowX`}>
+          <span className={styles.vncBarLabel}>Chrome-Browser</span>
+          <Badge variant={vnc.active ? 'success' : 'muted'}>
+            {vnc.active ? 'aktiv' : 'aus'}
+          </Badge>
+          <Button size="sm" variant="secondary" loading={vnc.busy} disabled={vnc.busy || vnc.modalOpen} onClick={vnc.openWindow}>
+            {vnc.active ? 'Ansehen' : 'Chrome öffnen'}
+          </Button>
+          {vnc.active && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={vnc.jobRunning}
+              title={vnc.jobRunning ? 'Läuft gerade ein Job — zum Stoppen den Job abbrechen' : undefined}
+              onClick={vnc.stop}
+            >
+              Beenden
+            </Button>
+          )}
+        </div>
+      )}
+
+      <div className={`${styles.filters} scrollRowX`}>
         {FILTERS.map((f, i) => (
           <React.Fragment key={f.label}>
             {f.view && !FILTERS[i - 1]?.view && <span className={styles.filterSep} />}
@@ -165,7 +209,7 @@ export function JobTracker() {
                 {schedules.map((s, i) => (
                   <tr key={s.id} className={`${styles.row} animRow`} style={{ '--anim-delay': `${i * 30}ms` } as React.CSSProperties}>
                     <td className={styles.td}>{s.name}</td>
-                    {isAdmin && <td className={`${styles.tdMuted} ${styles.hideMobile}`}>{s.created_by === 'system' ? 'System' : s.created_by || '–'}</td>}
+                    {isAdmin && <td className={`${styles.tdMuted} ${styles.hideMobile}`}>{s.created_by === 'system' ? 'System' : s.created_by_label || s.created_by || '–'}</td>}
                     <td className={styles.tdMono}>{s.command}</td>
                     <td className={`${styles.td} ${styles.hideMobile}`}>{s.cron}</td>
                     <td className={styles.td}>
@@ -177,7 +221,7 @@ export function JobTracker() {
                     <td className={styles.td}>
                       {s.last_status ? (
                         <Badge variant={statusVariant(s.last_status)}>
-                          {s.last_status === 'completed' ? 'OK' : s.last_status === 'completed_with_errors' ? 'with errors' : s.last_status === 'mfa_required' ? 'MFA' : 'Fehler'}
+                          {jobStatusShortLabel(s.last_status)}
                         </Badge>
                       ) : '–'}
                     </td>
@@ -224,17 +268,11 @@ export function JobTracker() {
                   onClick={() => setSelectedJobId(job.job_id)}
                 >
                   <td className={styles.tdMono}>{job.job_id}</td>
-                  {isAdmin && <td className={styles.tdMuted}>{job.user_id || '–'}</td>}
+                  {isAdmin && <td className={styles.tdMuted}>{job.user_label || job.user_id || '–'}</td>}
                   <td className={styles.td}>{job.command}</td>
                   <td className={styles.td}>
                     <Badge variant={statusVariant(job.status)}>
-                      {job.status === 'mfa_required'
-                        ? 'mfa required'
-                        : job.status === 'completed_with_errors'
-                          ? 'with errors'
-                          : job.status === 'queued' && job.queue_position
-                            ? `Wartend (#${job.queue_position})`
-                            : job.status}
+                      {jobStatusShortLabel(job.status, job.queue_position, job.retry_at)}
                     </Badge>
                   </td>
                   <td className={styles.tdMuted}>
@@ -248,6 +286,8 @@ export function JobTracker() {
                       job={job}
                       onRepeat={handleRepeat}
                       onCancel={handleCancel}
+                      showOpenChrome={vnc.mode === 'visible' && job.status === 'running'}
+                      onOpenChrome={vnc.openWindow}
                     />
                   </td>
                 </tr>
@@ -260,6 +300,10 @@ export function JobTracker() {
       {selectedJobId && (
         <JobOutputModal jobId={selectedJobId} onClose={handleClose} />
       )}
+
+      {vnc.modalOpen && (
+        <VncLoginModal open={vnc.modalOpen} token={vnc.token} onClose={vnc.close} />
+      )}
     </div>
   );
 }
@@ -268,10 +312,14 @@ function JobActionMenu({
   job,
   onRepeat,
   onCancel,
+  showOpenChrome,
+  onOpenChrome,
 }: {
   job: Job;
   onRepeat: (jobId: string, command: string) => void;
   onCancel: (jobId: string, command: string) => void;
+  showOpenChrome: boolean;
+  onOpenChrome: () => void;
 }) {
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
 
@@ -285,7 +333,17 @@ function JobActionMenu({
       ),
       onClick: () => onRepeat(job.job_id, job.command),
     }] : []),
-    ...(job.status === 'running' || job.status === 'queued' ? [{
+    // Visible mode only: open the attached Chrome to watch the bot live.
+    ...(showOpenChrome ? [{
+      label: 'Chrome öffnen',
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+        </svg>
+      ),
+      onClick: () => onOpenChrome(),
+    }] : []),
+    ...(job.status === 'running' || job.status === 'queued' || job.status === 'waiting_for_user' ? [{
       label: 'Abbrechen',
       icon: (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -320,7 +378,7 @@ interface AdminUserMessaging {
   id: string;
   display_name: string;
   email: string;
-  messaging: { sessionStatus: string; mode: string; running: boolean; lastPoll: number; sentCount: number; pendingCount: number };
+  messaging: { sessionStatus: string; mode: string; running: boolean; lastPoll: number; sentCount: number; oooSentCount: number; pendingCount: number };
   aiAdGen: { adGenerations: number; adImageAnalyses: number };
 }
 
@@ -349,6 +407,7 @@ function KiMessagingTable() {
           running: responder?.running ?? false,
           lastPoll: responder?.lastPoll ?? 0,
           sentCount: responder?.sentCount ?? 0,
+          oooSentCount: responder?.oooSentCount ?? 0,
           pendingCount: responder?.pendingCount ?? 0,
         },
         aiAdGen: responder?.aiAdGen ?? { adGenerations: 0, adImageAnalyses: 0 },
@@ -383,22 +442,23 @@ function KiMessagingTable() {
             <th className={styles.th}>Nachrichten</th>
             <th className={`${styles.th} ${styles.hideMobile}`}>Letzter Poll</th>
             <th className={styles.th}>Ausstehend</th>
+            <th className={styles.th}>OOO-Antworten</th>
             <th className={styles.th}>KI-Antworten</th>
             <th className={styles.th}>KI-Anzeigen</th>
             <th className={styles.th}>KI-Bilder</th>
           </tr>
         </thead>
         <tbody>
-          {users.map((u, i) => (
+          {users.map((u, i) => {
+            const modeBadge = getResponderBadge(u.messaging.mode as ResponderMode, true, canLoadInbox(u.messaging.sessionStatus));
+            return (
             <tr key={u.id} className={`${styles.row} animRow`} style={{ '--anim-delay': `${i * 30}ms` } as React.CSSProperties}>
               <td className={styles.tdMuted}>{u.email || u.id}</td>
               <td className={styles.td}>
-                {u.messaging.mode === 'off' ? (
-                  <Badge variant="muted">Aus</Badge>
+                {modeBadge ? (
+                  <Badge variant={modeBadge.variant}>{modeBadge.short}</Badge>
                 ) : (
-                  <Badge variant={u.messaging.mode === 'auto' ? 'success' : 'info'}>
-                    {u.messaging.mode === 'auto' ? 'Auto' : 'Review'}
-                  </Badge>
+                  <Badge variant="muted">Aus</Badge>
                 )}
               </td>
               <td className={styles.td}>
@@ -425,11 +485,13 @@ function KiMessagingTable() {
                   <Badge variant="warning">{u.messaging.pendingCount}</Badge>
                 ) : 0}
               </td>
+              <td className={styles.td}>{u.messaging.oooSentCount}</td>
               <td className={styles.td}>{u.messaging.mode === 'off' ? '–' : u.messaging.sentCount}</td>
               <td className={styles.td}>{u.aiAdGen.adGenerations}</td>
               <td className={styles.td}>{u.aiAdGen.adImageAnalyses}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

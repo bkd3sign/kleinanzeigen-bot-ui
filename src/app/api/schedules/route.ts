@@ -11,9 +11,24 @@ import {
   initScheduler,
 } from '@/lib/bot/scheduler';
 import { validateBotCommand } from '@/lib/security/validation';
+import { getUserLabelMap } from '@/lib/yaml/users';
+import type { Schedule } from '@/types/bot';
 
 // Initialize scheduler on first import (server startup)
 initScheduler();
+
+/**
+ * Attach a display-ready `created_by_label` (current email) to each schedule,
+ * resolved from the frozen creator id. The 'system' sentinel and unknown ids
+ * pass through unchanged; created_by stays the stable internal key.
+ */
+function withCreatorLabels(list: Schedule[]): Schedule[] {
+  const labels = getUserLabelMap();
+  return list.map((s) => ({
+    ...s,
+    created_by_label: s.created_by ? (labels[s.created_by] ?? s.created_by) : undefined,
+  }));
+}
 
 // System schedules (non-custom) can only be managed by admins
 function isSystemSchedule(id: string): boolean {
@@ -39,7 +54,7 @@ export async function GET(request: NextRequest) {
     // ?view=active — all active schedules from all users (for "Anstehend" tab)
     if (view === 'active') {
       const active = schedules.filter((s) => s.enabled && !isSystemSchedule(s.id));
-      return NextResponse.json({ schedules: active });
+      return NextResponse.json({ schedules: withCreatorLabels(active) });
     }
 
     // Default: own schedules + unforked system defaults
@@ -49,7 +64,7 @@ export async function GET(request: NextRequest) {
       ...schedules.filter((s) => isSystemSchedule(s.id) && !myForkedIds.has(s.id)),
       ...mySchedules,
     ];
-    return NextResponse.json({ schedules: visible });
+    return NextResponse.json({ schedules: withCreatorLabels(visible) });
   } catch (error) {
     return handleApiError(error);
   }

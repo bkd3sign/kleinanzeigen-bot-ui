@@ -5,14 +5,14 @@ import WebSocket from 'ws';
 import yaml from 'js-yaml';
 import type { ConversationsResponse, ConversationDetail } from '@/types/message';
 import { startResponder } from './responder';
-import { prepareCleanBrowserState, detectBrowserBin, killOrphanedChromium, cleanBrowserProfile } from '@/lib/bot/browser-cleanup';
+import { ensureProfileFreeForLaunch, detectBrowserBin, killOrphanedChromium, cleanBrowserProfile } from '@/lib/bot/browser-cleanup';
 import {
   createCdpClient,
-  cdpHttpGet,
   sleep,
   waitForCondition,
   extractCookiesFromCDP,
   waitForCdp,
+  openPageSocket,
 } from '@/lib/browser/cdp';
 import { STEALTH_ARGS, STEALTH_UA, injectStealthScript } from '@/lib/browser/stealth';
 import { LOGIN_URL, MFA_CODE_INPUT_SELECTOR, dismissConsentBanner, fillLoginForm, fillInput, detectLoginState } from '@/lib/browser/login';
@@ -21,6 +21,12 @@ import { SESSION_FILE as COOKIE_FILE } from '@/lib/ka/management-api';
 
 const GATEWAY_BASE = 'https://gateway.kleinanzeigen.de/messagebox/api';
 const CDP_BASE_PORT = 9223;
+
+// A live login promise always settles within ~90s (bounded CDP/login timeouts).
+// If a session is still 'starting'/'logging_in' past this, its driving promise is
+// dead (orphaned by HMR reload, killed process, or a hung CDP call) — flip to
+// 'error' so the frontend stops the endless spinner and shows the login button.
+const SESSION_START_TIMEOUT_MS = 180_000;
 
 interface PersistedCookies {
   cookies: string;
@@ -37,6 +43,23 @@ function saveCookiesToDisk(workspace: string, cookies: string, userId: number): 
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, JSON.stringify({ cookies, userId, savedAt: Date.now() } satisfies PersistedCookies));
   } catch { /* non-critical — browser session still works */ }
+}
+
+/**
+ * Build a browserless 'ready' session that serves messages over HTTP from cached cookies
+ * (no Chromium of its own). Used for both the disk-cookie path and the warm-VNC-cookie path
+ * so the session shape + persistence semantics live in one place.
+ */
+function readyCookieSession(workspace: string, cookies: string, userId: number, lastCookieRefresh: number): BrowserSession {
+  return {
+    proc: null,
+    cdpPort: getCdpPort(workspace),
+    cookies,
+    userId,
+    lastCookieRefresh,
+    status: 'ready',
+    startedAt: Date.now(),
+  };
 }
 
 /**
@@ -59,16 +82,33 @@ function loadCookiesFromDisk(workspace: string): PersistedCookies | null {
   return null;
 }
 
-// Each workspace gets a unique CDP port to avoid conflicts in multi-user mode
-let nextPort = CDP_BASE_PORT;
-const workspacePorts = new Map<string, number>();
+// Each workspace gets a unique messaging CDP port to avoid conflicts in multi-user mode.
+// State lives on globalThis (survives HMR, consistent with src/lib/vnc/ports.ts) and a freed
+// port is recycled, so the counter can't climb unbounded into the VNC CDP range (9300+).
+const pg = globalThis as unknown as {
+  __msgPorts?: Map<string, number>;
+  __msgPortFree?: number[];
+  __msgPortNext?: number;
+};
+if (!pg.__msgPorts) pg.__msgPorts = new Map<string, number>();
+if (!pg.__msgPortFree) pg.__msgPortFree = [];
+if (pg.__msgPortNext === undefined) pg.__msgPortNext = CDP_BASE_PORT;
+
 function getCdpPort(workspace: string): number {
-  let port = workspacePorts.get(workspace);
-  if (!port) {
-    port = nextPort++;
-    workspacePorts.set(workspace, port);
-  }
+  const ports = pg.__msgPorts!;
+  const existing = ports.get(workspace);
+  if (existing !== undefined) return existing;
+  const port = pg.__msgPortFree!.length > 0 ? pg.__msgPortFree!.shift()! : pg.__msgPortNext!++;
+  ports.set(workspace, port);
   return port;
+}
+
+/** Release a workspace's messaging CDP port back to the free list (called on stopSession). */
+function releaseCdpPort(workspace: string): void {
+  const port = pg.__msgPorts!.get(workspace);
+  if (port === undefined) return;
+  pg.__msgPorts!.delete(workspace);
+  pg.__msgPortFree!.push(port);
 }
 
 // Persistent browser session per workspace
@@ -81,6 +121,9 @@ interface BrowserSession {
   status: 'starting' | 'logging_in' | 'ready' | 'error' | 'browserless' | 'awaiting_mfa';
   error?: string;
   cdpWs?: WebSocket;
+  // Timestamp when the session entered 'starting' — used by the watchdog to
+  // detect a stuck start whose driving promise died without settling the status.
+  startedAt: number;
 }
 
 // Persist across HMR
@@ -131,20 +174,40 @@ export function isAccessTokenExpired(cookies: string): boolean {
 /**
  * Start a persistent browser session and log in automatically.
  * Uses the shared browser profile (.temp/browser-profile) for both bot CLI and messaging.
+ *
+ * With `cookieOnly: true` the function only restores a session from valid disk
+ * cookies and NEVER launches a browser — used by GET /status so merely opening
+ * the messages tab can't trigger an unwanted browser + auto-login. A real launch
+ * happens only on explicit user action (POST /status, the "Anmelden" button).
  */
-export async function ensureSession(workspace: string): Promise<BrowserSession> {
+export async function ensureSession(
+  workspace: string,
+  opts: { cookieOnly?: boolean } = {},
+): Promise<BrowserSession> {
   const existing = g.__msgSessions!.get(workspace);
   if (existing && existing.status === 'ready') {
     // Refresh cookies every 30 minutes (sessions are long-lived)
     if (Date.now() - existing.lastCookieRefresh > 30 * 60 * 1000) {
       try {
-        existing.cookies = await extractCookiesFromCDP(existing.cdpPort);
-        existing.lastCookieRefresh = Date.now();
-        if (!existing.userId) {
-          existing.userId = await fetchUserId(existing.cookies);
+        // Where to re-read cookies from: a browser-backed session uses its own CDP port.
+        // A cookie-only session (proc === null, e.g. derived from the VNC browser) must
+        // re-resolve the LIVE VNC port now — the stored port may belong to a recycled display
+        // (i.e. another workspace's VNC browser), which would leak that workspace's cookies.
+        // No live VNC source → keep the cached cookies instead of reading a foreign port.
+        let refreshPort: number | undefined = existing.proc ? existing.cdpPort : undefined;
+        if (!existing.proc) {
+          const { getVncSession } = await import('@/lib/vnc/lifecycle');
+          refreshPort = getVncSession(workspace)?.cdpPort;
         }
-        if (existing.userId) {
-          saveCookiesToDisk(workspace, existing.cookies, existing.userId);
+        if (refreshPort !== undefined) {
+          existing.cookies = await extractCookiesFromCDP(refreshPort);
+          existing.lastCookieRefresh = Date.now();
+          if (!existing.userId) {
+            existing.userId = await fetchUserId(existing.cookies);
+          }
+          if (existing.userId) {
+            saveCookiesToDisk(workspace, existing.cookies, existing.userId);
+          }
         }
       } catch { /* browser might have crashed, will restart */ }
     }
@@ -181,18 +244,65 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
     if (persisted) {
       const userId = await fetchUserId(persisted.cookies);
       if (userId && !isAccessTokenExpired(persisted.cookies)) {
-        const cookieSession: BrowserSession = {
-          proc: null,
-          cdpPort: getCdpPort(workspace),
-          cookies: persisted.cookies,
-          userId,
-          lastCookieRefresh: persisted.savedAt,
-          status: 'ready',
-        };
+        const cookieSession = readyCookieSession(workspace, persisted.cookies, userId, persisted.savedAt);
         g.__msgSessions!.set(workspace, cookieSession);
         return cookieSession;
       }
     }
+  }
+
+  // VNC holds the shared browser-profile (manual login / live view, e.g. visible mode).
+  // Launching a second Chromium on the same user-data-dir would collide (one instance per
+  // profile). Messaging is cookie+HTTP based, so instead of going dark we read the warm
+  // cookies straight from the running VNC browser and serve messages in HTTP mode — no
+  // second browser. Checked BEFORE the cookieOnly bail-out so the passive GET path
+  // (page load) also auto-connects from the warm VNC session, not just the POST ("Anmelden").
+  let vncCdpPort: number | undefined;
+  try {
+    const mod = await import('@/lib/vnc/lifecycle'); // dynamic: avoids a circular dependency
+    vncCdpPort = mod.getVncSession(workspace)?.cdpPort;
+  } catch { /* vnc module absent */ }
+  if (vncCdpPort !== undefined) {
+    // Read the VNC browser's cookies; if logged in, run as a ready cookie session. cdpPort is
+    // the messaging placeholder port (not the VNC port): the 30-min refresh re-resolves the
+    // live VNC port per workspace, so the session must NOT pin a port that can be recycled.
+    try {
+      const cookies = await extractCookiesFromCDP(vncCdpPort);
+      const userId = await fetchUserId(cookies);
+      if (userId && !isAccessTokenExpired(cookies)) {
+        const cookieSession = readyCookieSession(workspace, cookies, userId, Date.now());
+        saveCookiesToDisk(workspace, cookies, userId);
+        g.__msgSessions!.set(workspace, cookieSession);
+        return cookieSession;
+      }
+    } catch { /* VNC browser not reachable / not logged in → handle below */ }
+
+    // VNC present but not logged in yet. GET (cookieOnly) must not launch anything → surface
+    // as not_started so the page shows the connect prompt. POST stays browserless until the
+    // user signs in via VNC; stopVncLogin → restartAllBrowserless revives us when VNC ends.
+    if (opts.cookieOnly) {
+      throw new Error('Keine gültige Session — Login erforderlich');
+    }
+    const browserless: BrowserSession = existing ?? {
+      proc: null,
+      cdpPort: getCdpPort(workspace),
+      cookies: '',
+      userId: null,
+      lastCookieRefresh: 0,
+      status: 'browserless',
+      startedAt: Date.now(),
+    };
+    browserless.status = 'browserless';
+    browserless.error = undefined;
+    g.__msgSessions!.set(workspace, browserless);
+    return browserless;
+  }
+
+  // Cookie-only mode (GET /status) with no VNC browser and no valid disk cookies: stop here
+  // instead of launching a browser. The page stays 'not_started' until the user clicks
+  // "Anmelden" (POST /status).
+  if (opts.cookieOnly) {
+    throw new Error('Keine gültige Session — Login erforderlich');
   }
 
   // Clean up old session — SIGKILL for immediate death, same reason as stopForBot
@@ -204,8 +314,11 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
   const profileDir = path.join(workspace, '.temp', 'browser-profile');
   fs.mkdirSync(profileDir, { recursive: true });
 
-  // Kill orphaned chromium + clean stale profile files
-  prepareCleanBrowserState(workspace);
+  // Kill any Chromium holding the shared profile and POLL until the SingletonLock is actually
+  // released before spawning — without this wait a slow-dying holder (bot CLI just exited, or an
+  // orphan on a thrashing NAS) makes this launch collide and fail exactly like the scheduled bot.
+  // fullWipe clears crash-leftovers; the message browser re-establishes its session from cookies.
+  await ensureProfileFreeForLaunch(workspace, { fullWipe: true });
 
   const session: BrowserSession = {
     proc: null,
@@ -214,6 +327,7 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
     userId: null,
     lastCookieRefresh: 0,
     status: 'starting',
+    startedAt: Date.now(),
   };
   g.__msgSessions!.set(workspace, session);
 
@@ -245,17 +359,7 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
 
     // Connect CDP and inject stealth patches BEFORE any real navigation
     // so Auth0 never sees an unpatched headless browser fingerprint
-    const initTargets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(session.cdpPort, '/json');
-    const initPage = initTargets.find(t => t.type === 'page');
-    if (!initPage) throw new Error('Kein Browser-Tab');
-
-    const initWsUrl = initPage.webSocketDebuggerUrl || `ws://127.0.0.1:${session.cdpPort}/devtools/page/${initPage.id}`;
-    const initWs = new WebSocket(initWsUrl);
-    await new Promise<void>((resolve, reject) => {
-      initWs.on('open', () => resolve());
-      initWs.on('error', reject);
-      setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
-    });
+    const initWs = await openPageSocket(session.cdpPort);
     const initCdp = createCdpClient(initWs);
     await initCdp.send('Page.enable');
     await initCdp.send('Runtime.enable');
@@ -279,29 +383,20 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
       }
       // JSESSIONID valid but access_token expired — navigate to KA to get fresh token without re-login
       try {
-        const refreshTargets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(session.cdpPort, '/json');
-        const refreshPage = refreshTargets.find(t => t.type === 'page');
-        if (refreshPage) {
-          const refreshWsUrl = refreshPage.webSocketDebuggerUrl || `ws://127.0.0.1:${session.cdpPort}/devtools/page/${refreshPage.id}`;
-          const refreshWs = new WebSocket(refreshWsUrl);
-          await new Promise<void>((resolve, reject) => {
-            refreshWs.on('open', () => resolve());
-            refreshWs.on('error', reject);
-            setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
-          });
-          const refreshCdp = createCdpClient(refreshWs);
-          await refreshCdp.send('Page.navigate', { url: 'https://www.kleinanzeigen.de/' });
-          await sleep(3000);
-          refreshWs.close();
-          const freshCookies = await extractCookiesFromCDP(session.cdpPort);
-          if (!isAccessTokenExpired(freshCookies)) {
-            session.cookies = freshCookies;
-            session.userId = userId;
-            session.lastCookieRefresh = Date.now();
-            session.status = 'ready';
-            saveCookiesToDisk(workspace, freshCookies, userId);
-            return session;
-          }
+        // openPageSocket throws if the browser has no page tab → caught here → full login.
+        const refreshWs = await openPageSocket(session.cdpPort);
+        const refreshCdp = createCdpClient(refreshWs);
+        await refreshCdp.send('Page.navigate', { url: 'https://www.kleinanzeigen.de/' });
+        await sleep(3000);
+        refreshWs.close();
+        const freshCookies = await extractCookiesFromCDP(session.cdpPort);
+        if (!isAccessTokenExpired(freshCookies)) {
+          session.cookies = freshCookies;
+          session.userId = userId;
+          session.lastCookieRefresh = Date.now();
+          session.status = 'ready';
+          saveCookiesToDisk(workspace, freshCookies, userId);
+          return session;
         }
       } catch { /* refresh failed, fall through to full login */ }
     }
@@ -320,18 +415,7 @@ export async function ensureSession(workspace: string): Promise<BrowserSession> 
     }
 
     // Open a fresh CDP WebSocket for the login flow
-    const targets = await cdpHttpGet<Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>>(session.cdpPort, '/json');
-    const page = targets.find(t => t.type === 'page');
-    if (!page) throw new Error('Kein Browser-Tab');
-
-    const wsUrl = page.webSocketDebuggerUrl || `ws://127.0.0.1:${session.cdpPort}/devtools/page/${page.id}`;
-    const ws = new WebSocket(wsUrl);
-    await new Promise<void>((resolve, reject) => {
-      ws.on('open', () => resolve());
-      ws.on('error', reject);
-      setTimeout(() => reject(new Error('CDP WebSocket timeout')), 10000);
-    });
-
+    const ws = await openPageSocket(session.cdpPort);
     const cdp = createCdpClient(ws);
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
@@ -401,6 +485,7 @@ export function stopSession(workspace: string): void {
     try { session.cdpWs.close(); } catch { /* fine */ }
   }
   g.__msgSessions!.delete(workspace);
+  releaseCdpPort(workspace);
 }
 
 /**
@@ -408,12 +493,12 @@ export function stopSession(workspace: string): void {
  * Bot has ABSOLUTE priority — messaging is downgraded to browserless mode
  * where it retains cached cookies for API calls but cannot refresh them.
  */
-export function stopForBot(workspace: string): void {
+export async function stopForBot(workspace: string): Promise<void> {
   const session = g.__msgSessions!.get(workspace);
   if (!session) {
     // No tracked session — but orphaned chromium might still be running
     // (e.g. after server restart where session tracking was lost)
-    killOrphanedChromium(workspace);
+    await killOrphanedChromium(workspace);
     cleanBrowserProfile(workspace);
     return;
   }
@@ -437,7 +522,7 @@ export function stopForBot(workspace: string): void {
   }
 
   // Fallback: kill any remaining orphaned chromium using this profile
-  killOrphanedChromium(workspace);
+  await killOrphanedChromium(workspace);
 
   // Remove stale lock files so the bot's browser can acquire the profile
   cleanBrowserProfile(workspace);
@@ -580,6 +665,21 @@ export async function getMessagingStatus(workspace: string): Promise<{
   if (!existing) {
     return { status: 'not_started', userId: null };
   }
+
+  // Watchdog: a start that has been stuck past the timeout has lost its driving
+  // promise (HMR reload, killed process, hung CDP call). Flip it to 'error' so the
+  // frontend stops polling and shows the login button instead of an endless spinner.
+  if (
+    (existing.status === 'starting' || existing.status === 'logging_in') &&
+    Date.now() - existing.startedAt > SESSION_START_TIMEOUT_MS
+  ) {
+    if (existing.proc) {
+      try { existing.proc.kill('SIGKILL'); } catch { /* already gone */ }
+    }
+    existing.status = 'error';
+    existing.error = 'Anmeldung dauerte zu lange und wurde abgebrochen. Bitte erneut versuchen.';
+  }
+
   return {
     status: existing.status,
     userId: existing.userId,
@@ -617,15 +717,17 @@ export function initMessaging(): void {
 
   if (workspaces.length === 0) return;
 
-  // Only auto-start browser for workspaces with KI mode enabled
-  // Other workspaces start on-demand when user opens /messages
+  // Auto-start the messaging browser + responder for workspaces with an active responder
+  // mode (KI auto/review or out-of-office — all need the browser to send replies).
+  // Without this, out-of-office silently stays off after a server restart until a manual
+  // config re-save. Other workspaces start on-demand when the user opens /messages.
   for (const ws of workspaces) {
     const rulesPath = path.join(ws, '.messaging-rules.yaml');
     try {
       const rules = yaml.load(fs.readFileSync(rulesPath, 'utf-8')) as Record<string, string>;
-      if (rules.mode === 'auto' || rules.mode === 'review') {
+      if (rules.mode === 'auto' || rules.mode === 'review' || rules.mode === 'out_of_office') {
         ensureSession(ws)
-          .then(() => startResponder(ws, rules.mode as 'auto' | 'review'))
+          .then(() => startResponder(ws, rules.mode as 'auto' | 'review' | 'out_of_office'))
           .catch(() => {});
       }
     } catch { /* no config — skip, browser starts on-demand */ }

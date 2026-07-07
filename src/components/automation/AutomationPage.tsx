@@ -5,6 +5,7 @@ import { api } from '@/lib/api/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Input, Button, Toggle, Badge, useToast } from '@/components/ui';
 import type { Schedule, JobStatus } from '@/types/bot';
+import { jobStatusShortLabel } from '@/lib/bot/job-status';
 import styles from './AutomationPage.module.scss';
 
 const CRON_PRESETS: { label: string; value: string }[] = [
@@ -85,6 +86,8 @@ function statusBadgeVariant(status: JobStatus | undefined): 'success' | 'danger'
   if (status === 'completed_with_errors') return 'warning';
   if (status === 'failed') return 'danger';
   if (status === 'mfa_required') return 'warning';
+  if (status === 'login_required') return 'warning';
+  if (status === 'waiting_for_user') return 'warning';
   return 'muted';
 }
 
@@ -385,7 +388,7 @@ export function AutomationPage() {
                   <span className={styles.detailValue}>{formatDate(schedule.last_run)}</span>
                   {schedule.last_status && (
                     <Badge variant={statusBadgeVariant(schedule.last_status)}>
-                      {schedule.last_status === 'completed' ? 'OK' : schedule.last_status === 'completed_with_errors' ? 'with errors' : schedule.last_status === 'mfa_required' ? 'MFA' : schedule.last_status === 'failed' ? 'failed' : '–'}
+                      {jobStatusShortLabel(schedule.last_status)}
                     </Badge>
                   )}
                 </div>

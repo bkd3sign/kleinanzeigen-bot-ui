@@ -75,7 +75,7 @@
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
-  animation: slideUp 200ms var(--ease-out);
+  animation: slideUp var(--duration-medium) var(--ease-out);
 }
 
 .panelHeader {
@@ -99,7 +99,7 @@
   font-size: var(--font-size-base);
   cursor: pointer;
   padding: var(--space-1);
-  line-height: 1;
+  line-height: var(--leading-none);
 
   &:hover {
     color: var(--text-primary);
@@ -188,7 +188,7 @@
   font-size: var(--font-size-base);
   cursor: pointer;
   padding: var(--space-1);
-  line-height: 1;
+  line-height: var(--leading-none);
   flex-shrink: 0;
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
@@ -213,4 +213,69 @@
     width: calc(100vw - var(--space-6));
     right: 0;
   }
+}
+
+// Update-available variant — reuses .tracker + .pill; .pill acts as a
+// flex container here, with a clickable body and a dismiss button inside.
+.pillUpdate {
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border-color: var(--accent);
+  gap: var(--space-1);
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.updateBody {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  padding: 0;
+}
+
+.updateVersion {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.updateClose {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-7);
+  height: var(--space-7);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+  line-height: var(--leading-none);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  transition: color var(--transition-fast), background var(--transition-fast);
+
+  // Expand the tap area to 44x44 (--space-11) without growing the visual size.
+  &::after {
+    content: '';
+    position: absolute;
+    inset: calc((var(--space-11) - var(--space-7)) / -2);
+  }
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+}
+
+// Static dot for the update state — the base .dot pulses (running-job signal).
+.dotUpdate {
+  animation: none;
 }

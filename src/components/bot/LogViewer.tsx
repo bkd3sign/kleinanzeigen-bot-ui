@@ -131,21 +131,21 @@ export function LogViewer() {
       <div className={styles.toolbarRight}>
         <button
           type="button"
-          className={`${styles.toggleBtn} ${autoScroll ? styles.toggleBtnActive : ''}`}
+          className={`toggleBtn ${autoScroll ? styles.toggleBtnActive : ''}`}
           onClick={() => handleToggleAutoScroll(ref)}
         >
           ↓ Auto-Scroll
         </button>
         <button
           type="button"
-          className={`${styles.toggleBtn} ${isLive ? styles.toggleBtnActive : ''}`}
+          className={`toggleBtn ${isLive ? styles.toggleBtnActive : ''}`}
           onClick={handleToggleLive}
         >
           ● Live
         </button>
         <button
           type="button"
-          className={`${styles.toggleBtn} ${refreshing ? styles.toggleBtnActive : ''}`}
+          className={`toggleBtn ${refreshing ? styles.toggleBtnActive : ''}`}
           onClick={handleRefresh}
         >
           ↻ Refresh
@@ -153,7 +153,7 @@ export function LogViewer() {
         {fullscreen ? (
           <button
             type="button"
-            className={`${styles.toggleBtn} ${styles.toggleBtnClose}`}
+            className="toggleBtn toggleBtnClose"
             onClick={() => setIsFullscreen(false)}
           >
             ✕ Schließen
@@ -161,7 +161,7 @@ export function LogViewer() {
         ) : (
           <button
             type="button"
-            className={styles.toggleBtn}
+            className="toggleBtn"
             onClick={() => setIsFullscreen(true)}
             title="Vollbild"
           >

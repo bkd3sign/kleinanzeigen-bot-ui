@@ -39,6 +39,16 @@ export function useStartMessaging() {
   });
 }
 
+export function useStopMessaging() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete('/api/messages/status'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messaging-status'] });
+    },
+  });
+}
+
 export function usePrepareMessagingMfa() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -96,10 +106,11 @@ export function useConversation(conversationId: string | null) {
 }
 
 interface ResponderStatus {
-  mode: 'auto' | 'review' | 'off';
+  mode: 'auto' | 'review' | 'off' | 'out_of_office';
   running: boolean;
   lastPoll: number;
   sentCount: number;
+  oooSentCount: number;
   pendingCount: number;
   pendingReplies: Array<{
     conversationId: string;

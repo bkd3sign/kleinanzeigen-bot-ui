@@ -38,7 +38,7 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  animation: cardSlideUp 300ms var(--ease-out) both;
+  animation: cardSlideUp var(--duration-slower) var(--ease-out) both;
 }
 
 .inviteLabel {
@@ -56,7 +56,7 @@
 .inviteLinkInput {
   flex: 1;
   height: 36px;
-  padding: 4px 12px;
+  padding: var(--space-1) var(--space-3);
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -147,11 +147,11 @@
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   cursor: pointer;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-  line-height: 1;
+  line-height: var(--leading-none);
   transition: all var(--transition-fast);
 
   &:hover {
@@ -178,5 +178,5 @@
   .thActions, .tdActions { width: 48px; }
   .td, .th { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); }
   .inviteResult { padding: var(--space-3); overflow: hidden; }
-  .inviteLinkInput { max-width: 100%; box-sizing: border-box; font-size: var(--font-size-xs); height: 32px; padding: 2px 8px; }
+  .inviteLinkInput { max-width: 100%; box-sizing: border-box; font-size: var(--font-size-xs); height: 32px; padding: var(--space-0-5) var(--space-2); }
 }

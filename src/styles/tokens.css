@@ -30,6 +30,7 @@
   --yellow: #fbbf24;
   --yellow-muted: rgba(251, 191, 36, 0.1);
   --orange: #fb923c;
+  --orange-hover: color-mix(in srgb, var(--orange), #000 10%);
   --orange-muted: rgba(251, 146, 60, 0.1);
 
   --text-primary: #fafafa;
@@ -83,6 +84,7 @@
   --yellow: #ca8a04;
   --yellow-muted: rgba(202, 138, 4, 0.1);
   --orange: #ea580c;
+  --orange-hover: color-mix(in srgb, var(--orange), #000 10%);
   --orange-muted: rgba(234, 88, 12, 0.08);
 
   --text-primary: #141413;
@@ -116,8 +118,10 @@
   --space-0: 0;
   --space-px: 1px;
   --space-0-5: 2px;
+  --space-0-75: 3px;
   --space-1: 4px;
   --space-1-5: 6px;
+  --space-1-75: 7px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -136,36 +140,142 @@
   --font-mono: "JetBrains Mono", "SF Mono", Monaco,
     Consolas, monospace;
 
-  --font-size-2xs: 0.625rem;
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.875rem;
-  --font-size-base: 1rem;
-  --font-size-lg: 1.125rem;
-  --font-size-xl: 1.25rem;
-  --font-size-2xl: 1.5rem;
-  --font-size-3xl: 1.875rem;
+  --font-size-5xs: 0.4375rem; /* 7px */
+  --font-size-4xs: 0.5rem;    /* 8px */
+  --font-size-3xs: 0.5625rem; /* 9px */
+  --font-size-2xs: 0.625rem;  /* 10px */
+  --font-size-xs-plus: 0.6875rem; /* 11px */
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm-minus: 0.8125rem; /* 13px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-base: 1rem;     /* 16px */
+  --font-size-lg: 1.125rem;   /* 18px */
+  --font-size-xl: 1.25rem;    /* 20px */
+  --font-size-xl-plus: 1.375rem; /* 22px */
+  --font-size-2xl: 1.5rem;    /* 24px */
+  --font-size-3xl: 1.875rem;  /* 30px */
 
+  --leading-none: 1;
   --leading-tight: 1.25;
+  --leading-snug: 1.4;
+  --leading-snug-plus: 1.45;
   --leading-normal: 1.5;
+  --leading-loose: 1.6;
   --leading-relaxed: 1.625;
+  --leading-input: 20px; /* fixed px line-height for form controls (Input/Select/etc.) */
 
+  --font-light: 300;
   --font-normal: 400;
   --font-medium: 500;
   --font-semibold: 600;
   --font-bold: 700;
 
+  /* Overlays — theme-independent (used over images/dark backgrounds) */
+  --on-overlay: #fff;
+  --on-overlay-soft: #fafafa;
+  --on-bright: #000;
+  --overlay-faint: rgba(0, 0, 0, 0.04);
+  --overlay-soft: rgba(0, 0, 0, 0.10);
+  --overlay-medium: rgba(0, 0, 0, 0.35);
+  --overlay-mid: rgba(0, 0, 0, 0.45);
+  --overlay-strong: rgba(0, 0, 0, 0.50);
+  --overlay-heavy: rgba(0, 0, 0, 0.60);
+  --overlay-darker: rgba(0, 0, 0, 0.70);
+  --overlay-modal: rgba(0, 0, 0, 0.85);
+  --overlay-blackout: rgba(0, 0, 0, 0.90);
+
+  /* Terminal text selection (used in LogViewer) — indigo, theme-independent */
+  --text-selection-bg: rgba(99, 102, 241, 0.5);
+
+  /* Red-500 primitive — theme-independent (LogViewer close button, AdBulkEditModal border) */
+  --red-500: #ef4444;
+  --red-500-muted: rgba(239, 68, 68, 0.1);
+  --red-500-translucent: rgba(239, 68, 68, 0.3);
+
+  /* Green-500 primitive — theme-independent (AdForm success highlight) */
+  --green-500-muted: rgba(34, 197, 94, 0.15);
+
+  /* Soft border on dark overlays (LogViewer log line separator) */
+  --border-overlay-soft: rgba(255, 255, 255, 0.03);
+
+  /* Shadow alpha — for box-shadow on cards */
+  --shadow-card: rgba(0, 0, 0, 0.1);
+
+  /* Status colors on image overlays — theme-independent (85% alpha solids for visibility on photos) */
+  --green-overlay: rgba(34, 197, 94, 0.85);
+  --red-overlay: rgba(239, 68, 68, 0.85);
+  --yellow-overlay: rgba(245, 158, 11, 0.85);
+  --blue-overlay: rgba(59, 130, 246, 0.85);
+  --gray-overlay: rgba(100, 100, 100, 0.85);
+  --purple-overlay: rgba(109, 40, 217, 0.85);
+
+  /* MfaBanner — Material amber (theme-independent on purpose, draws attention) */
+  --warning-bg: rgba(255, 193, 7, 0.08);
+  --warning-border: rgba(255, 193, 7, 0.25);
+  --warning-icon: #ffc107;
+
+  /* Purple — theme-independent (reserved badge, AI gradient, status marker) */
+  --purple: #8b5cf6;
+  --purple-muted: rgba(139, 92, 246, 0.15);
+  --purple-light: #c084fc;
+
+  /* AI brand colors (theme-independent, used for KI-Generator gradient & glow) */
+  --ai-color: #a855f7;
+  --ai-gradient-from: var(--purple);
+  --ai-gradient-to: var(--purple-light);
+  --ai-glow-soft: rgba(168, 85, 247, 0.2);
+  --ai-glow-medium: rgba(168, 85, 247, 0.3);
+  --ai-glow-strong: rgba(168, 85, 247, 0.35);
+  --ai-glow-transparent: rgba(168, 85, 247, 0);
+
   /* Borders */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-lg-plus: 10px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
+  --radius-circle: 50%;
   --radius-full: 9999px;
 
-  /* Transitions */
+  /* Transitions — bundled with easing */
   --transition-fast: 150ms ease;
+  --transition-medium: 200ms ease;
   --transition-base: 250ms ease;
   --transition-slow: 350ms ease;
+
+  /* Durations — for use with custom easings */
+  --duration-instant: 80ms;
+  --duration-fast: 150ms;
+  --duration-medium: 200ms;
+  --duration-base: 250ms;
+  --duration-slower: 300ms;
+  --duration-slow: 350ms;
+  --duration-long: 600ms;
+  --duration-longer: 800ms;
+
+  /* Backdrop blur */
+  --blur-xs: 3px;
+  --blur-sm: 4px;
+  --blur-md: 8px;
+  --blur-lg: 12px;
+
+  /* Letter spacing */
+  --tracking-tight: 0.03em;
+  --tracking-normal: 0.05em;
+  --tracking-wide: 0.06em;
+  --tracking-wider: 0.15em;
+  --tracking-small-px: 0.3px;
+  --tracking-medium-px: 0.5px;
+
+  /* Z-index — local elevation (above siblings, inside parent) */
+  --z-local-1: 1;
+  --z-local-2: 2;
+  --z-local-3: 3;
+  --z-local-4: 4;
+  --z-elevated: 10;
+  --z-elevated-plus: 20;
+  --z-fullscreen: 1000;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 

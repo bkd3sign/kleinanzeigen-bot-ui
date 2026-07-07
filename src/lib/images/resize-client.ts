@@ -61,3 +61,26 @@ export function resizeImageForAi(file: File): Promise<string> {
     img.src = url;
   });
 }
+
+// Decode at most this many images at once. Each full-res decode briefly holds the
+// uncompressed bitmap in memory, so unbounded concurrency would OOM mobile devices.
+const RESIZE_CONCURRENCY = 4;
+
+/**
+ * Resize a batch of images for AI vision, in small concurrency batches to cap peak memory,
+ * skipping any that fail to decode. Returns the successful data URLs plus the names of the
+ * files that were skipped, so neither a corrupt image nor a large batch aborts/crashes generation.
+ */
+export async function resizeImagesForAi(files: File[]): Promise<{ images: string[]; failed: string[] }> {
+  const images: string[] = [];
+  const failed: string[] = [];
+  for (let i = 0; i < files.length; i += RESIZE_CONCURRENCY) {
+    const batch = files.slice(i, i + RESIZE_CONCURRENCY);
+    const results = await Promise.allSettled(batch.map(resizeImageForAi));
+    results.forEach((result, j) => {
+      if (result.status === 'fulfilled') images.push(result.value);
+      else failed.push(batch[j].name);
+    });
+  }
+  return { images, failed };
+}

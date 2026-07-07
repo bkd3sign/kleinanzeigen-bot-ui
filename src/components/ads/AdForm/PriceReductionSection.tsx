@@ -120,8 +120,8 @@ export function PriceReductionSection({ botInfo }: { botInfo?: BotInfo }) {
             {...register('auto_price_reduction.delay_days', { valueAsNumber: true })}
           />
 
-          {/* Warning when delay_days > interval + 1 (delay is never satisfied) */}
-          {(aprDelayDays ?? 0) > (republicationInterval ?? 7) + 1 && (
+          {/* Warning when delay_days > interval (delay is never satisfied, fix #1099) */}
+          {(aprDelayDays ?? 0) > (republicationInterval ?? 7) && (
             <div className={styles.priceReductionWarning}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -130,7 +130,7 @@ export function PriceReductionSection({ botInfo }: { botInfo?: BotInfo }) {
               <div>
                 <strong>Verzögerung (Tage) wirkungslos</strong>
                 <p>
-                  Der Bot setzt updated_on nach jedem Repost neu. Zwischen zwei Reposts vergehen nur ~{(republicationInterval ?? 7) + 1} Tage,
+                  Der Bot setzt updated_on nach jedem Repost neu. Zwischen zwei Reposts vergehen nur ~{republicationInterval ?? 7} Tage,
                   aber die Verzögerung erfordert {aprDelayDays} Tage — die Bedingung wird nie erfüllt.
                   Nutze stattdessen Verzögerung (Reposts).
                 </p>

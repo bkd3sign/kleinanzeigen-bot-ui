@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getCurrentPrice, getAprError, projectReposts } from '../pricing';
+import { getCurrentPrice, getAprError, getAprErrorTitle, projectReposts } from '../pricing';
 import type { AdListItem } from '@/types/ad';
 
 describe('getCurrentPrice', () => {
@@ -236,9 +236,9 @@ describe('projectReposts', () => {
     expect(result[1].reducedBy).toBe(5);
   });
 
-  it('delay_days > interval+1 means delay is never satisfied', () => {
+  it('delay_days > interval means delay is never satisfied', () => {
     vi.useFakeTimers({ now: new Date('2026-04-13T00:00:00Z') });
-    // delay_days=14, interval=7: actual elapsed between reposts = 8 (interval+1) < 14 → never satisfied
+    // delay_days=14, interval=7: actual elapsed between reposts = 7 (interval) < 14 → never satisfied
     const ad = makeAd({
       price: 50,
       republication_interval: 7,
@@ -256,7 +256,7 @@ describe('projectReposts', () => {
     expect(futureSteps.every(r => r.price === 50)).toBe(true);
   });
 
-  it('future dates are anchored to getNextRepubDate (updated_on + interval + 1)', () => {
+  it('future dates are anchored to getNextRepubDate (updated_on + interval)', () => {
     vi.useFakeTimers({ now: new Date('2026-04-13T00:00:00Z') });
     const ad = makeAd({
       price: 20,
@@ -270,10 +270,10 @@ describe('projectReposts', () => {
 
     const result = projectReposts(ad);
     const futureSteps = result.filter(r => !r.isPast);
-    // Bot: ad_age.days > 7 → earliest at day 8 → Apr 7 + 8 = Apr 15
-    expect(futureSteps[0].date.toISOString().slice(0, 10)).toBe('2026-04-15');
-    // Second future: Apr 15 + 8 = Apr 23
-    expect(futureSteps[1].date.toISOString().slice(0, 10)).toBe('2026-04-23');
+    // Bot: ad_age.days >= 7 → earliest at day 7 → Apr 7 + 7 = Apr 14 (fix #1099)
+    expect(futureSteps[0].date.toISOString().slice(0, 10)).toBe('2026-04-14');
+    // Second future: Apr 14 + 7 = Apr 21
+    expect(futureSteps[1].date.toISOString().slice(0, 10)).toBe('2026-04-21');
   });
 
   it('stops projecting when min_price is already reached', () => {
@@ -419,5 +419,28 @@ describe('getAprError', () => {
 
   it('returns null for a healthy FIXED config', () => {
     expect(getAprError(100, { enabled: true, strategy: 'FIXED', amount: 5, min_price: 50 })).toBeNull();
+  });
+
+  it('detects below_min: min_price is higher than the current price', () => {
+    const err = getAprError(14, { enabled: true, strategy: 'PERCENTAGE', amount: 5, min_price: 15 });
+    expect(err?.type).toBe('below_min');
+    expect(err?.stuckAt).toBe(15);
+  });
+
+  it('detects below_min even without strategy/amount set', () => {
+    const err = getAprError(34, { enabled: true, strategy: null, amount: null, min_price: 39 });
+    expect(err?.type).toBe('below_min');
+  });
+
+  it('does not flag below_min when min_price equals the price', () => {
+    expect(getAprError(15, { enabled: true, strategy: 'PERCENTAGE', amount: 10, min_price: 15 })).toBeNull();
+  });
+});
+
+describe('getAprErrorTitle', () => {
+  it('produces a distinct message per error type', () => {
+    expect(getAprErrorTitle({ type: 'below_min', stuckAt: 15 }, 15)).toContain('liegt über dem aktuellen Preis');
+    expect(getAprErrorTitle({ type: 'ineffective', stuckAt: 39 }, 20)).toContain('wirkungslos');
+    expect(getAprErrorTitle({ type: 'stuck', stuckAt: 16 }, 10)).toContain('steckt fest');
   });
 });

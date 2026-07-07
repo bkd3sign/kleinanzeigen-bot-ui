@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { ALLOWED_IMAGE_EXTENSIONS, allowedFormatsLabel, filterImageFiles } from '../formats';
+import {
+  ALLOWED_IMAGE_EXTENSIONS,
+  allowedFormatsLabel,
+  filterImageFiles,
+  applyImageLimits,
+  adImageCapMessage,
+  formatRejectMessage,
+  MAX_AD_IMAGES,
+} from '../formats';
 
 describe('ALLOWED_IMAGE_EXTENSIONS', () => {
   it('contains exactly the four bot-supported formats', () => {
@@ -80,5 +88,68 @@ describe('filterImageFiles', () => {
     const file = makeFile('foto.jpg');
     const { accepted } = filterImageFiles([file]);
     expect(accepted[0]).toBe(file);
+  });
+});
+
+describe('applyImageLimits', () => {
+  const makeFile = (name: string) => new File([], name);
+
+  it('accepts valid images that fit within the remaining room', () => {
+    const result = applyImageLimits([makeFile('a.jpg'), makeFile('b.png')], 0);
+    expect(result.toAdd).toHaveLength(2);
+    expect(result.rejectedFormat).toHaveLength(0);
+    expect(result.capExceeded).toBe(false);
+  });
+
+  it('reports unsupported formats separately without affecting the cap', () => {
+    const result = applyImageLimits([makeFile('a.jpg'), makeFile('b.pdf')], 0);
+    expect(result.toAdd.map((f) => f.name)).toEqual(['a.jpg']);
+    expect(result.rejectedFormat).toEqual(['b.pdf']);
+    expect(result.capExceeded).toBe(false);
+  });
+
+  it('caps accepted files at the remaining room and flags capExceeded', () => {
+    const files = [makeFile('a.jpg'), makeFile('b.jpg'), makeFile('c.jpg')];
+    const result = applyImageLimits(files, MAX_AD_IMAGES - 1); // room = 1
+    expect(result.toAdd).toHaveLength(1);
+    expect(result.capExceeded).toBe(true);
+  });
+
+  it('adds nothing when the ad is already at the limit', () => {
+    const result = applyImageLimits([makeFile('a.jpg')], MAX_AD_IMAGES);
+    expect(result.toAdd).toHaveLength(0);
+    expect(result.capExceeded).toBe(true);
+  });
+
+  it('does not flag capExceeded when everything fits', () => {
+    const result = applyImageLimits([makeFile('a.jpg')], MAX_AD_IMAGES - 5);
+    expect(result.toAdd).toHaveLength(1);
+    expect(result.capExceeded).toBe(false);
+  });
+
+  it('treats an over-full count as zero room (never negative)', () => {
+    const result = applyImageLimits([makeFile('a.jpg')], MAX_AD_IMAGES + 3);
+    expect(result.toAdd).toHaveLength(0);
+    expect(result.capExceeded).toBe(true);
+  });
+
+  it('handles empty input', () => {
+    const result = applyImageLimits([], 0);
+    expect(result.toAdd).toHaveLength(0);
+    expect(result.rejectedFormat).toHaveLength(0);
+    expect(result.capExceeded).toBe(false);
+  });
+});
+
+describe('image toast messages', () => {
+  it('adImageCapMessage embeds the limit', () => {
+    expect(adImageCapMessage()).toBe(`Maximal ${MAX_AD_IMAGES} Bilder pro Anzeige.`);
+  });
+
+  it('formatRejectMessage lists the rejected names and allowed formats', () => {
+    const msg = formatRejectMessage(['x.pdf', 'y.webp']);
+    expect(msg).toContain('x.pdf');
+    expect(msg).toContain('y.webp');
+    expect(msg).toContain(allowedFormatsLabel());
   });
 });

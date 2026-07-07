@@ -2,7 +2,10 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Modal, Button, Toggle, useToast, showConfirm } from '@/components/ui';
+import { Modal, Button, Toggle, useToast } from '@/components/ui';
+import { confirmDeleteLiveAds } from '@/lib/ads/confirmations';
+import { liveDeleteAvailability } from '@/lib/ads/status';
+import { encodeAdFilePath } from '@/lib/ads/paths';
 import { api } from '@/lib/api/client';
 import { sizeDescOf } from '@/lib/shipping';
 import { buildBulkEditPayload } from '@/lib/ads/buildBulkEditPayload';
@@ -113,6 +116,10 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
   const [isDeleting, setIsDeleting] = useState(false);
 
   const publishedAds = selectedAds.filter((a) => !!a.id);
+  // The bot only deletes active, still-online listings. Inactive (e.g. reserved)
+  // or orphaned ones are skipped — exclude them and surface the count.
+  const deletableAds = publishedAds.filter((a) => liveDeleteAvailability(a) === 'normal');
+  const skippedCount = publishedAds.length - deletableAds.length;
 
   // Preis
   const [priceType, setPriceType] = useState<BulkPriceType | null>(null);
@@ -122,7 +129,6 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
 
   // Versand
   const [shippingChoice, setShippingChoice] = useState<BulkShippingChoice | null>(null);
-  const [customShippingCost, setCustomShippingCost] = useState('');
 
   // APR
   const [aprEnabled, setAprEnabled] = useState<boolean | null>(null);
@@ -147,7 +153,6 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
       setAbsolutePrice(null);
       setAbsolutePriceInput('');
       setShippingChoice(null);
-      setCustomShippingCost('');
       setAprEnabled(null);
       setAprStrategy(null);
       setAprAmountInput('');
@@ -188,10 +193,6 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
     intervalPreset !== null ||
     updatePriceOnUpdate !== null;
 
-  const customShippingInvalid =
-    shippingChoice === 'CUSTOM' &&
-    (customShippingCost.trim() === '' || isNaN(parseFloat(customShippingCost)) || parseFloat(customShippingCost) <= 0);
-
   const customIntervalInvalid =
     intervalPreset === 'CUSTOM' &&
     (customInterval.trim() === '' || isNaN(parseInt(customInterval, 10)) || parseInt(customInterval, 10) <= 0);
@@ -208,13 +209,13 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
     aprMinPriceInput.trim() !== '' &&
     (isNaN(parseFloat(aprMinPriceInput)) || parseFloat(aprMinPriceInput) < 0);
 
-  const canSubmit = hasAnyChange && !customShippingInvalid && !customIntervalInvalid
+  const canSubmit = hasAnyChange && !customIntervalInvalid
     && !absolutePriceInvalid && !aprAmountInvalid && !aprMinPriceInvalid;
 
   const handleApply = useCallback(async () => {
     if (!canSubmit) return;
 
-    const opts: BulkEditOptions = { priceType, priceAdjust, absolutePrice, shippingChoice, customShippingCost, aprEnabled, aprStrategy, aprAmount, aprMinPrice, intervalPreset, customInterval, updatePriceOnUpdate };
+    const opts: BulkEditOptions = { priceType, priceAdjust, absolutePrice, shippingChoice, aprEnabled, aprStrategy, aprAmount, aprMinPrice, intervalPreset, customInterval, updatePriceOnUpdate };
 
     setIsSubmitting(true);
     try {
@@ -223,7 +224,7 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
           const payload = buildBulkEditPayload(ad, opts);
           if (Object.keys(payload).length === 0) return Promise.resolve();
           return api.put(
-            `/api/ads/by-file/${ad.file.split('/').map(encodeURIComponent).join('/')}`,
+            `/api/ads/by-file/${encodeAdFilePath(ad.file)}`,
             payload,
           );
         }),
@@ -246,23 +247,19 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
     } finally {
       setIsSubmitting(false);
     }
-  }, [canSubmit, selectedAds, priceType, priceAdjust, absolutePrice, shippingChoice, customShippingCost, aprEnabled, aprStrategy, aprAmount, aprMinPrice, intervalPreset, customInterval, updatePriceOnUpdate, queryClient, toast, onClose]);
+  }, [canSubmit, selectedAds, priceType, priceAdjust, absolutePrice, shippingChoice, aprEnabled, aprStrategy, aprAmount, aprMinPrice, intervalPreset, customInterval, updatePriceOnUpdate, queryClient, toast, onClose]);
 
   const handleDeleteLive = useCallback(async () => {
-    if (publishedAds.length === 0) return;
-    const confirmed = await showConfirm(
-      `${publishedAds.length} Anzeige${publishedAds.length !== 1 ? 'n' : ''} live löschen`,
-      `Möchtest du ${publishedAds.length} Anzeige${publishedAds.length !== 1 ? 'n' : ''} dauerhaft auf Kleinanzeigen löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
-      'Jetzt löschen',
-      'Abbrechen',
-    );
+    if (deletableAds.length === 0) return;
+    const confirmed = await confirmDeleteLiveAds(deletableAds.length, skippedCount);
     if (!confirmed) return;
     setIsDeleting(true);
     try {
-      const ids = publishedAds.map((a) => String(a.id)).join(',');
+      const ids = deletableAds.map((a) => String(a.id)).join(',');
       await api.post('/api/bot/delete', { ads: ids });
       queryClient.invalidateQueries({ queryKey: ['ads'] });
-      toast('success', `${publishedAds.length} Anzeige${publishedAds.length !== 1 ? 'n' : ''} gelöscht`);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast('success', `${deletableAds.length} Inserat${deletableAds.length !== 1 ? 'e' : ''} gelöscht`);
       onClose();
       onClear?.();
     } catch (err) {
@@ -270,7 +267,7 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
     } finally {
       setIsDeleting(false);
     }
-  }, [publishedAds, queryClient, toast, onClose, onClear]);
+  }, [deletableAds, skippedCount, queryClient, toast, onClose, onClear]);
 
   const count = selectedAds.length;
 
@@ -289,11 +286,7 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
 
   const shippingBadge =
     shippingChoice !== null
-      ? shippingChoice === 'CUSTOM'
-        ? customShippingCost && parseFloat(customShippingCost) > 0
-          ? `Individuell · ${parseFloat(customShippingCost).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-          : 'Individuell'
-        : ({ PICKUP: 'Abholung', S: 'Klein', M: 'Mittel', L: 'Groß' } as Record<string, string>)[shippingChoice]
+      ? ({ PICKUP: 'Abholung', S: 'Klein', M: 'Mittel', L: 'Groß' } as Record<string, string>)[shippingChoice]
       : undefined;
 
   const aprBadge =
@@ -472,7 +465,7 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
             </svg>
           }
           title="Versandart & Preis"
-          desc="Abholung, Paketgröße oder eigene Kosten"
+          desc="Abholung oder Paketgröße"
         >
           <div className={styles.optList}>
             <OptionItem
@@ -527,33 +520,7 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
               title="Groß (L)"
               desc={sizeDescOf('L')}
             />
-            <OptionItem
-              active={shippingChoice === 'CUSTOM'}
-              onClick={() => setShippingChoice((v) => (v === 'CUSTOM' ? null : 'CUSTOM'))}
-              icon={
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="1" x2="12" y2="23" />
-                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                </svg>
-              }
-              title="Individuell"
-              desc="Eigener Versandpreis"
-            />
           </div>
-          {shippingChoice === 'CUSTOM' && (
-            <div className={styles.inputWrap}>
-              <label className={styles.inputLabel}>Versandkosten (€)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className={styles.customInput}
-                placeholder="z.B. 5.99"
-                value={customShippingCost}
-                onChange={(e) => setCustomShippingCost(e.target.value)}
-              />
-            </div>
-          )}
         </Panel>
 
         {/* APR */}
@@ -846,17 +813,21 @@ export function AdBulkEditModal({ open, onClose, onClear, selectedAds }: AdBulkE
             </svg>
           }
           title="Danger Zone"
-          desc="Anzeigen dauerhaft auf Kleinanzeigen löschen"
+          desc="Inserate dauerhaft auf Kleinanzeigen löschen"
         >
-          {publishedAds.length > 0 ? (
+          {deletableAds.length > 0 ? (
             <>
               <p className={styles.dangerZoneDesc}>
-                {publishedAds.length} Anzeige{publishedAds.length !== 1 ? 'n' : ''} mit Kleinanzeigen-ID werden unwiderruflich gelöscht.
+                Aus deiner Auswahl können {deletableAds.length} Inserat{deletableAds.length !== 1 ? 'e' : ''} online gelöscht werden.{skippedCount > 0 ? ` ${skippedCount} weitere ${skippedCount === 1 ? 'Anzeige wird' : 'Anzeigen werden'} übersprungen (inaktiv oder nicht mehr online).` : ''} Die Löschung ist unwiderruflich, lokale Entwürfe bleiben erhalten.
               </p>
-              <Button variant="danger" size="sm" onClick={handleDeleteLive} disabled={isDeleting}>
-                {isDeleting ? 'Wird gelöscht…' : `${publishedAds.length} Anzeigen bei Kleinanzeigen löschen`}
+              <Button variant="dangerSolid" size="sm" onClick={handleDeleteLive} disabled={isDeleting}>
+                {isDeleting ? 'Wird gelöscht…' : `${deletableAds.length} Inserat${deletableAds.length !== 1 ? 'e' : ''} löschen`}
               </Button>
             </>
+          ) : publishedAds.length > 0 ? (
+            <p className={styles.dangerZoneDesc}>
+              Alle {publishedAds.length} veröffentlichten Anzeigen der Auswahl sind inaktiv oder nicht mehr online und können nicht live gelöscht werden.
+            </p>
           ) : (
             <p className={styles.dangerZoneDesc}>
               Keine veröffentlichten Anzeigen in der Auswahl.

@@ -50,12 +50,12 @@
 
 .chip {
   display: block;
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   background: var(--bg-secondary);
   border-radius: var(--radius-sm);
   font-size: clamp(0.5rem, 1.5vw, 0.6875rem);
   color: var(--text-secondary);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-0-5);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;

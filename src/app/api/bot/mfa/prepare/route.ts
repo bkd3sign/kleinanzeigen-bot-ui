@@ -18,6 +18,11 @@ export async function POST(request: NextRequest) {
 
     const job = jobs.get(job_id);
     if (!job) return NextResponse.json({ detail: 'Job nicht gefunden' }, { status: 404 });
+    // Ownership guard (parity with /api/bot/resume): a job id must belong to the caller's
+    // workspace — otherwise any authenticated user could drive another user's bot via a guessed id.
+    if (job.workspace !== user.workspace) {
+      return NextResponse.json({ detail: 'Kein Zugriff auf diesen Job' }, { status: 403 });
+    }
     if (!job.mfa_required) return NextResponse.json({ detail: 'Kein MFA erforderlich' }, { status: 400 });
 
     const result = await prepareMfaSession(job.workspace || user.workspace, job_id);

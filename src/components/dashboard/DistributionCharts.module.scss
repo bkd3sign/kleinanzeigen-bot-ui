@@ -29,7 +29,7 @@
 }
 
 .distBarSeg {
-  transition: width 600ms var(--ease-out);
+  transition: width var(--duration-long) var(--ease-out);
 
   &:first-child {
     border-radius: var(--radius-full) 0 0 var(--radius-full);

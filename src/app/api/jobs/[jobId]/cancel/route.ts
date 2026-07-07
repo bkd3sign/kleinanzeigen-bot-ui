@@ -26,7 +26,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ detail: 'Not authorized' }, { status: 403 });
     }
 
-    if (job.status !== 'running' && job.status !== 'queued') {
+    // running, queued, AND waiting_for_user are cancellable. A paused (waiting_for_user) job
+    // holds a live process + the queue slot, so it must be cancellable — otherwise the queue
+    // stays blocked behind it forever.
+    if (job.status !== 'running' && job.status !== 'queued' && job.status !== 'waiting_for_user') {
       return NextResponse.json({ detail: 'Job is not running' }, { status: 400 });
     }
 

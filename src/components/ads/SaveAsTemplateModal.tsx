@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/Textarea/Textarea';
 import { Button } from '@/components/ui/Button/Button';
 import { useToast } from '@/components/ui';
 import { api } from '@/lib/api/client';
+import { encodeAdFilePath } from '@/lib/ads/paths';
 import type { Ad } from '@/types/ad';
 import styles from './SaveAsTemplateModal.module.scss';
 
@@ -53,7 +54,7 @@ export function SaveAsTemplateModal({ open, onClose, adFile, adTitle }: SaveAsTe
     setAdData(null);
 
     setLoading(true);
-    const encFile = adFile.split('/').map(encodeURIComponent).join('/');
+    const encFile = encodeAdFilePath(adFile);
     api.get<Ad>(`/api/ads/by-file/${encFile}`)
       .then((data) => {
         // Strip bot-managed fields

@@ -5,7 +5,24 @@ const BOT_DIR = process.env.BOT_DIR || process.cwd();
 const BOT_CMD = process.env.BOT_CMD || path.join(BOT_DIR, 'bot', 'kleinanzeigen-bot');
 
 const UPSTREAM_REPO = 'Second-Hand-Friends/kleinanzeigen-bot';
-const UPSTREAM_SOURCE_PATH = 'src/kleinanzeigen_bot/__init__.py';
+// CLI parsing is split across modules since the upstream refactors:
+// - `extract CLI bootstrap` moved the `case "--flag"` branches out of
+//   __init__.py into cli.py.
+// - `split command orchestration handlers` (#1155) moved the `case "command":`
+//   dispatch out of __init__.py into app.py (`match self.command:`).
+// Parse every module so a command/flag that merely relocated is not mistaken
+// for a removed one. Missing files (404) are skipped.
+const UPSTREAM_SOURCE_PATHS = [
+  'src/kleinanzeigen_bot/__init__.py',
+  'src/kleinanzeigen_bot/cli.py',
+  'src/kleinanzeigen_bot/app.py',
+];
+// The bot updater installs the `latest` release channel (release branch), so
+// the compatibility check must read the same ref. Without it the GitHub
+// Contents API defaults to the repo's default branch (main), which tracks the
+// preview channel — causing preview-only changes to be reported as
+// incompatibilities for a latest-channel update.
+const UPSTREAM_REF = 'latest';
 
 export type CheckStatus = 'ok' | 'warning' | 'error';
 
@@ -62,6 +79,13 @@ const GUI_COMMANDS: Record<string, string[]> = {
 // Global flags the bot supports (not command-specific)
 const GLOBAL_FLAGS = ['--config', '--workspace-mode', '--logfile', '--lang', '--verbose', '-v'];
 
+// Per-run CLI flags whose behavior the GUI exposes durably via the config file
+// (Settings page) rather than a one-shot flag — e.g. --preserve-local-settings
+// is force-enable for a single download, while the GUI persists
+// download.preserve_local_settings. These are "supported" (the feature is
+// reachable in the GUI), so they must not be reported as unhandled new flags.
+const CONFIG_BACKED_FLAGS = new Set(['--preserve-local-settings']);
+
 // Ad fields the GUI knows about (from adCreateSchema + bot-managed fields)
 const GUI_AD_FIELDS = new Set([
   'active', 'type', 'title', 'description', 'category', 'price', 'price_type',
@@ -102,13 +126,14 @@ const GUI_KNOWN_SUB_FIELDS: Record<string, Set<string>> = {
     'folder_name_max_length', 'rename_existing_folders',
     'include_all_matching_shipping_options', 'excluded_shipping_options',
     'dir', 'folder_name_template', 'ad_file_name_template',
+    'preserve_local_settings',
   ]),
   'BrowserConfig': new Set([
     'arguments', 'binary_location', 'use_private_window',
     'extensions', 'user_data_dir', 'profile_name',
   ]),
   'LoginConfig': new Set(['username', 'password']),
-  'PublishingConfig': new Set(['delete_old_ads', 'delete_old_ads_by_title']),
+  'PublishingConfig': new Set(['delete_old_ads', 'delete_old_ads_by_title', 'local_path_renaming']),
   'CaptchaConfig': new Set(['auto_restart', 'restart_delay']),
   'DiagnosticsConfig': new Set([
     'capture_on', 'timing_collection', 'output_dir',
@@ -175,9 +200,9 @@ function parseProperty(val: Record<string, unknown>): SchemaProperty {
 /**
  * Fetch a JSON schema from the upstream repo and extract properties + $defs.
  */
-async function fetchSchema(schemaPath: string): Promise<ParsedSchema | null> {
+async function fetchSchema(schemaPath: string, ref: string): Promise<ParsedSchema | null> {
   try {
-    const res = await fetch(`${SCHEMA_BASE}/${schemaPath}`, {
+    const res = await fetch(`${SCHEMA_BASE}/${schemaPath}?ref=${ref}`, {
       headers: { Accept: 'application/vnd.github.v3+json' },
       signal: AbortSignal.timeout(15000),
     });
@@ -206,6 +231,26 @@ async function fetchSchema(schemaPath: string): Promise<ParsedSchema | null> {
     }
 
     return { fields: Object.keys(rawProps), properties, defs };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a source file from the upstream repo at a given ref.
+ * Returns null on 404 (the file may not exist in every release) or any error,
+ * so callers can merge whatever modules are present without failing the check.
+ */
+async function fetchSourceFile(filePath: string, ref: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${UPSTREAM_REPO}/contents/${filePath}?ref=${ref}`,
+      { headers: { Accept: 'application/vnd.github.v3+json' }, signal: AbortSignal.timeout(15000) },
+    );
+    if (!res.ok) return null;
+    const json = await res.json() as { content?: string };
+    if (!json.content) return null;
+    return Buffer.from(json.content, 'base64').toString('utf-8');
   } catch {
     return null;
   }
@@ -498,9 +543,11 @@ export function checkCompatibility(): CompatibilityResult {
 
 /**
  * Parse upstream source code to extract commands and flags.
- * Parses `case "command":` and `case "--flag":` patterns from __init__.py.
+ * Parses `case "command":` and `case "--flag":` patterns. The CLI parsing may
+ * live in __init__.py or, since the bootstrap refactor, in cli.py — callers
+ * merge the results across modules.
  */
-function parseUpstreamSource(source: string): { commands: string[]; flags: string[] } {
+export function parseUpstreamSource(source: string): { commands: string[]; flags: string[] } {
   const commands: string[] = [];
   const flags: string[] = [];
 
@@ -533,17 +580,10 @@ export async function checkUpstreamCompatibility(version: string): Promise<Compa
     Object.entries(GUI_COMMANDS).flatMap(([, flags]) => flags).concat(GLOBAL_FLAGS)
   );
 
-  let source: string;
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${UPSTREAM_REPO}/contents/${UPSTREAM_SOURCE_PATH}`,
-      { headers: { Accept: 'application/vnd.github.v3+json' }, signal: AbortSignal.timeout(15000) },
-    );
-    if (!res.ok) throw new Error(`GitHub API: ${res.status}`);
-    const json = await res.json() as { content?: string };
-    if (!json.content) throw new Error('No content in response');
-    source = Buffer.from(json.content, 'base64').toString('utf-8');
-  } catch {
+  const sources = await Promise.all(
+    UPSTREAM_SOURCE_PATHS.map(p => fetchSourceFile(p, UPSTREAM_REF)),
+  );
+  if (sources.every(s => s === null)) {
     return {
       botVersion: version,
       overallStatus: 'error',
@@ -554,7 +594,11 @@ export async function checkUpstreamCompatibility(version: string): Promise<Compa
     };
   }
 
-  const { commands: upstreamCommands, flags: upstreamFlags } = parseUpstreamSource(source);
+  // Merge commands/flags across all CLI modules (a flag is supported if any
+  // module defines it). Downstream comparisons use .includes(); dedupe to keep
+  // the result arrays clean.
+  const upstreamCommands = [...new Set(sources.flatMap(s => s ? parseUpstreamSource(s).commands : []))];
+  const upstreamFlags = [...new Set(sources.flatMap(s => s ? parseUpstreamSource(s).flags : []))];
 
   const commandChecks: CommandCheck[] = [];
   const flagChecks: FlagCheck[] = [];
@@ -580,6 +624,8 @@ export async function checkUpstreamCompatibility(version: string): Promise<Compa
     if (GLOBAL_FLAGS.includes(flag)) continue;
     if (guiFlags.has(flag)) {
       flagChecks.push({ command: '*', flag, status: 'ok', message: 'Flag existiert auch in der GUI' });
+    } else if (CONFIG_BACKED_FLAGS.has(flag)) {
+      flagChecks.push({ command: '*', flag, status: 'ok', message: 'Über die Konfiguration (Einstellungen) abgedeckt — Einmal-Flag nicht nötig' });
     } else {
       flagChecks.push({ command: '*', flag, status: 'warning', message: 'Neuer Flag in der neuen Version, nicht in der GUI' });
     }
@@ -601,8 +647,8 @@ export async function checkUpstreamCompatibility(version: string): Promise<Compa
   // Schema checks — fetch ad.schema.json and config.schema.json in parallel
   const schemaChecks: SchemaCheck[] = [];
   const [adSchema, configSchema] = await Promise.all([
-    fetchSchema('ad.schema.json'),
-    fetchSchema('config.schema.json'),
+    fetchSchema('ad.schema.json', UPSTREAM_REF),
+    fetchSchema('config.schema.json', UPSTREAM_REF),
   ]);
 
   if (adSchema) {

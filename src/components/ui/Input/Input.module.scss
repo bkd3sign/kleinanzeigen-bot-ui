@@ -24,13 +24,13 @@
 .formInput {
   width: 100%;
   height: 36px;
-  padding: 4px 12px;
+  padding: var(--space-1) var(--space-3);
   background-color: transparent;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
-  line-height: 20px;
+  line-height: var(--leading-input);
   font-family: inherit;
   box-shadow: none;
   transition: all var(--transition-fast);
@@ -72,7 +72,7 @@
 .formError {
   font-size: var(--font-size-xs);
   color: var(--text-danger);
-  animation: errorSlideIn 200ms var(--ease-out) both;
+  animation: errorSlideIn var(--duration-medium) var(--ease-out) both;
 }
 
 .formHint {

@@ -25,8 +25,10 @@ async function loadMap(): Promise<Map<string, string>> {
 /**
  * Hook that returns a function to resolve category IDs to names.
  * Falls back to the raw ID if not found.
+ * mode 'leaf' (default): last segment only, e.g. "TV & Video"
+ * mode 'full': full breadcrumb path, e.g. "Elektronik > TV & Video"
  */
-export function useCategoryName(): (id: string | undefined | null) => string {
+export function useCategoryName(mode: 'leaf' | 'full' = 'leaf'): (id: string | undefined | null) => string {
   const [map, setMap] = useState<Map<string, string>>(cache ?? new Map());
 
   useEffect(() => {
@@ -41,9 +43,9 @@ export function useCategoryName(): (id: string | undefined | null) => string {
     (id: string | undefined | null): string => {
       if (!id) return '';
       const full = map.get(id) ?? id;
-      const last = full.split(' > ').pop();
-      return last ?? full;
+      if (mode === 'full') return full;
+      return full.split(' > ').pop() ?? full;
     },
-    [map],
+    [map, mode],
   );
 }

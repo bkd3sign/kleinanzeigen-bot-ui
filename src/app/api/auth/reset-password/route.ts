@@ -1,6 +1,7 @@
 import { handleApiError } from '@/lib/api/error-handler';
 import { NextRequest, NextResponse } from 'next/server';
-import { loadUsers, saveUsers } from '@/lib/yaml/users';
+import { loadUsers, saveUsers, getUserWorkspace } from '@/lib/yaml/users';
+import { writeUserConfig } from '@/lib/yaml/config';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -46,6 +47,9 @@ export async function POST(request: NextRequest) {
 
     // Set new password
     target.password_hash = await bcrypt.hash(password, 12);
+
+    // Keep the KA bot login (config.yaml) 1:1 in sync with the app password.
+    writeUserConfig(getUserWorkspace(target.id), { login: { password } });
 
     // Invalidate all existing sessions by bumping token_version
     target.token_version = (target.token_version ?? 0) + 1;

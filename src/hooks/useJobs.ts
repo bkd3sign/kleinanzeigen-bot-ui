@@ -46,6 +46,17 @@ export function useRepeatJob() {
   });
 }
 
+/** Resume a job paused at a login/CAPTCHA wall (waiting_for_user) after signing in via VNC. */
+export function useResumeJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => api.post<{ message: string }>('/api/bot/resume', { job_id: jobId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}
+
 export function useJob(jobId: string | null) {
   return useQuery<Job>({
     queryKey: ['job', jobId],
@@ -54,7 +65,7 @@ export function useJob(jobId: string | null) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 2000;
-      if (data.status === 'running' || data.status === 'queued') return 2000;
+      if (data.status === 'running' || data.status === 'queued' || data.status === 'waiting_for_user') return 2000;
       // Poll a few more times after completion to catch post-job sync logs
       const finishedAt = data.finished_at ? new Date(data.finished_at).getTime() : 0;
       if (finishedAt && Date.now() - finishedAt < 5000) return 1000;

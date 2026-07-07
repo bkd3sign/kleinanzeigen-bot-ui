@@ -18,6 +18,7 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  maxWidth?: number;
 }
 
 export function Modal({
@@ -27,6 +28,7 @@ export function Modal({
   children,
   footer,
   wide = false,
+  maxWidth,
 }: ModalProps): ReactElement | null {
   const contentRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -101,12 +103,12 @@ export function Modal({
   return createPortal(
     <div className={styles.modal} role="dialog" aria-modal="true" aria-label={title}>
       <div className={styles.overlay} onClick={handleOverlayClick} />
-      <div ref={contentRef} className={contentClasses}>
+      <div ref={contentRef} className={contentClasses} style={maxWidth ? { maxWidth: `${maxWidth}px` } : undefined}>
         <div className={styles.header}>
           <h2 className={styles.title}>{title}</h2>
           <button
             type="button"
-            className={styles.closeBtn}
+            className="modalCloseBtn"
             onClick={onClose}
             aria-label="Close"
           >
@@ -131,6 +133,7 @@ export function showConfirm(
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   bullets?: string[],
+  confirmVariant: 'accent' | 'danger' | 'dangerSolid' = 'accent',
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const container = document.createElement('div');
@@ -213,15 +216,40 @@ export function showConfirm(
 
     const confirmBtn = document.createElement('button');
     confirmBtn.textContent = confirmText;
+    // Confirm button style: accent (default), danger (red text), dangerSolid (white on red).
+    const confirmColors =
+      confirmVariant === 'dangerSolid'
+        ? 'border: 1px solid var(--red); background-color: var(--red); color: var(--on-overlay);'
+        : confirmVariant === 'danger'
+          ? 'border: 1px solid var(--red); background-color: transparent; color: var(--red);'
+          : 'border: 1px solid var(--accent); background-color: var(--accent); color: var(--accent-text);';
     confirmBtn.style.cssText = `
       display: inline-flex; align-items: center; justify-content: center;
       gap: var(--space-2); padding: var(--space-1-5) var(--space-3);
       font-size: var(--font-size-xs); font-weight: var(--font-semibold);
-      border-radius: var(--radius-md); border: 1px solid var(--accent);
-      background-color: var(--accent); color: var(--accent-text);
+      border-radius: var(--radius-md); ${confirmColors}
       cursor: pointer; font-family: inherit;
     `;
     confirmBtn.addEventListener('click', () => cleanup(true));
+
+    // Hover states matching the Button component (inline styles can't use :hover).
+    if (confirmVariant === 'dangerSolid') {
+      confirmBtn.addEventListener('mouseenter', () => {
+        confirmBtn.style.backgroundColor = 'var(--red-hover)';
+        confirmBtn.style.borderColor = 'var(--red-hover)';
+      });
+      confirmBtn.addEventListener('mouseleave', () => {
+        confirmBtn.style.backgroundColor = 'var(--red)';
+        confirmBtn.style.borderColor = 'var(--red)';
+      });
+    } else if (confirmVariant === 'danger') {
+      confirmBtn.addEventListener('mouseenter', () => {
+        confirmBtn.style.backgroundColor = 'var(--red-muted)';
+      });
+      confirmBtn.addEventListener('mouseleave', () => {
+        confirmBtn.style.backgroundColor = 'transparent';
+      });
+    }
 
     footer.appendChild(cancelBtn);
     footer.appendChild(confirmBtn);

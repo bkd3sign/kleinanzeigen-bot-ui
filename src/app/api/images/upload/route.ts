@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/middleware';
 import { findAdByFile, writeAd } from '@/lib/yaml/ads';
 import { isValidImage, ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_SIZE } from '@/lib/images/upload';
+import { MAX_AD_IMAGES } from '@/lib/images/formats';
 import { sanitizeUploadFilename, toNFC } from '@/lib/images/normalize';
 import path from 'path';
 import fs from 'fs';
@@ -36,9 +37,16 @@ export async function POST(request: NextRequest) {
 
     const uploaded: string[] = [];
     const rejected: { name: string; reason: string }[] = [];
+    // Server-side backstop for the per-ad image cap (the GUI also caps, this guards direct API calls).
+    const existingCount = (ad.images as string[] | undefined)?.length ?? 0;
 
     for (const upload of files) {
       if (!(upload instanceof File)) continue;
+
+      if (existingCount + uploaded.length >= MAX_AD_IMAGES) {
+        rejected.push({ name: upload.name, reason: `Maximal ${MAX_AD_IMAGES} Bilder pro Anzeige` });
+        continue;
+      }
 
       const ext = path.extname(upload.name).toLowerCase();
       if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {

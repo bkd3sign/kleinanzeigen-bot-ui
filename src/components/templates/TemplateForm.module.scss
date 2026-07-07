@@ -22,7 +22,7 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-wide);
   color: var(--accent);
 }
 
@@ -92,7 +92,7 @@
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast) ease;
 
   &:checked {
     background: var(--accent);
@@ -106,7 +106,7 @@
     top: 1px;
     width: 5px;
     height: 9px;
-    border: solid #fff;
+    border: solid var(--on-overlay);
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
   }
@@ -133,7 +133,7 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-wide);
   color: var(--text-muted);
   white-space: nowrap;
 }

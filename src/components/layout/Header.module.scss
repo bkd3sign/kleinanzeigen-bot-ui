@@ -7,7 +7,7 @@
   justify-content: space-between;
   padding: var(--space-4) var(--space-8);
   background-color: var(--header-bg);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-lg));
   border-bottom: none;
   z-index: var(--z-sticky);
   min-height: var(--header-height);
@@ -34,7 +34,6 @@
 .headerBrand {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
   text-decoration: none;
   color: inherit;
 }
@@ -127,7 +126,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     z-index: var(--z-dropdown);
-    animation: slideDown 150ms var(--ease-out);
+    animation: slideDown var(--duration-fast) var(--ease-out);
   }
 }
 

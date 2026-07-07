@@ -8,7 +8,7 @@ export interface DropdownMenuItem {
   label: React.ReactNode;
   icon?: React.ReactNode;
   onClick: () => void;
-  danger?: boolean;
+  danger?: boolean; // red text — destructive action
   separator?: boolean; // render a separator line before this item
 }
 

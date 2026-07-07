@@ -10,11 +10,12 @@
 
 import path from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { shortKey } from './category-attributes';
+import { shortKey, INPUT_COMBOBOX_KEYS } from './category-attributes';
 
 export interface AttrOption { value: string; text: string; }
 export interface SharedAttrDef { options?: AttrOption[]; type?: string; text?: string; }
 export interface CatAttrEntry {
+  category_name: string;
   attributes: Array<{ attribute_key: string; options?: AttrOption[] }>;
   shared: string[];
 }
@@ -23,9 +24,7 @@ export interface CatAttrsData {
   shared_attributes: Record<string, SharedAttrDef>;
 }
 
-// Short keys of attributes that use a text-search input combobox.
-// All others use button/select handlers and must keep their API value.
-const INPUT_COMBOBOX_KEYS = new Set(['brand_s', 'marke_s']);
+export { INPUT_COMBOBOX_KEYS };
 
 let _cached: CatAttrsData | null | undefined;
 

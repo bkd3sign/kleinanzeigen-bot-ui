@@ -2,9 +2,10 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMessagingStatus, useConversations, useResponderStatus, useSubmitMessagingMfa, usePrepareMessagingMfa, useStartMessaging } from '@/hooks/useMessages';
+import { useMessagingStatus, useConversations, useResponderStatus, useSubmitMessagingMfa, usePrepareMessagingMfa, useStartMessaging, useStopMessaging } from '@/hooks/useMessages';
 import { useAiAvailable } from '@/hooks/useAiAvailable';
-import { Spinner, EmptyState, Badge, useToast } from '@/components/ui';
+import { getResponderBadge, isResponderActive } from '@/lib/messaging/responderBadge';
+import { Spinner, EmptyState, Badge, Button, useToast } from '@/components/ui';
 import { ConversationList } from '@/components/messages/ConversationList';
 import { ChatView } from '@/components/messages/ChatView';
 import { MfaCodeInput } from '@/components/bot/MfaCodeInput';
@@ -90,7 +91,9 @@ function LoginView() {
   );
 }
 
-function StatusView({ status, error }: { status: string; error?: string }) {
+function StatusView({ status, error, cancellable = false }: { status: string; error?: string; cancellable?: boolean }) {
+  const stop = useStopMessaging();
+
   if (status === 'starting' || status === 'logging_in') {
     return (
       <div className={styles.statusCenter}>
@@ -98,6 +101,17 @@ function StatusView({ status, error }: { status: string; error?: string }) {
         <p className={styles.statusText}>
           {STATUS_MESSAGES[status] || 'Verbindung wird hergestellt...'}
         </p>
+        {cancellable && (
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={stop.isPending}
+            onClick={() => stop.mutate()}
+            style={{ marginTop: 'var(--space-2)' }}
+          >
+            Abbrechen
+          </Button>
+        )}
       </div>
     );
   }
@@ -120,24 +134,27 @@ function StatusView({ status, error }: { status: string; error?: string }) {
 function AiBadge() {
   const { data: responder } = useResponderStatus();
   const { isAiAvailable } = useAiAvailable();
-  if (!isAiAvailable || !responder || responder.mode === 'off') return null;
+  // No inboxLoadable arg: AiBadge only renders inside the loaded inbox header, so the inbox is
+  // loadable by construction — the red "Login" badge is the nav link's job (Header).
+  const badge = getResponderBadge(responder?.mode, isAiAvailable);
+  if (!badge) return null;
 
-  const label = responder.mode === 'auto' ? 'KI Auto' : 'KI Review';
-  const variant: 'success' | 'info' = responder.mode === 'auto' ? 'success' : 'info';
-  const pending = responder.pendingCount > 0 ? ` (${responder.pendingCount})` : '';
+  const pending = (responder?.pendingCount ?? 0) > 0 ? ` (${responder!.pendingCount})` : '';
 
   return (
-    <Badge variant={variant}>
-      {label}{pending}
+    <Badge variant={badge.variant}>
+      {badge.long}{pending}
     </Badge>
   );
 }
 
 function AiUpsellBanner() {
   const { isAiAvailable } = useAiAvailable();
+  const { data: responder } = useResponderStatus();
   const [dismissed, setDismissed] = useState(false);
 
-  if (isAiAvailable || dismissed) return null;
+  // Don't nag about a missing API key while out-of-office is actively running
+  if (isAiAvailable || dismissed || responder?.mode === 'out_of_office') return null;
 
   return (
     <div style={{
@@ -304,7 +321,7 @@ export default function MessagesPage() {
 
   // MFA required — global MfaOverlay handles this when KI is active (auto/review),
   // so only show inline MfaView when KI is off
-  const kiActive = responder?.mode === 'auto' || responder?.mode === 'review';
+  const kiActive = isResponderActive(responder?.mode);
   if (status.status === 'awaiting_mfa' && !kiActive) {
     return <MfaView />;
   }
@@ -319,7 +336,7 @@ export default function MessagesPage() {
   }
 
   if (status.status !== 'ready') {
-    return <StatusView status={status.status} error={status.error} />;
+    return <StatusView status={status.status} error={status.error} cancellable />;
   }
 
   return <InboxView />;

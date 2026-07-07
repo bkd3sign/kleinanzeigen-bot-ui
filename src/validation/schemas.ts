@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { MAX_AI_IMAGES, MAX_AD_IMAGES } from '@/lib/images/formats';
+import { checkSellDirectly } from '@/lib/ads/sellDirectly';
 
 // Auth schemas
 export const loginSchema = z.object({
@@ -60,7 +62,7 @@ export const adCreateSchema = z.object({
   shipping_costs: z.coerce.number({ invalid_type_error: 'Versandkosten müssen eine Zahl sein' }).positive('Versandkosten müssen positiv sein').nullable().optional(),
   shipping_options: z.array(z.string()).nullable().optional().default([]),
   sell_directly: z.boolean().nullable().optional().default(false),
-  images: z.array(z.string()).nullable().optional().default([]),
+  images: z.array(z.string()).max(MAX_AD_IMAGES, `Maximal ${MAX_AD_IMAGES} Bilder pro Anzeige`).nullable().optional().default([]),
   contact_street: z.string().nullable().optional().default(''),
   contact_phone: z.string().nullable().optional().default(''),
   republication_interval: z.number({ invalid_type_error: 'Intervall muss eine Zahl sein' }).int().positive('Intervall muss positiv sein').nullable().optional(),
@@ -70,15 +72,25 @@ export const adCreateSchema = z.object({
   special_attributes: specialAttributesSchema.nullable().optional().default({}),
   auto_price_reduction: autoPriceReductionSchema.nullable().optional(),
 }).superRefine((data, ctx) => {
-  if (data.shipping_type !== 'SHIPPING') return;
-  const hasOptions = data.shipping_options && data.shipping_options.length > 0;
-  const hasCosts = data.shipping_costs != null && data.shipping_costs > 0;
-  if (!hasOptions && !hasCosts) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Bitte wähle eine Versandoption (Paketgröße oder individueller Preis)',
-      path: ['shipping_costs'],
-    });
+  if (data.shipping_type === 'SHIPPING') {
+    const hasOptions = data.shipping_options && data.shipping_options.length > 0;
+    if (!hasOptions) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Bitte wähle eine Versandoption (Paketgröße)',
+        path: ['shipping_options'],
+      });
+    }
+  }
+
+  // Direct-buy constraints — mirror the bot's Ad._validate_sell_directly so the
+  // GUI rejects invalid combinations before publish instead of failing with a
+  // cryptic ValueError.
+  if (data.sell_directly) {
+    const check = checkSellDirectly(data);
+    if (!check.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: check.reason, path: ['sell_directly'] });
+    }
   }
 });
 
@@ -136,7 +148,13 @@ export const configUpdateSchema = z.object({
   timeouts: z.record(z.unknown()).optional(),
   download: z.record(z.unknown()).optional(),
   update_check: z.record(z.unknown()).optional(),
+  ai: z.record(z.unknown()).optional(),
+  diagnostics: z.record(z.unknown()).optional(),
   login: z.record(z.unknown()).optional(),
+  browser: z.record(z.unknown()).optional(),
+  // Human-like browser pacing (typing jitter, action delays, viewport randomization).
+  // Upstream ships sane defaults; kept optional here so a hand-edited block survives GUI writes.
+  humanization: z.record(z.unknown()).optional(),
 });
 
 // Template schemas
@@ -157,7 +175,7 @@ export const templateUpdateSchema = z.object({
 // AI generation schema
 export const aiGenerateSchema = z.object({
   prompt: z.string().max(10000).default(''),
-  images: z.array(z.string()).max(10, 'Maximal 10 Bilder erlaubt').default([]),
+  images: z.array(z.string()).max(MAX_AI_IMAGES, `Maximal ${MAX_AI_IMAGES} Bilder erlaubt`).default([]),
 });
 
 // Inferred types

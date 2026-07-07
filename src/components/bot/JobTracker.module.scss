@@ -6,11 +6,31 @@
   gap: var(--space-4);
 }
 
+// Horizontal scrolling (no wrapping) comes from the global .scrollRowX utility in the JSX.
+.vncBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+
+  > * { flex-shrink: 0; }
+}
+
+.vncBarLabel {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  margin-right: var(--space-1);
+}
+
+// Horizontal scrolling (no wrapping) comes from the global .scrollRowX utility in the JSX.
 .filters {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 .filterBtn {
@@ -24,6 +44,8 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   font-family: inherit;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .filterBtn:hover {
@@ -56,6 +78,8 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   font-family: inherit;
+  flex-shrink: 0;
+  white-space: nowrap;
 
   &:hover {
     border-color: var(--border-color-hover);
@@ -138,14 +162,14 @@
   justify-content: center;
   padding: var(--space-8) var(--space-4);
   text-align: center;
-  animation: fadeIn 300ms var(--ease-out);
+  animation: fadeIn var(--duration-slower) var(--ease-out);
 }
 
 .emptyIcon {
   color: var(--text-muted);
   margin-bottom: var(--space-3);
   opacity: 0.4;
-  animation: bounceIn 600ms var(--ease-out) both;
+  animation: bounceIn var(--duration-long) var(--ease-out) both;
 }
 
 .emptyTitle {
@@ -153,13 +177,13 @@
   font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin-bottom: var(--space-2);
-  animation: slideUp 300ms var(--ease-out) 100ms both;
+  animation: slideUp var(--duration-slower) var(--ease-out) 100ms both;
 }
 
 .emptyDesc {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  animation: slideUp 300ms var(--ease-out) 160ms both;
+  animation: slideUp var(--duration-slower) var(--ease-out) 160ms both;
 }
 
 .thActions {
@@ -175,11 +199,11 @@
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   cursor: pointer;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-  line-height: 1;
+  line-height: var(--leading-none);
   transition: all var(--transition-fast);
 
   &:hover {
@@ -197,7 +221,13 @@
   .td, .th { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); white-space: nowrap; }
   .tdMono, .tdMuted { padding: var(--space-1-5) var(--space-2); font-size: var(--font-size-xs); white-space: nowrap; }
   .thActions { width: 40px; }
+
+  // Horizontal scrolling (no wrapping) is handled in the base .filters / .vncBar rules;
+  // mobile only tightens spacing and font sizes.
   .filters { gap: var(--space-1); }
-  .filterBtn, .filterBtnView { padding: var(--space-1) var(--space-2); font-size: 11px; }
+  .filterBtn, .filterBtnView {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-xs-plus);
+  }
 }
 

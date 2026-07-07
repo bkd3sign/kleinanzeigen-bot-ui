@@ -69,9 +69,9 @@
   position: absolute;
   top: var(--space-1);
   left: var(--space-1);
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 10px;
+  background: var(--overlay-heavy);
+  color: var(--on-overlay);
+  font-size: var(--font-size-2xs);
   font-weight: var(--font-semibold);
   width: 20px;
   height: 20px;
@@ -88,9 +88,9 @@
   left: 0;
   right: 0;
   padding: var(--space-1) var(--space-2);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-  color: #fff;
-  font-size: 10px;
+  background: linear-gradient(transparent, var(--overlay-darker));
+  color: var(--on-overlay);
+  font-size: var(--font-size-2xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -105,9 +105,9 @@
   height: 22px;
   border-radius: var(--radius-full);
   border: none;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 14px;
+  background: var(--overlay-heavy);
+  color: var(--on-overlay);
+  font-size: var(--font-size-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -146,8 +146,8 @@
 
 .uploadIcon {
   font-size: var(--font-size-2xl);
-  font-weight: 300;
-  line-height: 1;
+  font-weight: var(--font-light);
+  line-height: var(--leading-none);
 }
 
 .uploadText {
@@ -182,7 +182,7 @@
 
 .previewCaption {
   text-align: center;
-  color: #fff;
+  color: var(--on-overlay);
   font-size: var(--font-size-sm);
   margin-top: var(--space-2);
   opacity: 0.8;
@@ -196,14 +196,14 @@
   height: 40px;
   border-radius: var(--radius-full);
   border: none;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  font-size: 22px;
+  background: var(--overlay-darker);
+  color: var(--on-overlay);
+  font-size: var(--font-size-xl-plus);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: var(--z-local-1);
   transition: background var(--transition-fast);
 
   &:hover {

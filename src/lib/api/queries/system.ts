@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
-import type { SetupData, ConfigUpdate } from '@/types/bot';
+import type { SetupData } from '@/types/bot';
 import type { AuthResponse } from '@/types/auth';
+import type { AiModelOption } from '@/app/api/system/ai-models/route';
 
 interface HealthResponse {
   status: string;
@@ -15,15 +16,6 @@ interface HealthResponse {
 
 interface CategoriesResponse {
   categories: { id: string; name: string }[];
-}
-
-interface ConfigResponse {
-  ad_defaults: Record<string, unknown>;
-  publishing: Record<string, unknown>;
-  timeouts: Record<string, unknown>;
-  download: Record<string, unknown>;
-  update_check: Record<string, unknown>;
-  login: { username: string; password: string };
 }
 
 export function useHealth() {
@@ -42,13 +34,6 @@ export function useCategories() {
   });
 }
 
-export function useConfig() {
-  return useQuery<ConfigResponse>({
-    queryKey: ['config'],
-    queryFn: () => api.get('/api/system/config'),
-  });
-}
-
 export function useConfigDefaults() {
   return useQuery<{ ad_defaults: Record<string, unknown> }>({
     queryKey: ['config', 'defaults'],
@@ -56,11 +41,13 @@ export function useConfigDefaults() {
   });
 }
 
-export function useUpdateConfig() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: ConfigUpdate) => api.put('/api/system/config', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+export function useAiModels(enabled = true) {
+  return useQuery<{ models: AiModelOption[]; error?: string }>({
+    queryKey: ['ai-models'],
+    queryFn: () => api.get('/api/system/ai-models'),
+    staleTime: 60 * 60 * 1000, // models change rarely
+    retry: false,
+    enabled,
   });
 }
 

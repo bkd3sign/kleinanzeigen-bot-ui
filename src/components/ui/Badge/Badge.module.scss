@@ -5,8 +5,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px var(--space-2);
-  font-size: 11px;
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--font-size-xs-plus);
   font-weight: var(--font-semibold);
   border-radius: var(--radius-full);
   background-color: var(--bg-tertiary);
@@ -40,8 +40,8 @@
 }
 
 .badgeReserved {
-  background-color: rgba(139, 92, 246, 0.15);
-  color: #8b5cf6;
+  background-color: var(--purple-muted);
+  color: var(--purple);
 }
 
 .badgeRunning {

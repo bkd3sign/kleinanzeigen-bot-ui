@@ -28,7 +28,7 @@
 }
 
 .panelDanger {
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: var(--red-500-translucent);
 
   &:hover {
     border-color: var(--text-danger);
@@ -88,6 +88,13 @@
   background: var(--accent-muted);
 }
 
+// Keep the danger icon red (color + background) even when the panel is open —
+// outranks .panelOpen .panelIcon, which would otherwise turn it accent.
+.panelDanger.panelOpen .panelIcon {
+  color: var(--text-danger);
+  background: var(--red-muted);
+}
+
 .panelText {
   flex: 1;
   min-width: 0;
@@ -108,7 +115,7 @@
 // Selection summary badge — right-aligned, stable position next to chevron
 .panelBadge {
   flex-shrink: 0;
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   background: var(--accent-muted);
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
@@ -124,7 +131,7 @@
 .panelChevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  transition: transform 200ms var(--ease-out);
+  transition: transform var(--duration-medium) var(--ease-out);
 }
 
 .panelOpen .panelChevron {
@@ -267,7 +274,7 @@
   font-weight: var(--font-medium);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-normal);
 }
 
 // Custom input (shipping cost, custom interval)

@@ -8,11 +8,12 @@ import { Modal } from '@/components/ui';
 import { MfaBanner } from './MfaBanner';
 import { MfaCodeInput } from './MfaCodeInput';
 import { jobModalState } from '@/lib/bot/job-modal-state';
+import { isResponderActive } from '@/lib/messaging/responderBadge';
 
 /**
  * Global overlay that auto-appears when:
  * 1. A bot job requires MFA (existing behavior)
- * 2. Messaging session requires MFA while KI mode is active (auto/review)
+ * 2. Messaging session requires MFA while a responder mode is active (auto/review/out-of-office)
  *
  * Mount once in AppShell — covers both MFA types from any page.
  */
@@ -49,7 +50,7 @@ export function MfaOverlay() {
   const { data: responder } = useResponderStatus();
   const [dismissedMsgMfa, setDismissedMsgMfa] = useState(false);
 
-  const kiActive = responder?.mode === 'auto' || responder?.mode === 'review';
+  const kiActive = isResponderActive(responder?.mode);
   const showMsgMfa = !showBotMfa && kiActive && msgStatus?.status === 'awaiting_mfa' && !dismissedMsgMfa;
 
   useEffect(() => {
@@ -92,7 +93,7 @@ function MessagingMfaContent() {
   return (
     <MfaCodeInput
       title="Nachrichten-Verifizierung"
-      description="Kleinanzeigen verlangt einen Bestätigungscode. KI-Antworten sind pausiert."
+      description="Kleinanzeigen verlangt einen Bestätigungscode. Automatische Antworten sind pausiert."
       onSubmit={handleSubmit}
       onPrepare={handlePrepare}
       submitPending={mfa.isPending}

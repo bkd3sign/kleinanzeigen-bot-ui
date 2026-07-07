@@ -18,8 +18,8 @@
   gap: var(--space-3);
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
   background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
@@ -94,7 +94,7 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-medium);
   color: var(--text-primary);
-  line-height: 1.45;
+  line-height: var(--leading-snug-plus);
 }
 
 .closeBtn {

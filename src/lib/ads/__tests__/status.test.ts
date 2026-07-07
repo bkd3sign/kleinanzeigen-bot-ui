@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getNextRepubDate, getExpiryDate, isExpired, isExpiringSoon, getExpiryDaysLeft } from '../status';
+import { getNextRepubDate, getExpiryDate, isExpired, isExpiringSoon, getExpiryDaysLeft, liveDeleteAvailability, getStatusLabel, getStatusVariant } from '../status';
 import type { AdListItem } from '@/types/ad';
 
 function makeAd(overrides: Partial<AdListItem> = {}): AdListItem {
@@ -27,18 +27,18 @@ describe('getNextRepubDate', () => {
     expect(getNextRepubDate(makeAd({ updated_on: 'not-a-date', republication_interval: 7 }))).toBeNull();
   });
 
-  it('calculates from updated_on + interval + 1 (bot uses strict greater-than)', () => {
+  it('calculates from updated_on + interval (bot due at ad_age >= interval, fix #1099)', () => {
     const ad = makeAd({ updated_on: '2026-01-01T00:00:00Z', republication_interval: 7 });
     const result = getNextRepubDate(ad);
-    // Bot: ad_age.days > 7 → earliest at day 8 → Jan 1 + 8 = Jan 9
-    expect(result).toEqual(new Date('2026-01-09T00:00:00Z'));
+    // Bot: ad_age.days >= 7 → earliest at day 7 → Jan 1 + 7 = Jan 8
+    expect(result).toEqual(new Date('2026-01-08T00:00:00Z'));
   });
 
   it('falls back to created_on when no updated_on', () => {
     const ad = makeAd({ created_on: '2026-03-10T12:00:00Z', republication_interval: 14 });
     const result = getNextRepubDate(ad);
-    // Mar 10 + 15d = Mar 25
-    expect(result).toEqual(new Date('2026-03-25T12:00:00Z'));
+    // Mar 10 + 14d = Mar 24
+    expect(result).toEqual(new Date('2026-03-24T12:00:00Z'));
   });
 
   it('prefers updated_on over created_on', () => {
@@ -48,8 +48,8 @@ describe('getNextRepubDate', () => {
       republication_interval: 7,
     });
     const result = getNextRepubDate(ad);
-    // Feb 1 + 8d = Feb 9
-    expect(result).toEqual(new Date('2026-02-09T00:00:00Z'));
+    // Feb 1 + 7d = Feb 8
+    expect(result).toEqual(new Date('2026-02-08T00:00:00Z'));
   });
 });
 
@@ -148,6 +148,66 @@ describe('isExpiringSoon', () => {
     const ad = makeAd({ id: 123, updated_on: '2026-01-01T00:00:00Z' });
     // Expiry: Mar 2. Now: Feb 23. Exactly 7 days → within window.
     expect(isExpiringSoon(ad)).toBe(true);
+  });
+});
+
+describe('getStatusLabel', () => {
+  it('returns Entwurf for an ad without id', () => {
+    expect(getStatusLabel(makeAd())).toBe('Entwurf');
+  });
+
+  it('returns Reserviert when stats report paused', () => {
+    expect(getStatusLabel(makeAd({ id: 1 }), { state: 'paused' } as never)).toBe('Reserviert');
+  });
+
+  it('returns Verwaist for an orphaned ad even when also inactive (orphaned wins over Inaktiv)', () => {
+    expect(getStatusLabel(makeAd({ id: 1, active: false, is_orphaned: true }))).toBe('Verwaist');
+  });
+
+  it('returns Inaktiv for an inactive ad that is still online (not orphaned)', () => {
+    expect(getStatusLabel(makeAd({ id: 1, active: false, is_orphaned: false }))).toBe('Inaktiv');
+  });
+
+  it('returns Aktiv for an active, online, unchanged ad', () => {
+    expect(getStatusLabel(makeAd({ id: 1, active: true, is_orphaned: false }))).toBe('Aktiv');
+  });
+});
+
+describe('getStatusVariant', () => {
+  it('maps Verwaist to warning (not danger)', () => {
+    expect(getStatusVariant('Verwaist')).toBe('warning');
+  });
+
+  it('maps Inaktiv to danger', () => {
+    expect(getStatusVariant('Inaktiv')).toBe('danger');
+  });
+
+  it('maps every status label to a variant', () => {
+    const labels = ['Entwurf', 'Reserviert', 'Verwaist', 'Inaktiv', 'Abgelaufen', 'Läuft bald ab', 'Geändert', 'Aktiv'] as const;
+    for (const l of labels) expect(typeof getStatusVariant(l)).toBe('string');
+  });
+});
+
+describe('liveDeleteAvailability', () => {
+  it('hides delete for drafts (no id)', () => {
+    expect(liveDeleteAvailability(makeAd())).toBe('hidden');
+  });
+
+  it('hides delete for orphaned ads (gone from KA)', () => {
+    expect(liveDeleteAvailability(makeAd({ id: 123, is_orphaned: true }))).toBe('hidden');
+  });
+
+  it('hides delete for orphaned ads even when also inactive (orphaned wins over active)', () => {
+    // getStatusLabel would label this "Inaktiv", but it is actually gone from KA.
+    expect(liveDeleteAvailability(makeAd({ id: 123, active: false, is_orphaned: true }))).toBe('hidden');
+  });
+
+  it('blocks delete for inactive-but-online ads (e.g. reserved) → activate first', () => {
+    expect(liveDeleteAvailability(makeAd({ id: 123, active: false, is_orphaned: false }))).toBe('blocked');
+  });
+
+  it('allows normal delete for active, online listings', () => {
+    expect(liveDeleteAvailability(makeAd({ id: 123, active: true, is_orphaned: false }))).toBe('normal');
   });
 });
 

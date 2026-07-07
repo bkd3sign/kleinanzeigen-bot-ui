@@ -33,7 +33,7 @@
   justify-content: center;
   font-size: var(--font-size-xl);
   font-weight: var(--font-bold);
-  animation: bounceIn 500ms var(--ease-out) 80ms both, logoFloat 3s ease-in-out 600ms infinite;
+  animation: bounceIn 500ms var(--ease-out) var(--duration-instant) both, logoFloat 3s ease-in-out var(--duration-long) infinite;
 }
 
 .authTitle {
@@ -49,7 +49,7 @@
   flex-direction: column;
   gap: var(--space-4);
   margin-top: var(--space-4);
-  animation: fadeIn 300ms var(--ease-out) 200ms both;
+  animation: fadeIn var(--duration-slower) var(--ease-out) var(--duration-medium) both;
 }
 
 /* Remove default margin-bottom from formGroup inside auth forms */
